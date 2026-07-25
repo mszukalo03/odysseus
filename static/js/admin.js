@@ -2479,6 +2479,8 @@ const _TOKEN_SCOPES = [
   { key: 'memory:write',      label: 'Memory write',      detail: 'Write memory when enabled' },
   { key: 'cookbook:read',     label: 'Cookbook read',     detail: 'List cookbook tasks + tail their tmux output' },
   { key: 'cookbook:launch',   label: 'Cookbook launch',   detail: 'Launch and stop cookbook serve tasks' },
+  { key: 'feeds:read',        label: 'Feeds read',        detail: 'List feeds/groups and read articles (e.g. unread counts, search)' },
+  { key: 'feeds:write',       label: 'Feeds write',       detail: 'Add/edit/delete feeds, mark read/starred, refresh, import OPML' },
 ];
 
 function _renderTokenScopeRows(t) {

@@ -20,6 +20,7 @@ from src.auth_helpers import require_authenticated_request, require_user
 from src.tool_implementations import do_manage_notes
 from src.constants import COOKBOOK_STATE_FILE
 from routes._validators import validate_remote_host, validate_ssh_port
+from routes.feed_routes import FEEDS_READ_SCOPES, FEEDS_WRITE_SCOPES
 
 
 COOKBOOK_READ_SCOPES = {"cookbook:read", "cookbook:launch"}
@@ -150,6 +151,7 @@ def setup_codex_routes(
     memory_router: APIRouter | None = None,
     calendar_router: APIRouter | None = None,
     document_router: APIRouter | None = None,
+    feed_router: APIRouter | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/codex", tags=["codex"])
     email_list_endpoint = _find_endpoint(email_router, "GET", "/api/email/list")
@@ -163,6 +165,11 @@ def setup_codex_routes(
     documents_library_endpoint = _find_endpoint(document_router, "GET", "/api/documents/library")
     documents_get_endpoint = _find_endpoint(document_router, "GET", "/api/document/{doc_id}")
     documents_create_endpoint = _find_endpoint(document_router, "POST", "/api/document")
+    feeds_list_endpoint = _find_endpoint(feed_router, "GET", "/api/feeds")
+    feeds_groups_endpoint = _find_endpoint(feed_router, "GET", "/api/feeds/groups")
+    feeds_articles_endpoint = _find_endpoint(feed_router, "GET", "/api/feeds/articles")
+    feeds_mark_read_endpoint = _find_endpoint(feed_router, "PUT", "/api/feeds/articles/{article_id}/read")
+    feeds_toggle_star_endpoint = _find_endpoint(feed_router, "PUT", "/api/feeds/articles/{article_id}/star")
 
     @router.get("/capabilities")
     def capabilities(request: Request):
@@ -207,6 +214,12 @@ def setup_codex_routes(
                     "read": scoped(COOKBOOK_READ_SCOPES),
                     "launch": scoped(COOKBOOK_LAUNCH_SCOPES),
                     "actions": ["tasks", "servers", "output", "serve", "stop"],
+                },
+                "feeds": {
+                    "read": scoped(FEEDS_READ_SCOPES),
+                    "write": scoped(FEEDS_WRITE_SCOPES),
+                    "actions": ["list_feeds", "list_groups", "list_articles", "mark_read", "toggle_star"],
+                    "available": feeds_list_endpoint is not None,
                 },
             },
             "safety": {
@@ -471,6 +484,60 @@ def setup_codex_routes(
         if documents_get_endpoint is None:
             raise HTTPException(503, "Documents integration is not available")
         return await _as_owner(request, owner, documents_get_endpoint, request, doc_id)
+
+    # ── Feeds (RSS) ───────────────────────────────────────────────────────
+
+    @router.get("/feeds")
+    async def codex_feeds_list(request: Request):
+        owner = _scope_owner(request, FEEDS_READ_SCOPES)
+        if feeds_list_endpoint is None:
+            raise HTTPException(503, "Feeds integration is not available")
+        return await _as_owner(request, owner, feeds_list_endpoint, request)
+
+    @router.get("/feeds/groups")
+    async def codex_feeds_groups(request: Request):
+        owner = _scope_owner(request, FEEDS_READ_SCOPES)
+        if feeds_groups_endpoint is None:
+            raise HTTPException(503, "Feeds integration is not available")
+        return await _as_owner(request, owner, feeds_groups_endpoint, request)
+
+    @router.get("/feeds/articles")
+    async def codex_feeds_articles(
+        request: Request,
+        feed_id: str | None = None,
+        group_id: str | None = None,
+        group_ids: str | None = None,
+        starred: bool | None = None,
+        read: bool | None = None,
+        search: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ):
+        owner = _scope_owner(request, FEEDS_READ_SCOPES)
+        if feeds_articles_endpoint is None:
+            raise HTTPException(503, "Feeds integration is not available")
+        offset, limit = _clamp_pagination(offset, limit)
+        return await _as_owner(
+            request, owner, feeds_articles_endpoint,
+            request,
+            feed_id=feed_id, group_id=group_id, group_ids=group_ids,
+            starred=starred, read=read, search=search,
+            limit=limit, offset=offset,
+        )
+
+    @router.put("/feeds/articles/{article_id}/read")
+    async def codex_feeds_mark_read(request: Request, article_id: str, body: dict[str, Any] = Body(default_factory=dict)):
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
+        if feeds_mark_read_endpoint is None:
+            raise HTTPException(503, "Feeds integration is not available")
+        return await _as_owner(request, owner, feeds_mark_read_endpoint, article_id, body, request)
+
+    @router.put("/feeds/articles/{article_id}/star")
+    async def codex_feeds_toggle_star(request: Request, article_id: str, body: dict[str, Any] = Body(default_factory=dict)):
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
+        if feeds_toggle_star_endpoint is None:
+            raise HTTPException(503, "Feeds integration is not available")
+        return await _as_owner(request, owner, feeds_toggle_star_endpoint, article_id, body, request)
 
     # ── DELETE endpoints so agents can clean up after themselves ──────────
 

@@ -4,6 +4,7 @@ import { makeWindowDraggable } from './windowDrag.js';
 import { snapModalToZone } from './tileManager.js';
 import { clearDockSide } from './modalSnap.js';
 import dragSortModule from './dragSort.js';
+import { _sanitizeHtml } from './emailLibrary/utils.js';
 
 const API_BASE = window.location.origin;
 
@@ -874,10 +875,12 @@ async function _loadArticles(append = false) {
 }
 
 function _articleItemHtml(a) {
-  const feedTitle = a.feed?.title || '';
-  const feedIcon = a.feed?.icon || '';
-  const time = a.published_at ? _formatTime(a.published_at) : '';
-  const rawSnippet = a.content ? a.content.replace(/<[^>]+>/g, '').trim().slice(0, 150) : '';
+  const feedTitle = _escapeHtml(a.feed?.title || '');
+  const feedIcon = _escapeHtml(a.feed?.icon || '');
+  const time = _escapeHtml(a.published_at ? _formatTime(a.published_at) : '');
+  // Regex tag-stripping isn't a real sanitizer (e.g. an unclosed "<" from a
+  // malformed feed would survive) — escape the residual snippet text too.
+  const rawSnippet = a.content ? _escapeHtml(a.content.replace(/<[^>]+>/g, '').trim().slice(0, 150)) : '';
   const isVideo = !!(_getYoutubeVideoId(a.url) || _getYoutubeVideoId(a.guid));
   // feedparser leaves content/summary empty for a lot of YouTube entries
   // (mostly Shorts) — an empty snippet div left a dead blank line in the
@@ -887,9 +890,9 @@ function _articleItemHtml(a) {
     ? `<div class="rss-article-snippet">${rawSnippet}</div>`
     : (isVideo ? '<div class="rss-article-snippet rss-article-snippet-empty">▶ No description available</div>' : '');
   return `<div class="rss-article-item ${a.is_read ? 'rss-article-read' : ''} ${_activeArticleId === a.id ? 'active' : ''}" data-article-id="${a.id}">
-      ${a.image ? `<div class="rss-article-thumb" style="background-image: url('${a.image}')"></div>` : ''}
+      ${a.image ? `<div class="rss-article-thumb" style="background-image: url('${_escapeHtml(a.image)}')"></div>` : ''}
       <div class="rss-article-body">
-        <div class="rss-article-title">${a.title || 'Untitled'}</div>
+        <div class="rss-article-title">${_escapeHtml(a.title || 'Untitled')}</div>
         <div class="rss-article-meta">
           <span class="rss-article-feed">${feedIcon ? `<img src="${feedIcon}" alt="" width="10" height="10" />` : ''} ${feedTitle}</span>
           ${time ? `<span class="rss-article-time">${time}</span>` : ''}
@@ -990,19 +993,22 @@ function _openReader(articleId) {
   reader.style.display = 'flex';
 
   const content = _el('rss-reader-content');
-  const feedName = article.feed?.title || '';
-  const time = article.published_at ? _formatTime(article.published_at) : '';
-  const author = article.author ? `By ${article.author}` : '';
-  const body = article.content || '<p class="rss-reader-placeholder">No content available. Try fetching full content.</p>';
+  const feedName = _escapeHtml(article.feed?.title || '');
+  const time = _escapeHtml(article.published_at ? _formatTime(article.published_at) : '');
+  const author = article.author ? `By ${_escapeHtml(article.author)}` : '';
+  // Rich HTML from the feed itself — sanitize before it becomes innerHTML.
+  const body = article.content
+    ? _sanitizeHtml(article.content)
+    : '<p class="rss-reader-placeholder">No content available. Try fetching full content.</p>';
 
-  const videoUrl = article.url || '';
-  const videoId = _getYoutubeVideoId(videoUrl) || _getYoutubeVideoId(article.guid);
-  const videoHtml = videoId ? `<div class="rss-video-player" data-video-id="${videoId}" data-video-url="${videoUrl}"${article.image ? ` style="background-image: url('${article.image}')"` : ''}><div class="rss-video-play-btn">▶</div></div>` : '';
+  const videoUrl = _escapeHtml(article.url || '');
+  const videoId = _getYoutubeVideoId(article.url || '') || _getYoutubeVideoId(article.guid);
+  const videoHtml = videoId ? `<div class="rss-video-player" data-video-id="${_escapeHtml(videoId)}" data-video-url="${videoUrl}"${article.image ? ` style="background-image: url('${_escapeHtml(article.image)}')"` : ''}><div class="rss-video-play-btn">▶</div></div>` : '';
 
   content.innerHTML = `
     ${videoHtml}
     <div class="rss-reader-header">
-      <h2 class="rss-reader-title">${article.title || 'Untitled'}</h2>
+      <h2 class="rss-reader-title">${_escapeHtml(article.title || 'Untitled')}</h2>
       <div class="rss-reader-meta">${feedName}${time ? ` · ${time}` : ''}${author ? ` · ${author}` : ''}</div>
     </div>
     <div class="rss-reader-body">${body}</div>
@@ -1108,7 +1114,10 @@ async function _summarizeReaderArticle() {
     const res = await _api(`/articles/${_activeArticleId}/summarize`, { method: 'POST' });
     if (res.ok && res.summary) {
       loadingDiv.classList.remove('rss-reader-summary-loading');
-      loadingDiv.innerHTML = `<h4>AI Summary</h4><p>${res.summary}</p>`;
+      // LLM output derived from feed content — escape before <br>-ifying
+      // newlines so paragraph breaks survive without reopening HTML injection.
+      const safeSummary = _escapeHtml(res.summary).replace(/\n/g, '<br>');
+      loadingDiv.innerHTML = `<h4>AI Summary</h4><p>${safeSummary}</p>`;
       uiModule.showToast('Summary generated');
     } else {
       loadingDiv.remove();
@@ -1128,7 +1137,10 @@ async function _fetchReaderFullContent() {
   if (res.ok && res.content) {
     uiModule.showToast('Full content fetched');
     const body = _el('rss-reader-content')?.querySelector('.rss-reader-body');
-    if (body) body.innerHTML = res.content;
+    // res.content is extracted markdown/transcript text, not rich HTML —
+    // there's no markdown-to-HTML render step here, so escape it rather
+    // than trust it as innerHTML (matches the AI-summary treatment above).
+    if (body) body.innerHTML = _escapeHtml(res.content).replace(/\n/g, '<br>');
   } else {
     uiModule.showError(res.error || 'Failed to fetch content');
   }

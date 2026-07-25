@@ -11,13 +11,41 @@ logger = logging.getLogger(__name__)
 
 _OWNER_FILTER = None
 
+# Scopes for `ody_` bearer tokens (see routes/api_token_routes.py). Mirrors
+# the _scope_owner pattern in routes/codex_routes.py: a token must carry one
+# of these to act on feeds at all, and the resolved owner is always the
+# token's real owner (api_token_owner), never the "api" pseudo-user the auth
+# middleware stamps on request.state.current_user for bearer callers. Without
+# this, every route below fell back to plain get_current_user(), which
+# returned "api" for any valid token regardless of scope -- so the owner
+# filters (Feed.owner == owner, etc.) matched nothing for a real deployment.
+FEEDS_READ_SCOPES = {"feeds:read", "feeds:write"}
+FEEDS_WRITE_SCOPES = {"feeds:write"}
+
 
 def _utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def _get_owner(request: Request) -> Optional[str]:
+def _scope_owner(request: Request, allowed: set) -> Optional[str]:
+    """Resolve the feeds data owner for this request.
+
+    Bearer-token callers must carry a scope in `allowed`; the returned owner
+    is the token's real owner, not the "api" pseudo-user. Cookie-session (and
+    single-user/no-auth mode) callers fall back to get_current_user, which is
+    unchanged from before -- the auth middleware already gates unauthenticated
+    access to non-exempt paths, so this preserves existing browser behavior.
+    """
     from src.auth_helpers import get_current_user
+    if getattr(request.state, "api_token", False):
+        scopes = set(getattr(request.state, "api_token_scopes", []) or [])
+        if not scopes.intersection(allowed):
+            required = " or ".join(sorted(allowed))
+            raise HTTPException(403, f"API token missing required scope: {required}")
+        owner = getattr(request.state, "api_token_owner", None)
+        if not owner:
+            raise HTTPException(403, "API token has no owner")
+        return owner
     return get_current_user(request)
 
 
@@ -47,7 +75,7 @@ def setup_feed_routes():
 
     @router.get("/groups")
     def list_groups(request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_READ_SCOPES)
         from core.database import SessionLocal, FeedGroup
         db = SessionLocal()
         try:
@@ -61,7 +89,7 @@ def setup_feed_routes():
 
     @router.post("/groups")
     def create_group(data: dict, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
         from core.database import SessionLocal, FeedGroup
         db = SessionLocal()
         try:
@@ -79,7 +107,7 @@ def setup_feed_routes():
 
     @router.put("/groups/{group_id}")
     def update_group(group_id: str, data: dict, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
         from core.database import SessionLocal, FeedGroup
         db = SessionLocal()
         try:
@@ -97,7 +125,7 @@ def setup_feed_routes():
 
     @router.delete("/groups/{group_id}")
     def delete_group(group_id: str, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
         from core.database import SessionLocal, FeedGroup, Feed
         db = SessionLocal()
         try:
@@ -117,7 +145,7 @@ def setup_feed_routes():
 
     @router.post("/groups/{group_id}/summarize")
     def summarize_group(group_id: str, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_READ_SCOPES)
         from core.database import SessionLocal, Article, Feed, FeedGroup
         db = SessionLocal()
         try:
@@ -210,7 +238,7 @@ def setup_feed_routes():
 
     @router.get("")
     def list_feeds(request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_READ_SCOPES)
         from core.database import SessionLocal, Feed
         db = SessionLocal()
         try:
@@ -249,7 +277,7 @@ def setup_feed_routes():
 
     @router.post("")
     def create_feed(data: dict, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
         from core.database import SessionLocal, Feed
         db = SessionLocal()
         try:
@@ -278,13 +306,18 @@ def setup_feed_routes():
             )
             db.add(row)
             db.commit()
+            try:
+                from src.event_bus import fire_event
+                fire_event("feed_added", owner)
+            except Exception:
+                logger.debug("feed_added event dispatch failed", exc_info=True)
             return {"ok": True, "id": row.id}
         finally:
             db.close()
 
     @router.put("/{feed_id}")
     def update_feed(feed_id: str, data: dict, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
         from core.database import SessionLocal, Feed
         db = SessionLocal()
         try:
@@ -301,7 +334,7 @@ def setup_feed_routes():
 
     @router.delete("/{feed_id}")
     def delete_feed(feed_id: str, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
         from core.database import SessionLocal, Feed, Article
         db = SessionLocal()
         try:
@@ -319,6 +352,7 @@ def setup_feed_routes():
 
     @router.post("/discover")
     def discover_feed(data: dict, request: Request):
+        _scope_owner(request, FEEDS_READ_SCOPES)
         url = (data.get("url") or "").strip()
         if not url:
             return {"ok": False, "error": "url required"}
@@ -330,7 +364,7 @@ def setup_feed_routes():
 
     @router.post("/{feed_id}/refresh")
     def refresh_feed(feed_id: str, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
         from core.database import SessionLocal, Feed, Article
         from services.feed.fetcher import fetch_feed
         db = SessionLocal()
@@ -382,13 +416,19 @@ def setup_feed_routes():
                 db.add(art)
                 new_count += 1
             db.commit()
+            if new_count > 0:
+                try:
+                    from src.event_bus import fire_event
+                    fire_event("article_fetched", owner)
+                except Exception:
+                    logger.debug("article_fetched event dispatch failed", exc_info=True)
             return {"ok": True, "new_articles": new_count, "title": row.title, "icon": row.icon}
         finally:
             db.close()
 
     @router.post("/refresh-all")
     def refresh_all_feeds(request: Request, background_tasks: BackgroundTasks):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
         from core.database import SessionLocal, Feed
         db = SessionLocal()
         try:
@@ -416,7 +456,7 @@ def setup_feed_routes():
         limit: int = Query(50),
         offset: int = Query(0),
     ):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_READ_SCOPES)
         from core.database import SessionLocal, Article, Feed
         db = SessionLocal()
         try:
@@ -471,7 +511,7 @@ def setup_feed_routes():
 
     @router.put("/articles/{article_id}/read")
     def mark_read(article_id: str, data: dict, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
         from core.database import SessionLocal, Article
         db = SessionLocal()
         try:
@@ -486,7 +526,7 @@ def setup_feed_routes():
 
     @router.put("/articles/{article_id}/star")
     def toggle_star(article_id: str, data: dict, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
         from core.database import SessionLocal, Article
         db = SessionLocal()
         try:
@@ -501,7 +541,7 @@ def setup_feed_routes():
 
     @router.post("/articles/mark-all-read")
     def mark_all_read(data: dict, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
         feed_id = data.get("feed_id")
         from core.database import SessionLocal, Article
         db = SessionLocal()
@@ -521,7 +561,7 @@ def setup_feed_routes():
 
     @router.post("/articles/{article_id}/summarize")
     def summarize_article(article_id: str, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_READ_SCOPES)
         from core.database import SessionLocal, Article
         db = SessionLocal()
         try:
@@ -582,7 +622,7 @@ def setup_feed_routes():
 
     @router.post("/articles/{article_id}/full-content")
     def fetch_full_content(article_id: str, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_READ_SCOPES)
         from core.database import SessionLocal, Article
         db = SessionLocal()
         try:
@@ -615,7 +655,7 @@ def setup_feed_routes():
 
     @router.post("/opml/import")
     def import_opml(data: dict, request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
         opml_text = data.get("opml", "")
         if not opml_text:
             return {"ok": False, "error": "OPML content required"}
@@ -696,7 +736,7 @@ def setup_feed_routes():
 
     @router.get("/opml/export")
     def export_opml(request: Request):
-        owner = _get_owner(request)
+        owner = _scope_owner(request, FEEDS_READ_SCOPES)
         from core.database import SessionLocal, Feed
         from services.feed.opml import generate_opml
         db = SessionLocal()
@@ -739,6 +779,7 @@ def _refresh_single(feed_id: str, owner: Optional[str]):
         for a in db.query(Article.guid).filter(Article.feed_id == feed_id).all():
             if a.guid:
                 existing_guids.add(a.guid)
+        new_count = 0
         for entry in result["entries"]:
             if entry["guid"] in existing_guids:
                 continue
@@ -762,7 +803,14 @@ def _refresh_single(feed_id: str, owner: Optional[str]):
                 fetched_at=_utcnow(),
             )
             db.add(art)
+            new_count += 1
         db.commit()
+        if new_count > 0:
+            try:
+                from src.event_bus import fire_event
+                fire_event("article_fetched", owner)
+            except Exception:
+                logger.debug("article_fetched event dispatch failed", exc_info=True)
     except Exception as e:
         logger.error("Background refresh failed for feed %s: %s", feed_id, e)
     finally:

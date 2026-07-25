@@ -840,6 +840,12 @@ from routes.email_routes import setup_email_routes
 email_router = setup_email_routes()
 app.include_router(email_router)
 
+# RSS Feeds — mounted before Codex integration so codex_routes can borrow
+# this router the same way it borrows email/memory/calendar/document.
+from routes.feed_routes import setup_feed_routes
+feed_router = setup_feed_routes()
+app.include_router(feed_router)
+
 # Codex integration — HTTP surface for the Codex plugin/MCP bridge. Reuses
 # api_token scopes (todos:read|write, email:read|draft|send) so external
 # Codex sessions can only touch the data the user explicitly allowed. Mounted
@@ -851,6 +857,7 @@ app.include_router(setup_codex_routes(
     memory_router=memory_router,
     calendar_router=calendar_router,
     document_router=document_router,
+    feed_router=feed_router,
 ))
 app.include_router(setup_claude_routes())
 
@@ -863,10 +870,6 @@ app.include_router(setup_contacts_routes())
 
 from companion import setup_companion_routes
 app.include_router(setup_companion_routes())
-
-# RSS Feeds
-from routes.feed_routes import setup_feed_routes
-app.include_router(setup_feed_routes())
 
 # ========= ROUTES (kept in app.py) =========
 
