@@ -73,6 +73,15 @@ services:
       - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - SERPER_API_KEY=${SERPER_API_KEY:-}
+      # Ithaca hub tiles — live weather + n8n daily-digest (Obsidian) sources
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
+      - OPENWEATHER_LAT=${OPENWEATHER_LAT:-}
+      - OPENWEATHER_LON=${OPENWEATHER_LON:-}
+      - OPENWEATHER_UNITS=${OPENWEATHER_UNITS:-metric}
+      - OPENWEATHER_API_BASE=${OPENWEATHER_API_BASE:-}
+      - OBSIDIAN_API_URL=${OBSIDIAN_API_URL:-}
+      - OBSIDIAN_API_TOKEN=${OBSIDIAN_API_TOKEN:-}
+      - OBSIDIAN_DIGEST_DIR=${OBSIDIAN_DIGEST_DIR:-daily-digest}
       # PUID / PGID — the user/group the container drops to before
       # running uvicorn (entrypoint also chowns /app/data + /app/logs
       # to match, so bind-mounted files stay editable from the host).

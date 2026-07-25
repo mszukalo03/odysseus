@@ -29,6 +29,7 @@ ALLOWED_SCOPES = {
     "cookbook:launch",
     "feeds:read",
     "feeds:write",
+    "ithaca:read",
 }
 TOKEN_PROFILES = {
     "chat": ["chat"],

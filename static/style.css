@@ -42490,3 +42490,276 @@ body.neon-glow #sidebar {
   .compare-grid[data-cols] { grid-template-columns: 1fr !important; overflow-y: auto; }
   .compare-pane { min-height: 60dvh; }
 }
+
+/* ============================================================
+   Ithaca hub — fullscreen dashboard screen (static/js/ithaca.js)
+   A navigable screen (participates in history), not a floating
+   modal: it fills the area beside the icon rail / sidebar using
+   the live --icon-rail-w / --sidebar-w layout vars.
+   ============================================================ */
+
+.ithaca-screen {
+  display: none;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px));
+  z-index: 90; /* above the chat surface, below floating tool modals */
+  background: var(--bg, var(--panel));
+  flex-direction: column;
+  overflow: hidden;
+}
+.ithaca-screen-open { display: flex; }
+
+.ithaca-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+.ithaca-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.ithaca-header-sub {
+  font-size: 0.72rem;
+  opacity: 0.5;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.ithaca-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.ithaca-back-btn:hover { background: var(--input-bg, rgba(128, 128, 128, 0.12)); }
+
+.ithaca-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.ithaca-tile {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ithaca-tile-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ithaca-tile-title { font-size: 0.82rem; font-weight: 600; }
+.ithaca-tile-sub { font-size: 0.72rem; opacity: 0.55; }
+.ithaca-tile-refresh { opacity: 0.6; }
+.ithaca-tile-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px;
+}
+.ithaca-tile-hint {
+  font-size: 0.78rem;
+  opacity: 0.55;
+  padding: 6px 2px;
+  line-height: 1.45;
+}
+
+.ithaca-tile-empty {
+  border-style: dashed;
+  background: transparent;
+  align-items: center;
+  justify-content: center;
+}
+.ithaca-tile-empty-label {
+  font-size: 0.75rem;
+  opacity: 0.3;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* Tile A — weather */
+.ithaca-weather-now {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 2px 10px;
+}
+.ithaca-weather-now-icon { display: inline-flex; opacity: 0.85; }
+.ithaca-weather-now-temp { font-size: 1.9rem; font-weight: 600; line-height: 1; }
+.ithaca-weather-now-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.74rem;
+  opacity: 0.7;
+  min-width: 0;
+}
+.ithaca-weather-desc { text-transform: capitalize; font-weight: 600; opacity: 0.95; }
+.ithaca-hourly {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 6px 0 2px;
+  border-top: 1px solid var(--border);
+}
+.ithaca-hour {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 46px;
+  padding: 6px 2px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.ithaca-hour:hover { background: var(--input-bg, rgba(128, 128, 128, 0.1)); }
+.ithaca-hour-time { font-size: 0.66rem; opacity: 0.55; }
+.ithaca-hour-icon { display: inline-flex; opacity: 0.8; }
+.ithaca-hour-temp { font-size: 0.78rem; font-weight: 600; }
+.ithaca-hour-pop { font-size: 0.62rem; color: var(--accent-primary, #6ca0f6); }
+
+/* Tile B — software updates */
+.ithaca-updates-list { display: flex; flex-direction: column; }
+.ithaca-update-row {
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.ithaca-update-row:last-child { border-bottom: none; }
+.ithaca-update-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ithaca-app-link {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted transparent;
+}
+a.ithaca-app-link:hover { border-bottom-color: currentColor; }
+.ithaca-badge {
+  font-size: 0.62rem;
+  padding: 1.5px 7px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+.ithaca-badge-update {
+  opacity: 1;
+  color: var(--accent-primary, #6ca0f6);
+  border-color: currentColor;
+}
+.ithaca-host-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.8;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: var(--mono-font, monospace);
+}
+.ithaca-host-link:hover { opacity: 1; background: var(--input-bg, rgba(128, 128, 128, 0.12)); }
+.ithaca-host-plain {
+  font-size: 0.72rem;
+  opacity: 0.5;
+  font-family: var(--mono-font, monospace);
+  flex-shrink: 0;
+}
+.ithaca-update-version { font-size: 0.7rem; opacity: 0.6; margin-top: 3px; }
+.ithaca-update-desc { font-size: 0.74rem; opacity: 0.8; margin-top: 3px; line-height: 1.45; }
+.ithaca-updates-note { font-size: 0.72rem; opacity: 0.55; padding-top: 8px; }
+
+/* SSH-open modal (deployed-on link) */
+.ithaca-ssh-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 240; /* above the hub and floating tools */
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ithaca-ssh-modal {
+  width: min(640px, 92vw);
+  max-height: 76vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+.ithaca-ssh-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: var(--mono-font, monospace);
+}
+.ithaca-ssh-output {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  background: var(--code-bg, transparent);
+  color: var(--code-fg, inherit);
+  white-space: pre;
+}
+
+/* Responsive: 3×3 → 2-col → 1-col; tiles get a natural min height once the
+   grid can scroll. The screen spans the full viewport on phones (no rail). */
+@media (max-width: 1100px) {
+  .ithaca-grid { grid-template-columns: repeat(2, 1fr); grid-auto-rows: minmax(230px, auto); }
+}
+@media (max-width: 768px) {
+  .ithaca-screen { left: 0; z-index: 175; }
+  .ithaca-grid { grid-template-columns: 1fr; grid-auto-rows: minmax(200px, auto); padding: 10px; }
+  .ithaca-tile-empty { min-height: 90px; }
+}

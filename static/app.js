@@ -26,6 +26,7 @@ import tasksModule from './js/tasks.js?v=20260723tasksbulkfeedback1';
 import calendarModule from './js/calendar.js';
 import notesModule from './js/notes.js';
 import feedReaderModule from './js/feedReader.js';
+import ithacaModule from './js/ithaca.js';
 import adminModule from './js/admin.js?v=20260716openrouter3';
 import settingsModule from './js/settings.js?v=20260722emailfastindex1';
 // Eagerly bind unified minimize/restore behavior across all tool modals.
@@ -163,6 +164,7 @@ function initRailHoverLabels() {
     'rail-delete-session': 'Delete',
     'rail-chats': 'Chat',
     'rail-documents': 'Docs',
+    'rail-ithaca': 'Ithaca',
     'rail-calendar': 'Calendar',
     'rail-compare': 'Compare',
     'rail-cookbook': 'Cookbook',
@@ -1238,6 +1240,7 @@ function initializeEventListeners() {
       setTimeout(_goFullscreen, 50);
       setTimeout(_goFullscreen, 200);
     },
+    '/ithaca':   () => ithacaModule && ithacaModule.openScreen({ fromRoute: true }),
     '/feeds':    () => document.getElementById('tool-rss-btn')?.click(),
     '/memory':   () => document.getElementById('tool-memory-btn')?.click(),
     '/gallery':  () => document.getElementById('tool-gallery-btn')?.click(),
@@ -1251,6 +1254,15 @@ function initializeEventListeners() {
   // still being wired up further down in this same function. Stash the
   // opener so it runs from sessionModule.loadSessions().finally() below.
   if (_opener) window._odysseusRouteOpener = _opener;
+
+  // Ithaca hub — fullscreen dashboard screen (toggles so the sidebar/rail
+  // button doubles as the way back to the chat).
+  const toolIthacaBtn = el('tool-ithaca-btn');
+  if (toolIthacaBtn) {
+    toolIthacaBtn.addEventListener('click', () => {
+      if (ithacaModule) ithacaModule.toggleScreen();
+    });
+  }
 
   // Archive browser tool button
   const toolLibraryBtn = el('tool-library-btn');
@@ -3806,6 +3818,7 @@ function startOdysseusApp() {
 
   // Rail tool buttons — delegate to sidebar tool buttons
   const _railToolMap = {
+    'rail-ithaca':    'tool-ithaca-btn',
     'rail-compare':   'tool-compare-btn',
     'rail-research':  'tool-research-btn',
     'rail-cookbook':   'tool-cookbook-btn',

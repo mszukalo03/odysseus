@@ -846,6 +846,10 @@ from routes.feed_routes import setup_feed_routes
 feed_router = setup_feed_routes()
 app.include_router(feed_router)
 
+# Ithaca hub — dashboard tiles (live weather + n8n daily-digest frontend)
+from routes.ithaca_routes import setup_ithaca_routes
+app.include_router(setup_ithaca_routes())
+
 # Codex integration — HTTP surface for the Codex plugin/MCP bridge. Reuses
 # api_token scopes (todos:read|write, email:read|draft|send) so external
 # Codex sessions can only touch the data the user explicitly allowed. Mounted
@@ -919,6 +923,10 @@ async def serve_tasks(request: Request):
 
 @app.get("/library")
 async def serve_library(request: Request):
+    return await serve_index(request)
+
+@app.get("/ithaca")
+async def serve_ithaca(request: Request):
     return await serve_index(request)
 
 @app.get("/backgrounds")

@@ -119,3 +119,14 @@
 3. `_onFeedListReordered` infers each feed's new group from the nearest preceding group header in final DOM order, diffs against in-memory state, and persists via `PUT /api/feeds/{id}` (`group_id` + `sort_order`) — same per-feed-call pattern as batch move
 4. Built on the shared `dragSortModule` (`static/js/dragSort.js`), also used by Models/Sessions/Gallery — no changes to that shared module were needed
 5. Collapsed groups can't receive a dropped feed (no rendered drop space) — must expand first
+
+## Ithaca Hub (dashboard homepage)
+
+**A fullscreen, navigable dashboard screen — frontend for the external n8n "Monday" digest workflow** (`static/js/ithaca.js`, `routes/ithaca_routes.py`)
+1. Open via the "Ithaca" sidebar entry (top of sidebar), the temple rail button, or the `/ithaca` deep link — a real history entry, so browser Back returns to the chat (popstate keeps screen ↔ URL in sync); Esc or the header "Chat" button also closes it
+2. Opening collapses the wide sidebar to the icon rail (same pattern as /email, /notes); closing restores it via `window._restoreSidebarIfRouteCollapsed`
+3. Static 3×3 tile grid, letter-addressed slots A–I (future: user-defined tiles, rearrange/resize in-app):
+   - **Tile A — Weather**: live OpenWeatherMap current + 3-hourly forecast via `/api/ithaca/weather` (backend proxy, 10-min cache; auto-refreshes every 10 min while open). NOT the digest's weather section.
+   - **Tile B — Software Updates**: the digest's markdown table parsed server-side (`/api/ithaca/digest` reads the latest `*-digest.md` from the Obsidian Local REST API — the same file the n8n workflow PATCHes). App titles link to the git repo; the hosted-on chip runs the admin-only ssh-open action (`POST /api/ithaca/ssh/open`) showing a remote `ls -la` of the app's deploy path in a modal. Per-app repo/ssh mapping lives in `data/ithaca.json` (defaults cover the workflow's six projects).
+   - **Tiles C–I**: reserved placeholders.
+4. Env: OPENWEATHER_API_KEY/LAT/LON/UNITS, OBSIDIAN_API_URL/TOKEN, OBSIDIAN_DIGEST_DIR (see .env.example). `ithaca:read` token scope gates bearer access.
