@@ -181,6 +181,8 @@ _TIMEOUT_EXEMPT_PREFIXES = (
     "/api/upload",          # large files
     "/api/image",           # diffusion proxies (inpaint/harmonize/upscale/etc.) — own 120s httpx timeout
     "/api/memory/audit",    # retains own 120s LLM inactivity timeout
+    "/api/feeds/articles",  # AI summary / full-content are one-shot LLM calls, not streaming
+    "/api/feeds/groups",    # group AI summary — same as above
 )
 
 
@@ -861,6 +863,10 @@ app.include_router(setup_contacts_routes())
 
 from companion import setup_companion_routes
 app.include_router(setup_companion_routes())
+
+# RSS Feeds
+from routes.feed_routes import setup_feed_routes
+app.include_router(setup_feed_routes())
 
 # ========= ROUTES (kept in app.py) =========
 

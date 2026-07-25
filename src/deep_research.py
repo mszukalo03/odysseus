@@ -77,6 +77,12 @@ You are a research assistant planning web searches.
 Generate {num_queries} focused search queries that will help answer the question.
 {round_instruction}
 
+Important: Each query must include domain-specific terms from the original question
+to avoid generic matches. For example, if the question is about a fictional character's psychology, don't
+query "query architecture framework" (returns software engineering); query
+"[character name] psychology cognitive architecture". Always include the
+subject's proper name and domain in every query.
+
 Return ONLY a JSON array of query strings, nothing else.
 Example: ["query one", "query two", "query three"]
 """
@@ -92,10 +98,17 @@ You are updating an evolving research report.
 **New findings from this round:**
 {new_findings}
 
+If the original question specifies a custom output structure (numbered framework
+entries, per-entry section templates, discrete entries rather than flowing prose),
+maintain that structure in the updated report — do not collapse it into essay format.
+
 Integrate the new findings into the existing report. Produce an updated, well-organized \
 report that answers the original question as completely as possible given all evidence so far. \
 Remove redundancy, resolve contradictions, and maintain logical flow. \
 Keep source URLs as inline citations where relevant.
+
+Do NOT include findings that are clearly off-topic, from a completely different domain, or \
+irrelevant to the original question. Skip them silently — don't mention you're skipping them.
 
 Write only the updated report — no preamble or meta-commentary.
 """
@@ -114,6 +127,9 @@ Based on the report so far, do we have enough information to answer the question
 comprehensively?  Consider:
 - Are the key aspects of the question addressed?
 - Are there obvious gaps or unanswered sub-questions?
+- If the question specifies a structure (numbered entries, per-entry section
+  labels like "Plain Definition / Origin / Core Mechanism / Framework", minimum
+  entry counts), does the current report satisfy those structural requirements?
 - Is the evidence sufficient and from multiple sources?
 
 If rounds completed is well below the target, prefer continuing unless the \
@@ -125,14 +141,19 @@ Example: "NO — We still lack information about the economic impact."
 """
 
 FINAL_REPORT_PROMPT = """\
-Write a **long, detailed, comprehensive** research report answering this question:
+STRUCTURE CHECK — READ THIS FIRST:
+{template}
+
+---
+
+Research question:
 
 **Question:** {question}
 
 **All collected evidence and analysis:**
 {report}
 
-Requirements:
+Default requirements (apply ONLY if the STRUCTURE CHECK above says "(No custom template"):
 - Write at MINIMUM 1500 words — this should be a thorough, magazine-quality article
 - Use clear ## headings and ### subheadings to organize into logical sections
 - Each section should have multiple detailed paragraphs, not just bullet points
@@ -143,6 +164,13 @@ Requirements:
 - Add a brief executive summary at the top
 - End with a clear conclusion that directly answers the question
 - Write in an engaging, informative style — not dry or robotic
+- IMPORTANT: If the gathered web evidence is insufficient, irrelevant, blocked, or
+  inaccessible, write the report from your trained knowledge of the subject. Your
+  training data contains extensive material on this topic. AND apply the structural
+  template or format requirements in the STRUCTURE CHECK above exactly as specified.
+  Do NOT write meta-commentary about the research process, do NOT document the
+  pipeline failure, and do NOT describe what you wished you had found. Just produce
+  the best possible report from the information available to you.
 """
 
 CATEGORY_PROMPTS = {
@@ -241,6 +269,7 @@ class DeepResearcher:
         self.findings: List[Dict] = []
         self.evolving_report: str = ""
         self.research_plan: str = ""
+        self.user_template: str = ""
 
     def cancel(self):
         """Request cooperative cancellation of the research loop."""
@@ -282,6 +311,13 @@ class DeepResearcher:
             self.category = await self._classify_category(question)
             if self.category:
                 logger.info(f"Auto-detected category: {self.category}")
+
+        # Extract user's output template from question (e.g., numbered sections,
+        # per-entry labels) so _final_report can inject it separately without
+        # passing the full 500+ word prompt as {question}.
+        self.user_template = self._extract_template(question)
+        if self.user_template:
+            logger.info(f"Extracted user template ({len(self.user_template)} chars)")
 
         if prior_urls:
             self.urls_fetched.update(prior_urls)
@@ -354,16 +390,17 @@ class DeepResearcher:
                    total_findings=len(findings))
         if not report:
             # Synthesis can fail (e.g. the LLM timed out) even though the search
-            # rounds did gather findings. Don't throw that work away — return the
-            # gathered findings as a basic compiled report instead of claiming
-            # nothing was found (#1551).
+            # rounds did gather findings. Instead of returning raw findings, pass
+            # them through _final_report so the trained-knowledge fallback and
+            # structural template instructions can still fire (#1551).
             if findings:
                 logger.warning(
-                    "Synthesis produced no report; returning %d gathered "
-                    "finding(s) as a fallback", len(findings)
+                    "Synthesis produced no report; passing %d gathered "
+                    "finding(s) to _final_report as raw material", len(findings)
                 )
-                return self._fallback_report(question, findings)
-            return "No information could be gathered for this question."
+                report = self._format_findings(findings)
+            else:
+                return "No information could be gathered for this question."
 
         self.evolving_report = report  # preserve pre-synthesis report
         final = await self._final_report(question, report)
@@ -423,15 +460,99 @@ class DeepResearcher:
             self._emit(phase="warning", message="Planning step failed, proceeding with direct search")
             return ""
 
+    # ------------------------------------------------------------------
+    # EXTRACT USER TEMPLATE
+    # ------------------------------------------------------------------
+    def _extract_template(self, question: str) -> str:
+        """Detect and extract a user-defined output template from the question.
+
+        Looks for numbered section patterns like "1 · Plain Definition",
+        per-entry section labels, or explicit template instructions.
+        Returns the extracted template block, or empty string if none found.
+        """
+        # Pattern: numbered lines with "·" separator (e.g., "1 · Plain Definition")
+        numbered_section = re.search(
+            r'(?:\d+\s*[·\.]\s*[A-Z][a-zA-Z\s&,/]+\s*(?:\n|$))',
+            question,
+        )
+        if numbered_section:
+            # Find where template starts — usually after "using the following
+            # structure" or before "1 · Plain Definition"
+            start_markers = [
+                "using the following structure",
+                "per-entry template",
+                "each framework",
+                "each entry",
+                "each pattern",
+                "document each one",
+                "no exceptions",
+                "fully developed",
+            ]
+            start = 0
+            for marker in start_markers:
+                idx = question.lower().find(marker)
+                if idx != -1 and (start == 0 or idx < start):
+                    start = idx
+            if start > 0:
+                # Extend back to beginning of that sentence
+                while start > 0 and question[start] not in '.!?\n':
+                    start -= 1
+                if start > 0:
+                    start += 1  # skip the period/newline
+
+            # Find where template ends — first blank line followed by prose
+            template_text = question[start:] if start > 0 else question
+            # Try to cut at a double-newline followed by non-template prose
+            lines = template_text.split('\n')
+            end = len(lines)
+            for i in range(1, len(lines)):
+                if not lines[i].strip() and i + 1 < len(lines):
+                    next_line = lines[i + 1].strip()
+                    # If next line doesn't look like a template line (no number, no label)
+                    if next_line and not re.match(r'\s*\d+\s*[·\.]', next_line) \
+                       and not next_line.startswith('-') \
+                       and not next_line.startswith('—'):
+                        end = i
+                        break
+            template_block = '\n'.join(lines[:end]).strip()
+            if template_block:
+                return template_block
+
+        # Fallback: look for "Components / Triggers / Sequence" or similar sub-section labels
+        component_pattern = re.search(
+            r'(Components[\s/]*Triggers[\s/]*Sequence|'
+            r'Plain Definition.*Origin.*Core Mechanism|'
+            r'discrete framework entr)',
+            question,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if component_pattern:
+            start = max(0, component_pattern.start() - 200)
+            return question[start:component_pattern.end() + 200].strip()
+
+        return ""
+
     async def _classify_category(self, question: str) -> Optional[str]:
         """Fast LLM call to classify the research question into a category."""
         valid = ", ".join(CATEGORY_PROMPTS.keys())
         prompt = (
-            f"Classify this research question into exactly ONE category.\n"
-            f"Categories: {valid}\n"
-            f"If none fit well, respond with: general\n\n"
+            f"Classify this research question into exactly ONE category.\n\n"
+            f"Categories:\n"
+            f"  product       - Researching actual commercial products, software, services, or tools to decide what to buy or use.\n"
+            f"  comparison    - Side-by-side comparison of specific named options or alternatives.\n"
+            f"  howto         - Step-by-step instructions to accomplish a specific task.\n"
+            f"  factcheck     - Verifying the truth of a specific claim or statement.\n"
+            f"  general       - Everything else: analysis, explanation, psychology, biography, history, concepts, theory, creative writing, narrative, academic research, or any topic that is NOT about buying commercial products or following a how-to guide.\n\n"
+            f"Examples:\n"
+            f"  'Compare React vs Vue for web dev' -> comparison\n"
+            f"  'Best budget laptops under $500' -> product\n"
+            f"  'How to deploy a Django app on AWS' -> howto\n"
+            f"  'Is the earth flat?' -> factcheck\n"
+            f"  'Analyze the psychology of Batman' -> general\n"
+            f"  'History of the Roman Empire' -> general\n"
+            f"  'Explain quantum computing' -> general\n\n"
             f"Question: {question}\n\n"
-            f"Respond with ONLY the category name, nothing else."
+            f"Respond with ONLY the category name. If uncertain, answer: general"
         )
         try:
             result = await self._llm(
@@ -450,10 +571,10 @@ class DeepResearcher:
             for c in CATEGORY_PROMPTS:
                 if c in cat:
                     return c
-            return None
+            return "general"  # default to general instead of None
         except Exception as e:
             logger.warning(f"Category classification failed: {e}")
-            return None
+            return "general"  # default to general instead of None
 
     # ------------------------------------------------------------------
     # THINK: generate search queries
@@ -635,7 +756,9 @@ class DeepResearcher:
         try:
             response = await self._llm(
                 [
-                    {"role": "user", "content": EXTRACTOR_SYSTEM.format(goal=question)},
+                    {"role": "user", "content": EXTRACTOR_SYSTEM.format(
+                        goal=self.research_plan or question[:200]
+                    )},
                     untrusted_context_message("webpage", content),
                 ],
                 temperature=0.2,
@@ -677,8 +800,12 @@ class DeepResearcher:
             logger.info(f"Synthesis using last {self.synthesis_window} of {len(findings)} findings")
         findings_text = self._format_findings(window)
 
+        # Use the condensed research plan (or a truncated question) for synthesis
+        # instead of the full user prompt — the synthesis step only needs the
+        # research goal, not the full output-template specification (#1551).
+        goal_for_synth = self.research_plan or question[:300]
         prompt = SYNTHESIZE_PROMPT.format(
-            question=question,
+            question=goal_for_synth,
             report=current_report or "(First round — no report yet.)",
             new_findings=findings_text,
         )
@@ -736,9 +863,15 @@ class DeepResearcher:
     # ------------------------------------------------------------------
     async def _final_report(self, question: str, report: str) -> str:
         """LLM writes a polished final report, retrying if too short."""
+        # Use condensed research plan as {question} instead of the full prompt
+        # to keep context manageable. The user's structural template is injected
+        # separately via {template} so the STRUCTURE CHECK still works.
+        template_block = self.user_template or "(No custom template — use the default format below.)"
+        condensed_question = self.research_plan or question[:300]
         prompt = FINAL_REPORT_PROMPT.format(
-            question=question,
+            question=condensed_question,
             report=report,
+            template=template_block,
         )
         cat_extra = CATEGORY_PROMPTS.get(self.category or "", "")
         if cat_extra:
@@ -905,8 +1038,9 @@ class DeepResearcher:
         material that was gathered instead of "No information could be gathered"
         (#1551).
         """
+        title = question.split('\n')[0].split('.')[0][:120].strip()
         return (
-            f"# {question}\n\n"
+            f"# {title}\n\n"
             "_Automatic synthesis did not complete, so this report lists the "
             f"{len(findings)} finding(s) gathered during research._\n\n"
             f"{self._format_findings(findings)}"

@@ -7,9 +7,9 @@ from fastapi import APIRouter, Request
 
 import time
 
-from services.search import get_search_config, comprehensive_web_search, PROVIDER_INFO
+from services.search import get_search_config, comprehensive_web_search
 from services.search.core import _call_provider
-from services.search.providers import _get_provider_key, _get_search_instance
+from services.search.providers import PROVIDER_REGISTRY, PROVIDER_FUNCTIONS, _get_provider_key, _get_search_instance, PROVIDER_INFO
 
 logger = logging.getLogger(__name__)
 
@@ -69,18 +69,23 @@ def setup_search_routes(config) -> APIRouter:
     async def list_search_providers():
         """Return available search providers with config status."""
         providers = []
-        for pid, (label, needs_key, needs_url) in PROVIDER_INFO.items():
+        for pid, info in PROVIDER_REGISTRY.items():
             if pid == "disabled":
                 continue
             available = True
-            if needs_key and not _get_provider_key(pid):
+            if info.needs_key and not _get_provider_key(pid):
                 available = False
-            if needs_url and pid == "searxng" and not _get_search_instance():
+            if info.needs_url and not _get_search_instance():
                 available = False
             providers.append({
                 "id": pid,
-                "label": label,
+                "label": info.label,
                 "available": available,
+                "needs_key": info.needs_key,
+                "needs_url": info.needs_url,
+                "hint": info.hint,
+                "key_setting": info.key_setting,
+                "has_additional": info.has_additional,
             })
         return providers
 
@@ -96,7 +101,7 @@ def setup_search_routes(config) -> APIRouter:
             count = 10
         if not query:
             return {"results": [], "provider": provider, "error": "query is required"}
-        if provider not in PROVIDER_INFO or provider == "disabled":
+        if provider not in PROVIDER_FUNCTIONS:
             return {"results": [], "provider": provider, "error": "Unknown provider"}
         t0 = time.time()
         try:

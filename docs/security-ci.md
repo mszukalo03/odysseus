@@ -89,9 +89,15 @@ let the workflows run on one pull request first, then add them here.
 2. Turn on **Dependency graph** (usually on by default for public repos) -- this
    powers Dependency review and Dependabot.
 3. Turn on **Dependabot alerts** and **Dependabot security updates**.
-4. Under **Code scanning**, keep **Default setup** disabled. CodeQL is
-   configured by `.github/workflows/codeql.yml`; enabling default setup at the
-   same time causes GitHub to reject uploads from the checked-in workflow.
+4. Under **Code scanning**, keep **Default setup** disabled. CodeQL is configured
+   through `.github/workflows/codeql.yml`; enabling default setup at the same time
+   causes GitHub to reject uploads from the checked-in workflow.
+
+   If you need to use GitHub's dynamic CodeQL workflows instead, disable your
+   checked-in `codeql.yml` first and enable **Default** under Code scanning. This
+   avoids fork-token limitations that affect checked-in advanced workflows. Do not
+   run both simultaneously: GitHub rejects when default setup is active alongside a
+   custom workflow file.
 
 ## Keeping it current
 

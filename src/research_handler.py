@@ -729,8 +729,8 @@ class ResearchHandler:
                 temperature=0,
                 max_tokens=5,
                 headers=headers,
-                timeout=15,
-                max_retries=1,
+                timeout=60,
+                max_retries=2,
             )
             logger.info(f"Endpoint probe OK: {model}")
         except Exception as e:

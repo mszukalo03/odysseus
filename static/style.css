@@ -539,6 +539,8 @@ body.bg-pattern-sparkles {
       height: 24px;
       border-radius: 50%;
       background: color-mix(in srgb, var(--fg) 12%, transparent);
+      background-size: cover;
+      background-position: center;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -649,11 +651,37 @@ body.bg-pattern-sparkles {
     #sessions-section {
       margin-top: -1px;
     }
-    #tools-section {
+    #ai-tools-section, #personal-section, #appearance-section {
       margin-top: 1px;
     }
-    #tools-section .list-item {
+    #ai-tools-section .list-item, #personal-section .list-item, #appearance-section .list-item {
       padding: 8px 8px;
+    }
+    /* Email is nested inside #personal-section (see index.html) so it collapses
+       along with the rest of Personal, but keeps its own header row (compose
+       button, unread dot, click-to-open-inbox) unchanged — section-management.js
+       still special-cases #email-section by id and skips adding a chevron to it. */
+    #personal-section #email-section {
+      margin-bottom: 2px;
+    }
+    /* Visually ties Email/Calendar/Notes/Tasks/RSS to the "Personal" header
+       above them — previously they sat flush with it, same indent as the
+       header itself, reading as peer categories instead of its children. */
+    #personal-section .section-nested-group {
+      margin-left: 9px;
+      padding-left: 7px;
+      border-left: 1px solid var(--border);
+    }
+    /* Email's own header uses the same bold/uppercase/letter-spaced treatment
+       as real top-level section titles (Personal, Appearance, ...), which —
+       combined with sitting at the same indent — made it read as a sibling
+       category rather than a child of Personal. Nested here, so tone it down
+       to plain title-case, matching a .list-item label instead of a header. */
+    #personal-section .section-nested-group #email-section .section-header-flex .section-title {
+      text-transform: none;
+      font-weight: 600;
+      letter-spacing: normal;
+      font-size: 13px;
     }
     .sidebar.right-side .sidebar-header {
       justify-content: flex-start;
@@ -1233,17 +1261,23 @@ body.bg-pattern-sparkles {
     .section-header-flex::after { content: none; }
     .section-header-flex h4::before { content: none; }
 
-    /* Section title text — same font as .list-item .grow */
+    /* Section title text — previously identical to .list-item .grow (same
+       size/weight/color), which made section headers hard to visually
+       separate from the items under them when scanning the sidebar. Bumped
+       to bold + uppercase + letter-spaced — the same treatment already used
+       for .theme-adv-group-label elsewhere in this file (reusing its exact
+       0.04em letter-spacing value, not a new one) — so headers read as
+       headers regardless of theme/font. */
     .section-header-flex h4,
     .section-header-flex .section-title {
       flex: 1; cursor: pointer; user-select: none;
       display: flex; align-items: center; gap: 6px;
       margin: 0; padding: 0; border: none;
-      font-size: 10px; font-weight: 400; font-family: inherit;
+      font-size: 10px; font-weight: 700; font-family: inherit;
       /* 1.3 (not 1) so Fira Code's tall glyph box isn't vertically clipped in
          Chromium/Edge — mirrors the .list-item fix. The title is flex-centred
          in a fixed-height (29px) header, so this adds headroom without reflow. */
-      line-height: 1.3; letter-spacing: 0; text-transform: none;
+      line-height: 1.3; letter-spacing: 0.04em; text-transform: uppercase;
       color: var(--fg);
     }
     .section-icon,
@@ -2041,22 +2075,23 @@ body.bg-pattern-sparkles {
     }
     #welcome-screen .welcome-sub {
       font-size:0.85rem;
-      color:color-mix(in srgb, var(--fg) 60%, transparent);
-      opacity:0.6;
+      color:color-mix(in srgb, var(--fg) 65%, transparent);
+      text-shadow: 0 0 6px var(--bg), 0 0 14px var(--bg);
       line-height:1.5;
       max-width:300px;
     }
     #welcome-screen .welcome-version {
       font-size:0.7rem;
-      opacity:0.25;
+      color:color-mix(in srgb, var(--fg) 45%, transparent);
+      text-shadow: 0 0 6px var(--bg), 0 0 14px var(--bg);
       margin-top:12px;
       pointer-events:none;
       user-select:none;
     }
     #welcome-screen .welcome-tip {
       font-size:0.75rem;
-      color:var(--fg);
-      opacity:0.2;
+      color:color-mix(in srgb, var(--fg) 55%, transparent);
+      text-shadow: 0 0 6px var(--bg), 0 0 14px var(--bg);
       margin-top:24px;
       max-width:320px;
       line-height:1.4;
@@ -2156,7 +2191,7 @@ body.bg-pattern-sparkles {
       animation: msg-enter 0.3s ease-out both;
     }
     .msg-user {
-      align-items: flex-end;
+      align-items: flex-start;
       margin-left: auto;
       margin-right: 8px;
       background: var(--user-bubble-bg, color-mix(in srgb, var(--fg) 8%, var(--bg)));
@@ -2207,7 +2242,8 @@ body.bg-pattern-sparkles {
       background: var(--model-dot, color-mix(in srgb, var(--fg) 30%, transparent));
       flex-shrink: 0;
     }
-    .msg .role.has-logo::before { display: none; }
+    .msg .role.has-logo::before,
+    .msg .role.has-avatar::before { display: none; }
     .role-provider-logo { display: inline-flex; align-items: center; flex-shrink: 0; }
     .role-provider-logo svg { width: 12px; height: 12px; }
     .msg-user .role {
@@ -2215,6 +2251,22 @@ body.bg-pattern-sparkles {
     }
     .msg-user .role::before {
       background: color-mix(in srgb, var(--fg) 40%, transparent);
+    }
+    .msg-user-avatar {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--fg) 14%, transparent);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--fg);
+      flex-shrink: 0;
+      background-size: cover;
+      background-position: center;
+      overflow: hidden;
     }
     .msg .body {
       width: 100%;
@@ -2528,7 +2580,10 @@ body.bg-pattern-sparkles {
 	      position: absolute;
 	      top: 0;
 	      right: 0;
-	      z-index: 250;
+	      /* Only needs to clear its own unpositioned siblings (textarea, ghost
+	         overlay) — 250 put it above the Notes/RSS/Email-style pane backdrops
+	         (z-index: 200), so it visually floated over those modals. */
+	      z-index: 2;
       transform-origin: top right;
 	      transition: opacity 0.22s ease, transform 0.22s ease;
 	      will-change: opacity, transform;
@@ -13160,6 +13215,11 @@ textarea.memory-add-input {
 }
 .doc-action-icon-btn:hover {
   opacity: 1;
+}
+.doc-action-icon-btn:disabled {
+  opacity: 0.12;
+  cursor: default;
+  pointer-events: none;
 }
 /* The "T" icon stays centered in the fixed-size button so it grows
    symmetrically (from the center) instead of jumping around as the size
@@ -32330,6 +32390,286 @@ body.doc-find-active mark.doc-find-mark.current {
 }
 @keyframes email-spin { to { transform: rotate(360deg); } }
 
+/* ============================================================
+   Email 3-pane layout (folder sidebar / message list / reading pane)
+   Lives inside the existing #email-lib-modal draggable window frame —
+   no new window chrome, only the content layout below .admin-card.
+   Reuses .list-item/.section-header-flex (same as the main app sidebar)
+   for the folder list, and .email-tag* pills for reading-pane badges.
+   ============================================================ */
+.email-3pane {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.email-pane-folders {
+  width: 190px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-right: 1px solid var(--border);
+  padding: 6px;
+  box-sizing: border-box;
+  transition: width 0.15s ease, padding 0.15s ease;
+}
+.email-3pane.email-folders-collapsed .email-pane-folders {
+  /* !important: beats the inline width the drag-resize handle (emailLibrary.js)
+     may have set from a saved custom width — collapse must always win. */
+  width: 0 !important;
+  padding-left: 0;
+  padding-right: 0;
+  border-right: none;
+}
+/* Thin draggable dividers between panes — desktop only (hidden on the
+   mobile single-pane stack below). Widening the hit area past the visible
+   1px border via a wider flex-basis makes it actually grabbable. */
+.email-pane-resize-handle {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  position: relative;
+  background: transparent;
+}
+.email-pane-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: 2px;
+  width: 1px;
+  background: transparent;
+}
+.email-pane-resize-handle:hover::after,
+.email-pane-resize-handle.dragging::after {
+  background: var(--accent, var(--red));
+}
+.email-3pane.email-folders-collapsed #email-resize-folders {
+  display: none;
+}
+.email-lib-folders-toggle svg {
+  transition: transform 0.15s ease;
+}
+.email-3pane.email-folders-collapsed .email-lib-folders-toggle svg {
+  transform: rotate(180deg);
+}
+.email-pane-folders .section {
+  margin-top: 4px;
+}
+.email-pane-folders .list-item {
+  cursor: pointer;
+  gap: 8px;
+}
+.email-folder-badge {
+  flex-shrink: 0;
+  min-width: 16px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+  background: var(--red);
+  color: var(--bg);
+}
+.email-pane-list {
+  flex: 1 1 380px;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  padding: 6px 10px 0;
+  box-sizing: border-box;
+}
+.email-list-toolbar,
+.email-list-subtoolbar {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.email-list-subtoolbar {
+  padding-top: 0;
+  opacity: 0.7;
+  font-size: 10px;
+}
+.email-row-list {
+  flex: 1;
+  overflow-y: auto;
+}
+.email-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 6%, transparent);
+  transition: background 0.1s;
+}
+.email-row:hover {
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.email-row.active {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+.email-row-avatar {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+}
+.email-row-body {
+  flex: 1;
+  min-width: 0;
+}
+.email-row-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.email-row-sender {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.email-row.unread .email-row-sender {
+  font-weight: 700;
+}
+.email-row-date {
+  flex-shrink: 0;
+  font-size: 10px;
+  opacity: 0.5;
+}
+.email-row-subject {
+  font-size: 11px;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.email-row-indicator {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-top: 6px;
+  background: var(--accent, var(--red));
+  opacity: 0;
+}
+.email-row.unread .email-row-indicator {
+  opacity: 1;
+}
+.email-pane-reader-wrap {
+  flex: 1 1 480px;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.email-pane-reader {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 18px;
+  box-sizing: border-box;
+}
+.email-pane-mobile-back {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary, var(--text));
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 8px 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.email-pane-mobile-back:hover {
+  color: var(--accent, var(--red));
+}
+.email-pane-reader-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.4;
+  font-size: 12px;
+}
+.email-reader-subject-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.email-reader-subject {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.email-reader-subject-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 4px;
+}
+.email-reader-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+@media (max-width: 768px) {
+  /* 3 columns don't fit a phone screen — collapse to a single visible pane
+     at a time (folders -> list -> reader), matching the same show/hide
+     philosophy the old card-expansion mobile view already used. */
+  .email-3pane {
+    position: relative;
+  }
+  .email-pane-folders,
+  .email-pane-list,
+  .email-pane-reader-wrap {
+    display: none;
+    /* !important: desktop drag-resize (emailLibrary.js) sets inline
+       width/flex on these same elements, which would otherwise beat this
+       media query and leave a resized pane's width stuck on mobile. */
+    width: 100% !important;
+    flex: 1 1 auto !important;
+    border-right: none;
+  }
+  .email-3pane.email-mobile-show-folders .email-pane-folders,
+  .email-3pane.email-mobile-show-list .email-pane-list,
+  .email-3pane.email-mobile-show-reader .email-pane-reader-wrap {
+    display: flex;
+    flex-direction: column;
+  }
+  .email-3pane.email-mobile-show-list #email-lib-back-to-folders,
+  .email-3pane.email-mobile-show-reader #email-lib-back-to-list {
+    display: flex;
+  }
+  .email-pane-resize-handle,
+  .email-lib-folders-toggle {
+    display: none !important;
+  }
+  /* The desktop 10px side margin (added so the toolbar row isn't flush
+     against the pane border) is too much on a narrow phone screen — at
+     this width the list pane IS the whole visible width, and 20px total
+     was enough to push the Select/refresh buttons off the edge. */
+  .email-pane-list {
+    padding: 6px 4px 0;
+  }
+}
+
 /* Email section doesn't collapse — hide the auto-injected chevron */
 #email-section .section-collapse-btn { display: none !important; }
 
@@ -40304,6 +40644,30 @@ body.theme-frosted .modal {
   background: color-mix(in srgb, #000 12%, transparent) !important;
 }
 
+/* ─── Neon border glow ────────────────────────────────────────────
+ *  Enabled via theme toggle (writes `body.neon-glow`). Applies a
+ *  pulsing box-shadow glow on bordered elements using --border color.
+ *  ───────────────────────────────────────────────────────────────── */
+@keyframes neon-glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 4px color-mix(in srgb, var(--border) 50%, transparent),
+                0 0 10px color-mix(in srgb, var(--border) 25%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 8px color-mix(in srgb, var(--border) 70%, transparent),
+                0 0 18px color-mix(in srgb, var(--border) 40%, transparent),
+                0 0 28px color-mix(in srgb, var(--border) 15%, transparent);
+  }
+}
+body.neon-glow .msg-user,
+body.neon-glow .msg-ai,
+body.neon-glow .chat-input-area,
+body.neon-glow .admin-card,
+body.neon-glow .modal-content,
+body.neon-glow #sidebar {
+  animation: neon-glow-pulse 3s ease-in-out infinite;
+}
+
 /* Mobile only: lift the Dependencies "Server" dropdown's selected text up ~2px. */
 @media (max-width: 768px) {
   #hwfit-deps-server { padding-bottom: 4px; line-height: 1; }
@@ -40975,6 +41339,1002 @@ body.theme-frosted .modal {
     padding-left: 10px;
     padding-right: 10px;
   }
+}
+
+/* ─── RSS Feed Reader ───────────────────────────── */
+
+.rss-pane-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: none;
+  animation: rss-backdrop-fade-in 180ms ease both;
+}
+.rss-pane-backdrop .rss-pane {
+  pointer-events: auto;
+}
+@keyframes rss-backdrop-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.rss-pane {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  width: min(880px, 92vw);
+  height: min(85vh, 820px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  box-sizing: border-box;
+  animation: rss-pane-enter 200ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  transform-origin: center center;
+  will-change: transform, opacity;
+}
+@keyframes rss-pane-enter {
+  from { transform: scale(0.96); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+
+@media (max-width: 768px) {
+  .rss-pane {
+    position: fixed;
+    inset: 0;
+    max-width: 100%;
+    width: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    z-index: 170;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 14px 14px 0 0;
+    overflow: hidden;
+    animation: sheet-enter 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    transform-origin: bottom center;
+  }
+  .rss-pane-backdrop {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+.rss-pane-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.rss-pane-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.rss-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.rss-sidebar {
+  width: 220px;
+  min-width: 180px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rss-sidebar-header {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Scoped override of the shared .memory-search-input — adds a search icon
+   and a taller box, matching the pattern already used for Notes/Email search
+   (see .notes-search-bar .memory-search-input) instead of the bare 24px/11px
+   default, which read as under-styled/generic next to the rest of the app. */
+.rss-sidebar-header .memory-search-input {
+  height: 32px;
+  min-height: 32px;
+  margin-top: 0;
+  font-size: 12px;
+  padding: 0 10px 0 30px;
+  background-color: var(--bg);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-opacity='0.85' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>");
+  background-repeat: no-repeat;
+  background-position: 10px center;
+  border-radius: 7px;
+  transition: border-color 0.15s;
+}
+
+/* Segmented-control look: shared track background instead of 3 separate
+   thin-bordered boxes, active tab reads as a filled pill inside the track. */
+.rss-filter-bar {
+  display: flex;
+  gap: 2px;
+  margin-top: 8px;
+  padding: 2px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.rss-filter-btn {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 11px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.12s, background 0.12s;
+}
+
+.rss-filter-btn:hover {
+  opacity: 0.9;
+  background: rgba(128,128,128,0.1);
+}
+
+.rss-filter-btn.active {
+  opacity: 1;
+  font-weight: 600;
+  background: var(--accent-primary, var(--fg));
+  color: var(--accent-on, var(--bg));
+}
+
+.rss-feed-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.rss-feed-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 42px 7px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s;
+  position: relative;
+}
+
+.rss-feed-item:hover {
+  background: rgba(128,128,128,0.1);
+}
+
+.rss-feed-item.active {
+  background: rgba(128,128,128,0.15);
+}
+
+.rss-feed-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 10px;
+  color: var(--text-dim);
+  opacity: 0;
+  cursor: grab;
+  transition: opacity 0.15s;
+}
+
+.rss-feed-item:hover .rss-feed-drag-handle {
+  opacity: 0.45;
+}
+
+.rss-feed-drag-handle:hover {
+  opacity: 0.9 !important;
+}
+
+/* dragSort lifts the dragged row to position:absolute with its own inline
+   width/left/top — its handle just needs to keep the grab cursor while held. */
+.rss-feed-item.dragging .rss-feed-drag-handle {
+  cursor: grabbing;
+  opacity: 0.9;
+}
+
+.rss-group-header-ungrouped {
+  cursor: default;
+}
+
+.rss-feed-delete {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.rss-feed-interval {
+  position: absolute;
+  right: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.rss-feed-item:hover .rss-feed-delete,
+.rss-feed-item:hover .rss-feed-interval {
+  opacity: 0.55;
+}
+
+.rss-feed-delete:hover {
+  opacity: 1 !important;
+  color: var(--red);
+  background: rgba(200,50,50,0.15);
+}
+
+.rss-feed-interval:hover {
+  opacity: 1 !important;
+  color: var(--fg);
+  background: rgba(128,128,128,0.15);
+}
+
+.rss-feed-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--fg) 16%, transparent);
+  color: var(--fg);
+  overflow: hidden;
+}
+
+.rss-feed-icon img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.rss-feed-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rss-unread-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--red);
+  color: var(--bg);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.rss-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.72;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 4px;
+  transition: background 0.12s;
+}
+
+/* Breathing room between distinct top-level groups so the list reads as
+   sections rather than one dense, undifferentiated column. */
+.rss-group-header.rss-group-root {
+  margin-top: 8px;
+}
+.rss-group-header.rss-group-root:first-child {
+  margin-top: 0;
+}
+
+.rss-group-header:hover {
+  background: rgba(128,128,128,0.08);
+}
+
+.rss-group-header.active {
+  opacity: 1;
+  background: rgba(128,128,128,0.12);
+}
+
+.rss-group-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rss-group-toggle {
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 3px;
+  transition: background 0.12s, opacity 0.12s;
+}
+
+.rss-group-toggle:hover {
+  opacity: 1;
+  background: rgba(128,128,128,0.15);
+}
+
+.rss-group-actions {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+  margin-left: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+
+.rss-group-header:hover .rss-group-actions,
+.rss-group-header.active .rss-group-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rss-group-add-sub,
+.rss-group-rename,
+.rss-group-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 4px;
+  opacity: 0.65;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.rss-group-add-sub:hover,
+.rss-group-rename:hover {
+  opacity: 1;
+  color: var(--fg);
+  background: rgba(128,128,128,0.18);
+}
+
+.rss-group-delete:hover {
+  opacity: 1;
+  color: var(--red);
+  background: rgba(200,50,50,0.18);
+}
+
+.rss-groups-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 2px 0;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.rss-groups-header span {
+  flex: 1;
+  opacity: 0.55;
+}
+
+.rss-groups-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0.65;
+  border-radius: 5px;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.rss-groups-add:hover {
+  opacity: 1;
+  background: rgba(128,128,128,0.15);
+}
+
+.rss-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.rss-feed-checkbox {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  cursor: pointer;
+  accent-color: var(--accent-primary);
+  margin: 0;
+  transition: opacity 0.15s, width 0.15s, margin 0.15s;
+}
+
+.rss-feed-item .rss-feed-checkbox {
+  margin-right: 4px;
+}
+
+.rss-feed-checkbox.rss-checkbox-hidden {
+  width: 0;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.rss-select-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.12s, background 0.12s;
+  flex-shrink: 0;
+  margin-left: 0;
+}
+
+.rss-select-mode-btn svg { flex-shrink: 0; }
+
+.rss-select-mode-btn:hover {
+  opacity: 1;
+  background: rgba(128,128,128,0.1);
+}
+
+.rss-select-mode-btn.active {
+  opacity: 1;
+  background: var(--accent-primary);
+  color: var(--bg);
+  border-color: var(--accent-primary);
+}
+
+.rss-summarize-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: rgba(128,128,128,0.04);
+}
+
+.rss-summarize-btn {
+  font-size: 11px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.12s;
+}
+
+.rss-summarize-btn:hover {
+  background: rgba(128,128,128,0.1);
+}
+
+.rss-summary-panel {
+  margin: 8px 12px;
+  padding: 10px 12px;
+  background: rgba(128,128,128,0.06);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-left: 3px solid var(--accent-primary);
+}
+
+.rss-summary-panel h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.rss-summary-panel p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.rss-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rss-article-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.rss-empty-state {
+  padding: 56px 24px;
+  text-align: center;
+  opacity: 0.45;
+  font-size: 13px;
+}
+
+.rss-article-item {
+  display: flex;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+
+.rss-article-item:hover {
+  background: rgba(128,128,128,0.05);
+}
+
+.rss-article-item.active {
+  background: rgba(128,128,128,0.1);
+}
+
+.rss-article-read {
+  opacity: 0.6;
+}
+
+.rss-article-thumb {
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.rss-article-thumb {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: var(--border);
+}
+
+.rss-article-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.rss-article-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  line-height: 1.35;
+}
+
+.rss-article-meta {
+  font-size: 11px;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.rss-article-feed {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rss-article-feed img {
+  border-radius: 2px;
+}
+
+.rss-article-time {
+  flex-shrink: 0;
+}
+
+.rss-starred-indicator {
+  color: var(--red);
+  font-size: 11px;
+}
+
+.rss-article-snippet-empty {
+  font-style: italic;
+  opacity: 0.4 !important;
+}
+
+.rss-article-snippet {
+  font-size: 12px;
+  opacity: 0.6;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.rss-reader {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rss-reader-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.rss-toolbar-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 2px;
+  background: var(--border);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* Uniform, centered icon buttons so the reader toolbar reads as an even row
+   (scoped to RSS so the shared .doc-action-icon-btn is untouched elsewhere).
+   Base opacity raised from the shared 0.3 — at that level a whole row of
+   these back-to-back reads as a disabled/inactive toolbar rather than a
+   set of clickable actions. */
+.rss-reader-toolbar .doc-action-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+.rss-reader-toolbar .doc-action-icon-btn:disabled {
+  opacity: 0.15;
+}
+
+.rss-reader-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.rss-reader-header {
+  margin-bottom: 20px;
+}
+
+.rss-reader-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  line-height: 1.3;
+}
+
+.rss-reader-meta {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.rss-reader-body {
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.rss-reader-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.rss-reader-body p {
+  margin: 0 0 12px;
+}
+
+.rss-reader-placeholder {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.rss-reader-summary {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  border-left: 3px solid var(--red);
+  background: rgba(128,128,128,0.08);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.rss-reader-summary-loading {
+  animation: rss-summary-pulse 1.4s ease-in-out infinite;
+}
+@keyframes rss-summary-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.rss-reader-summary h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.7;
+}
+
+.rss-star-active svg {
+  fill: var(--red);
+  stroke: var(--red);
+}
+
+.rss-spinning svg {
+  animation: rss-spin 1s linear infinite;
+}
+
+@keyframes rss-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ─── RSS Modal ──────────────────────────────────── */
+
+.rss-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.rss-modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 420px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.rss-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rss-modal-header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.rss-modal-close {
+  background: none;
+  border: none;
+  color: var(--fg);
+  font-size: 20px;
+  cursor: pointer;
+  opacity: 0.6;
+  padding: 0 4px;
+}
+
+.rss-modal-close:hover {
+  opacity: 1;
+}
+
+.rss-modal-body {
+  padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.rss-modal-body label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  opacity: 0.7;
+}
+
+.rss-modal-footer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.primary-btn {
+  padding: 7px 16px;
+  border: none;
+  border-radius: 6px;
+  background: var(--red);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary-btn {
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ─── RSS Video Player ────────────────────────────── */
+
+.rss-video-player {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+}
+
+.rss-video-play-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #fff;
+  transition: background 0.2s;
+  pointer-events: none;
+}
+
+.rss-video-player:hover .rss-video-play-btn {
+  background: #ff0000;
+}
+
+#rss-video-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0,0,0,0.92);
+  align-items: center;
+  justify-content: center;
+}
+
+.rss-video-modal-content {
+  position: relative;
+  width: 90%;
+  max-width: 960px;
+}
+
+.rss-video-modal-player {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.rss-video-modal-player iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.rss-video-modal-close {
+  position: absolute;
+  top: -44px;
+  right: 0;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 32px;
+  cursor: pointer;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.rss-video-modal-close:hover {
+  opacity: 1;
+}
+
+.rss-video-modal-link {
+  display: block;
+  text-align: center;
+  margin-top: 16px;
+  color: #aaa;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.rss-video-modal-link:hover {
+  color: #fff;
 }
 
 /* ── Workspace picker ───────────────────────────────────────────── */

@@ -1,9 +1,10 @@
-"""Search provider implementations: SearXNG, Brave, DuckDuckGo, Google PSE, Tavily, Serper."""
+"""Search provider implementations with a pluggable registry pattern."""
 
 import json
 import logging
 import os
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import Callable, List, Optional
 from urllib.parse import urljoin, urlparse, parse_qs
 
 import httpx
@@ -15,15 +16,81 @@ from .query import build_enhanced_query
 
 logger = logging.getLogger(__name__)
 
-# Provider registry — maps setting value to (label, needs_key, needs_url)
-PROVIDER_INFO = {
-    "searxng":  ("SearXNG",           False, True),
-    "brave":    ("Brave Search",      True,  False),
-    "duckduckgo": ("DuckDuckGo",      False, False),
-    "google_pse": ("Google PSE",      True,  False),
-    "tavily":   ("Tavily",            True,  False),
-    "serper":   ("Serper",            True,  False),
-    "disabled": ("Disabled",          False, False),
+# ── Provider metadata ──
+
+@dataclass
+class ProviderInfo:
+    """Metadata for a search provider."""
+    id: str
+    label: str
+    needs_key: bool = False
+    needs_url: bool = False
+    key_setting: str = ""          # settings.json key for the API key
+    env_var: str = ""              # env var for the API key
+    hint: str = ""                 # UI hint shown in settings
+    has_additional: list = field(default_factory=list)  # extra config fields like [{"key":"cx", "label":"CX ID", "placeholder":"..."}]
+
+
+PROVIDER_REGISTRY: dict[str, ProviderInfo] = {
+    "searxng": ProviderInfo(
+        id="searxng", label="SearXNG", needs_url=True,
+        hint="Self-hosted SearXNG instance. Leave URL empty to use the SEARXNG_INSTANCE env var.",
+    ),
+    "duckduckgo": ProviderInfo(
+        id="duckduckgo", label="DuckDuckGo",
+        hint="Free search — no API key required. Works out of the box.",
+    ),
+    "brave": ProviderInfo(
+        id="brave", label="Brave Search", needs_key=True,
+        key_setting="brave_api_key", env_var="DATA_BRAVE_API_KEY",
+        hint="Get your API key from brave.com/search/api",
+    ),
+    "google_pse": ProviderInfo(
+        id="google_pse", label="Google PSE", needs_key=True,
+        key_setting="google_pse_key", env_var="GOOGLE_API_KEY",
+        hint="Requires a Google API key and a Programmable Search Engine ID (CX). Create one at programmablesearchengine.google.com",
+        has_additional=[{"key": "google_pse_cx", "label": "CX ID", "placeholder": "Google PSE engine ID"}],
+    ),
+    "tavily": ProviderInfo(
+        id="tavily", label="Tavily", needs_key=True,
+        key_setting="tavily_api_key", env_var="TAVILY_API_KEY",
+        hint="AI-optimized search. 1,000 free credits/month at tavily.com",
+    ),
+    "serper": ProviderInfo(
+        id="serper", label="Serper", needs_key=True,
+        key_setting="serper_api_key", env_var="SERPER_API_KEY",
+        hint="Google results via API. 2,500 free queries at serper.dev",
+    ),
+    "bing": ProviderInfo(
+        id="bing", label="Bing", needs_key=True,
+        key_setting="bing_api_key", env_var="BING_API_KEY",
+        hint="Microsoft Bing Web Search API. Sign up at azure.microsoft.com/en-us/services/cognitive-services/bing-web-search-api",
+    ),
+    "search1api": ProviderInfo(
+        id="search1api", label="Search1API", needs_key=True,
+        key_setting="search1api_api_key", env_var="SEARCH1API_API_KEY",
+        hint="Unified search API. 100 free queries/day at search1api.com",
+    ),
+    "firecrawl": ProviderInfo(
+        id="firecrawl", label="Firecrawl", needs_key=True,
+        key_setting="firecrawl_api_key", env_var="FIRECRAWL_API_KEY",
+        hint="Web scraping and search API. Sign up at firecrawl.dev",
+    ),
+    "exa": ProviderInfo(
+        id="exa", label="Exa", needs_key=True,
+        key_setting="exa_api_key", env_var="EXA_API_KEY",
+        hint="AI-powered search engine. Sign up at exa.ai",
+    ),
+    "disabled": ProviderInfo(
+        id="disabled", label="Disabled",
+        hint="Web search and deep research tools will be unavailable.",
+    ),
+}
+
+# Backward-compatible PROVIDER_INFO: maps id → (label, needs_key, needs_url)
+PROVIDER_INFO: dict[str, tuple[str, bool, bool]] = {
+    pid: (info.label, info.needs_key, info.needs_url)
+    for pid, info in PROVIDER_REGISTRY.items()
 }
 
 
@@ -50,29 +117,18 @@ def _get_search_instance() -> str:
 def _get_provider_key(provider: str) -> str:
     """Return the API key for a specific provider, with legacy fallback."""
     settings = _get_search_settings()
-    key_map = {
-        "brave": "brave_api_key",
-        "google_pse": "google_pse_key",
-        "tavily": "tavily_api_key",
-        "serper": "serper_api_key",
-    }
-    field = key_map.get(provider, "")
-    if field:
-        val = (settings.get(field) or "").strip()
+    info = PROVIDER_REGISTRY.get(provider)
+    if info and info.key_setting:
+        val = (settings.get(info.key_setting) or "").strip()
         if val:
             return val
     # Legacy fallback: old shared search_api_key field
     legacy = (settings.get("search_api_key") or "").strip()
     if legacy:
         return legacy
-    env_map = {
-        "brave": "DATA_BRAVE_API_KEY",
-        "google_pse": "GOOGLE_API_KEY",
-        "tavily": "TAVILY_API_KEY",
-        "serper": "SERPER_API_KEY",
-    }
-    env_name = env_map.get(provider, "")
-    return (os.environ.get(env_name) or "").strip() if env_name else ""
+    if info and info.env_var:
+        return (os.environ.get(info.env_var) or "").strip()
+    return ""
 
 
 def _get_result_count() -> int:
@@ -118,6 +174,14 @@ def _safesearch_for(provider: str) -> Optional[str]:
         return None if level == "off" else "active"
     if provider == "serper":
         return None if level == "off" else "active"
+    if provider == "bing":
+        return {"strict": "Strict", "moderate": "Moderate", "off": "Off"}[level]
+    if provider == "search1api":
+        return level
+    if provider == "firecrawl":
+        return None  # Firecrawl doesn't support SafeSearch
+    if provider == "exa":
+        return None  # Exa doesn't support SafeSearch
     return None
 
 
@@ -639,3 +703,259 @@ def serper_search(query: str, count: Optional[int] = None, time_filter: Optional
 
     logger.info(f"Serper returned {len(results)} results")
     return results
+
+
+# ── Bing Web Search ──
+
+def bing_search(query: str, count: int = 10, time_filter: Optional[str] = None) -> List[dict]:
+    """Search using Microsoft Bing Web Search API. Requires BING_API_KEY env var or bing_api_key setting."""
+    api_key = _get_provider_key("bing") or os.environ.get("BING_API_KEY", "")
+    if not api_key:
+        logger.warning("Bing: no API key configured")
+        return []
+
+    params = {
+        "q": query,
+        "count": count,
+        "textFormat": "Raw",
+        "safeSearch": _safesearch_for("bing"),
+    }
+    if time_filter:
+        time_map = {"day": "Day", "week": "Week", "month": "Month", "year": "Year"}
+        if time_filter in time_map:
+            params["freshness"] = time_map[time_filter]
+
+    try:
+        response = httpx.get(
+            "https://api.bing.microsoft.com/v7.0/search",
+            params=params,
+            headers={
+                "Ocp-Apim-Subscription-Key": api_key,
+                "User-Agent": WEB_FETCH_USER_AGENT,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        if response.status_code == 429:
+            raise RateLimitError("Bing rate limit hit")
+        response.raise_for_status()
+    except httpx.RequestError as e:
+        error_logger.error(f"NetworkError during Bing search: {e}")
+        return []
+    except RateLimitError as e:
+        error_logger.error(str(e))
+        return []
+
+    try:
+        data = response.json()
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Bing API response: {e}")
+        return []
+
+    results = []
+    for item in data.get("webPages", {}).get("value", [])[:count]:
+        url = item.get("url", "")
+        if not url:
+            continue
+        results.append({
+            "title": item.get("name", ""),
+            "url": url,
+            "snippet": item.get("snippet", ""),
+            "age": item.get("datePublished", "") or "",
+        })
+
+    logger.info(f"Bing search returned {len(results)} results")
+    return results
+
+
+# ── Search1API ──
+
+def search1api_search(query: str, count: int = 10, time_filter: Optional[str] = None) -> List[dict]:
+    """Search using Search1API. Requires SEARCH1API_API_KEY env var or search1api_api_key setting."""
+    api_key = _get_provider_key("search1api") or os.environ.get("SEARCH1API_API_KEY", "")
+    if not api_key:
+        logger.warning("Search1API: no API key configured")
+        return []
+
+    payload = {
+        "query": query,
+        "max_results": count,
+    }
+    if time_filter:
+        time_map = {"day": "day", "week": "week", "month": "month", "year": "year"}
+        if time_filter in time_map:
+            payload["time_filter"] = time_map[time_filter]
+
+    try:
+        response = httpx.post(
+            "https://www.search1api.com/search",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        if response.status_code == 429:
+            raise RateLimitError("Search1API rate limit hit")
+        response.raise_for_status()
+    except httpx.RequestError as e:
+        error_logger.error(f"NetworkError during Search1API search: {e}")
+        return []
+    except RateLimitError as e:
+        error_logger.error(str(e))
+        return []
+
+    try:
+        data = response.json()
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Search1API response: {e}")
+        return []
+
+    results = []
+    for item in data.get("results", [])[:count]:
+        url = item.get("link") or item.get("url", "")
+        if not url:
+            continue
+        results.append({
+            "title": item.get("title", ""),
+            "url": url,
+            "snippet": item.get("snippet") or item.get("content", ""),
+            "age": item.get("publishedDate") or item.get("date", "") or "",
+        })
+
+    logger.info(f"Search1API returned {len(results)} results")
+    return results
+
+
+# ── Firecrawl ──
+
+def firecrawl_search(query: str, count: int = 10, time_filter: Optional[str] = None) -> List[dict]:
+    """Search using Firecrawl API. Requires FIRECRAWL_API_KEY env var or firecrawl_api_key setting."""
+    api_key = _get_provider_key("firecrawl") or os.environ.get("FIRECRAWL_API_KEY", "")
+    if not api_key:
+        logger.warning("Firecrawl: no API key configured")
+        return []
+
+    payload = {
+        "query": query,
+        "maxResults": count,
+    }
+    # Firecrawl search doesn't appear to support time_filter or SafeSearch
+
+    try:
+        response = httpx.post(
+            "https://api.firecrawl.dev/v1/search",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        if response.status_code == 429:
+            raise RateLimitError("Firecrawl rate limit hit")
+        response.raise_for_status()
+    except httpx.RequestError as e:
+        error_logger.error(f"NetworkError during Firecrawl search: {e}")
+        return []
+    except RateLimitError as e:
+        error_logger.error(str(e))
+        return []
+
+    try:
+        data = response.json()
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Firecrawl API response: {e}")
+        return []
+
+    results = []
+    raw = data.get("data", data.get("results", []))
+    for item in raw[:count]:
+        url = item.get("url", "")
+        if not url:
+            continue
+        results.append({
+            "title": item.get("title", "") or item.get("name", ""),
+            "url": url,
+            "snippet": item.get("description", "") or item.get("text", "") or item.get("snippet", ""),
+        })
+
+    logger.info(f"Firecrawl returned {len(results)} results")
+    return results
+
+
+# ── Exa ──
+
+def exa_search(query: str, count: int = 10, time_filter: Optional[str] = None) -> List[dict]:
+    """Search using Exa AI search API. Requires EXA_API_KEY env var or exa_api_key setting."""
+    api_key = _get_provider_key("exa") or os.environ.get("EXA_API_KEY", "")
+    if not api_key:
+        logger.warning("Exa: no API key configured")
+        return []
+
+    payload = {
+        "query": query,
+        "numResults": count,
+    }
+    if time_filter:
+        time_map = {"day": "day", "week": "week", "month": "month", "year": "year"}
+        if time_filter in time_map:
+            payload["start_published_date"] = time_map[time_filter]
+
+    try:
+        response = httpx.post(
+            "https://api.exa.ai/search",
+            json=payload,
+            headers={
+                "x-api-key": api_key,
+                "Content-Type": "application/json",
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        if response.status_code == 429:
+            raise RateLimitError("Exa rate limit hit")
+        response.raise_for_status()
+    except httpx.RequestError as e:
+        error_logger.error(f"NetworkError during Exa search: {e}")
+        return []
+    except RateLimitError as e:
+        error_logger.error(str(e))
+        return []
+
+    try:
+        data = response.json()
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Exa API response: {e}")
+        return []
+
+    results = []
+    for item in data.get("results", [])[:count]:
+        url = item.get("url", "")
+        if not url:
+            continue
+        results.append({
+            "title": item.get("title", ""),
+            "url": url,
+            "snippet": item.get("text", "") or item.get("snippet", ""),
+            "age": item.get("publishedDate", "") or "",
+        })
+
+    logger.info(f"Exa returned {len(results)} results")
+    return results
+
+
+# ── Provider function dispatch ──
+# Registered here (after all function definitions) so refs are available.
+
+PROVIDER_FUNCTIONS: dict[str, Callable] = {
+    "searxng": searxng_search_api,
+    "brave": brave_search,
+    "duckduckgo": duckduckgo_search,
+    "google_pse": google_pse_search,
+    "tavily": tavily_search,
+    "serper": serper_search,
+    "bing": bing_search,
+    "search1api": search1api_search,
+    "firecrawl": firecrawl_search,
+    "exa": exa_search,
+}

@@ -28,6 +28,7 @@ def _researcher():
     r = DeepResearcher.__new__(DeepResearcher)
     r.synthesis_window = 10
     r.max_report_tokens = 4096
+    r.research_plan = ""
     return r
 
 

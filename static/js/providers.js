@@ -113,6 +113,7 @@ const _ENDPOINT_LABELS = [
   [/(^|\.)(generativelanguage|aiplatform)\.googleapis\.com$/i, "Google"],
   [/(^|\.)bedrock[\w.-]*\.amazonaws\.com$/i, "AWS Bedrock"],
   [/(^|\.)deepseek\.com$/i, "DeepSeek"],
+  [/(^|\.)moonshot\.(ai|cn)$/i, "Kimi (Moonshot)"],
   [/(^|\.)mistral\.ai$/i, "Mistral"],
   [/(^|\.)groq\.com$/i, "Groq"],
   [/(^|\.)together\.(ai|xyz)$/i, "Together"],

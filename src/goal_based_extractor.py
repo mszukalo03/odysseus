@@ -12,7 +12,8 @@ Task guidelines:
 2. Identify and extract the most relevant information; output full original context where possible, up to three or more paragraphs.
 3. Organize into a concise paragraph with logical flow, judging each piece of information's contribution to the goal.
 
-Respond in JSON with exactly these fields: "rational", "evidence", "summary".
+Do NOT include any reasoning, preamble, numbered steps, or explanation before the JSON.
+Output ONLY valid JSON with exactly these fields: "rational", "evidence", "summary".
 
 Example:
 {{
