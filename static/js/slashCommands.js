@@ -48,6 +48,8 @@ const PROVIDER_PATTERNS = [
 ];
 const SETUP_PROVIDER_URLS = {
   deepseek: { name: 'DeepSeek', url: 'https://api.deepseek.com/v1' },
+  kimi: { name: 'Kimi (Moonshot)', url: 'https://api.moonshot.ai/v1' },
+  moonshot: { name: 'Kimi (Moonshot)', url: 'https://api.moonshot.ai/v1' },
   openai: { name: 'OpenAI', url: 'https://api.openai.com/v1' },
   openrouter: { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
   ollama: { name: 'Ollama Cloud', url: 'https://ollama.com/api' },
@@ -60,7 +62,7 @@ const SETUP_PROVIDER_URLS = {
   'opencode-go': { name: 'OpenCode Go', url: 'https://opencode.ai/zen/go/v1' },
   nvidia: { name: 'NVIDIA', url: 'https://integrate.api.nvidia.com/v1' },
 };
-const SETUP_PROVIDER_NAMES = ['deepseek', 'openai', 'openrouter', 'ollama', 'xai', 'anthropic', 'groq', 'gemini', 'opencode-zen', 'opencode-go', 'nvidia'];
+const SETUP_PROVIDER_NAMES = ['deepseek', 'kimi', 'openai', 'openrouter', 'ollama', 'xai', 'anthropic', 'groq', 'gemini', 'opencode-zen', 'opencode-go', 'nvidia'];
 const SETUP_DEVICE_AUTH_PROVIDERS = [
   { key: 'copilot', name: 'GitHub Copilot', aliases: ['github'], command: '/setup copilot' },
   { key: 'chatgpt-subscription', name: 'ChatGPT Subscription', aliases: ['chatgptsubscription', 'chatgpt-sub', 'codex'], command: '/setup chatgpt-subscription' },

@@ -1182,13 +1182,16 @@ async function _deleteEmailAndAdvance(em, card, opts = {}) {
   showToast('Moved to Trash');
   if (!wasExpanded || !nextUid) return;
   const grid = document.getElementById('email-lib-grid');
-  const nextCard = grid?.querySelector(`.doclib-card[data-uid="${CSS.escape(String(nextUid))}"]`);
+  const nextRow = grid?.querySelector(`.email-row[data-uid="${CSS.escape(String(nextUid))}"]`);
   const nextEm = state._libEmails.find(e => String(e.uid) === String(nextUid));
-  if (nextCard && nextEm) {
-    await _toggleCardPreview(nextCard, nextEm);
-    nextCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if (nextRow && nextEm) {
+    grid.querySelectorAll('.email-row.active').forEach(r => r.classList.remove('active'));
+    nextRow.classList.add('active');
+    await _loadReadingPane(nextEm);
+    nextRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } else {
-    document.getElementById('email-lib-modal')?.classList.remove('email-reading');
+    const pane = document.querySelector('#email-lib-modal .email-pane-reader');
+    if (pane) pane.innerHTML = '<div class="email-pane-reader-empty">Select an email to read</div>';
   }
 }
 
@@ -2349,7 +2352,7 @@ export function openEmailLibrary(opts = {}) {
   modal.className = 'modal';
   modal.id = 'email-lib-modal';
   modal.innerHTML = `
-    <div class="modal-content doclib-modal-content" style="width:min(720px, 92vw);background:var(--bg);">
+    <div class="modal-content doclib-modal-content" style="width:min(1100px, 95vw);background:var(--bg);">
       <div class="modal-header">
         <h4>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;">
@@ -2367,8 +2370,9 @@ export function openEmailLibrary(opts = {}) {
           <button class="close-btn" id="email-lib-close">\u2716</button>
         </div>
       </div>
-      <div class="modal-body" style="display:flex;flex-direction:column;gap:10px;overflow:hidden;">
-        <div class="admin-card" style="flex:1;flex-direction:column;display:flex;overflow:hidden;">
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:0;overflow:hidden;">
+        <div class="admin-card email-3pane" style="flex:1;overflow:hidden;">
+          <div class="email-pane-folders">
           <div class="email-accounts-row">
             <div id="email-lib-accounts" style="display:flex;gap:4px;flex:1;min-width:0;"></div>
             <button class="memory-toolbar-btn email-compose-jiggle" id="email-lib-compose-btn">
@@ -2376,9 +2380,25 @@ export function openEmailLibrary(opts = {}) {
               New
             </button>
           </div>
+          <div class="section">
+            <div class="section-header-flex">
+              <span class="section-title">Main Folders</span>
+            </div>
+            <div class="email-folder-list"></div>
+          </div>
+          </div>
+          <div class="email-pane-resize-handle" id="email-resize-folders"></div>
+          <div class="email-pane-list">
+          <button type="button" class="email-pane-mobile-back" id="email-lib-back-to-folders">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Folders
+          </button>
           <div class="memory-toolbar">
             <div class="memory-category-filters">
-              <select class="memory-sort-select" id="email-lib-folder" style="flex:1;min-width:0;text-overflow:ellipsis;">
+              <button type="button" class="memory-toolbar-btn email-lib-folders-toggle" id="email-lib-folders-toggle" title="Show/hide folders">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></svg>
+              </button>
+              <select class="memory-sort-select" id="email-lib-folder" style="display:none;">
                 <option value="INBOX">Inbox</option>
               </select>
               <!-- Hidden native select kept as the source of truth — all
@@ -2452,13 +2472,24 @@ export function openEmailLibrary(opts = {}) {
             <button class="memory-toolbar-btn" id="email-lib-bulk-delete" style="position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
             <button class="memory-toolbar-btn" id="email-lib-bulk-cancel" title="Cancel (Esc)" style="margin-left:4px;padding:3px 6px;position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
           </div>
-          <div id="email-lib-grid" class="doclib-grid"></div>
+          <div id="email-lib-grid" class="email-row-list"></div>
           <div id="email-lib-sync-status" class="email-lib-sync-status" aria-live="polite"></div>
           <div id="email-lib-settings-page" class="email-settings-page" hidden></div>
           <button class="email-lib-fab" id="email-lib-fab" type="button" aria-label="New email">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="M3 6.5l9 6 9-6"/></svg>
             <span class="email-lib-fab-label">New</span>
           </button>
+          </div>
+          <div class="email-pane-resize-handle" id="email-resize-list"></div>
+          <div class="email-pane-reader-wrap">
+          <button type="button" class="email-pane-mobile-back" id="email-lib-back-to-list">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Inbox
+          </button>
+          <div class="email-pane-reader">
+            <div class="email-pane-reader-empty">Select an email to read</div>
+          </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2466,6 +2497,13 @@ export function openEmailLibrary(opts = {}) {
 
   document.body.appendChild(modal);
   modal.style.display = 'block';
+  // Mobile: 3 panes don't fit — start on the message list (the folder is
+  // already picked, INBOX by default) with Back buttons to step out to
+  // folders / back in to the reader. No-op on desktop (media-query scoped).
+  _setMobilePane('list');
+  document.getElementById('email-lib-back-to-folders')?.addEventListener('click', () => _setMobilePane('folders'));
+  document.getElementById('email-lib-back-to-list')?.addEventListener('click', () => _setMobilePane('list'));
+  _wireEmailPaneLayout();
   _renderEmailSyncStatus();
   if (_libSyncTicker) clearInterval(_libSyncTicker);
   _libSyncTicker = setInterval(_renderEmailSyncStatus, 30000);
@@ -3262,6 +3300,8 @@ async function _loadFolders({ resetMissing = false, live = false } = {}) {
     const sel = document.getElementById('email-lib-folder');
     if (!sel || !data.folders) return;
     state._libFolders = data.folders;
+    state._libUnreadCounts = data.unread_counts || {};
+    _renderFolderSidebar();
     if (resetMissing && state._libFolder !== '__scheduled__' && !data.folders.includes(state._libFolder)) {
       state._libFolder = data.folders.includes('INBOX') ? 'INBOX' : (data.folders[0] || 'INBOX');
       state._libFilter = 'all';
@@ -3311,6 +3351,145 @@ async function _loadFolders({ resetMissing = false, live = false } = {}) {
     sel.appendChild(schedOpt);
     sel.value = state._libFolder;
   } catch (e) {}
+}
+
+// Icon per folder role — mirrors the substring-matching sortedFolders()
+// already uses for ordering (emailInbox.js:449-470), just for icon choice.
+// Not exported from there, so a small local copy; the actual priority
+// ordering still comes from the imported sortedFolders()/folderDisplayName().
+function _folderIconSvg(folder) {
+  const f = String(folder || '').toLowerCase();
+  const icons = {
+    inbox: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+    sent: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
+    drafts: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+    trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>',
+    junk: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    archive: '<rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+  };
+  let role = 'inbox';
+  if (f === 'inbox') role = 'inbox';
+  else if (f.includes('sent')) role = 'sent';
+  else if (f.includes('draft')) role = 'drafts';
+  else if (f.includes('trash') || f.includes('bin') || f.includes('deleted')) role = 'trash';
+  else if (f.includes('spam') || f.includes('junk')) role = 'junk';
+  else if (f.includes('all mail') || f.includes('archive')) role = 'archive';
+  else role = 'inbox';
+  return icons[role] || icons.inbox;
+}
+
+// Mobile (<=768px) collapses the 3 panes to one visible at a time via a
+// class on .email-3pane; desktop ignores it (media-query scoped). Harmless
+// to call unconditionally rather than gating on viewport width.
+function _setMobilePane(name) {
+  const pane3 = document.querySelector('#email-lib-modal .email-3pane');
+  if (!pane3) return;
+  pane3.classList.remove('email-mobile-show-folders', 'email-mobile-show-list', 'email-mobile-show-reader');
+  pane3.classList.add(`email-mobile-show-${name}`);
+}
+
+function _toggleFoldersCollapsed() {
+  const pane3 = document.querySelector('#email-lib-modal .email-3pane');
+  if (!pane3) return;
+  const collapsed = pane3.classList.toggle('email-folders-collapsed');
+  try { localStorage.setItem('odysseus.email.foldersCollapsed', collapsed ? '1' : '0'); } catch (_) {}
+}
+
+// Desktop-only: draggable dividers let the user widen/narrow the folder
+// sidebar and message list (reader always takes whatever's left). Widths
+// persist per-browser via localStorage so they stick across reopens.
+function _wireEmailPaneLayout() {
+  const pane3 = document.querySelector('#email-lib-modal .email-3pane');
+  const foldersEl = pane3?.querySelector('.email-pane-folders');
+  const listEl = pane3?.querySelector('.email-pane-list');
+  if (!pane3 || !foldersEl || !listEl) return;
+
+  if (localStorage.getItem('odysseus.email.foldersCollapsed') === '1') {
+    pane3.classList.add('email-folders-collapsed');
+  }
+  document.getElementById('email-lib-folders-toggle')?.addEventListener('click', _toggleFoldersCollapsed);
+
+  const FOLDERS_MIN = 150, FOLDERS_MAX = 340;
+  const LIST_MIN = 280, LIST_MAX = 640;
+  const savedFoldersW = parseInt(localStorage.getItem('odysseus.email.foldersW'), 10);
+  if (savedFoldersW) foldersEl.style.width = `${Math.min(FOLDERS_MAX, Math.max(FOLDERS_MIN, savedFoldersW))}px`;
+  const savedListW = parseInt(localStorage.getItem('odysseus.email.listW'), 10);
+  if (savedListW) listEl.style.flex = `0 0 ${Math.min(LIST_MAX, Math.max(LIST_MIN, savedListW))}px`;
+
+  const _bindHandle = (handle, el, min, max, storageKey, isWidthProp) => {
+    if (!handle) return;
+    let startX = 0, startSize = 0, currentSize = 0;
+    const onMove = (e) => {
+      currentSize = Math.min(max, Math.max(min, startSize + (e.clientX - startX)));
+      if (isWidthProp) el.style.width = `${currentSize}px`;
+      else el.style.flex = `0 0 ${currentSize}px`;
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      handle.classList.remove('dragging');
+      // Save the exact size we just applied rather than re-measuring the
+      // DOM — avoids depending on a layout flush having settled by now.
+      try { localStorage.setItem(storageKey, String(Math.round(currentSize))); } catch (_) {}
+    };
+    handle.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      startX = e.clientX;
+      startSize = currentSize = el.getBoundingClientRect().width;
+      handle.classList.add('dragging');
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+    });
+  };
+  _bindHandle(document.getElementById('email-resize-folders'), foldersEl, FOLDERS_MIN, FOLDERS_MAX, 'odysseus.email.foldersW', true);
+  _bindHandle(document.getElementById('email-resize-list'), listEl, LIST_MIN, LIST_MAX, 'odysseus.email.listW', false);
+}
+
+// New 3-pane folder sidebar — reuses .list-item/.section-header-flex (same
+// classes the main app sidebar uses) rather than the old #email-lib-folder
+// <select>. No-ops if the new pane isn't in the DOM yet (old UI still live).
+function _renderFolderSidebar() {
+  const host = document.querySelector('#email-lib-modal .email-pane-folders .email-folder-list');
+  if (!host) return;
+  const folders = Array.isArray(state._libFolders) ? state._libFolders : [];
+  const { priority, others } = sortedFolders(folders);
+  const counts = state._libUnreadCounts || {};
+  const rowHtml = (f) => {
+    const count = counts[f] || 0;
+    return `<div class="list-item${f === state._libFolder ? ' active' : ''}" data-folder="${_esc(f)}">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.6;">${_folderIconSvg(f)}</svg>
+      <span class="grow">${_esc(folderDisplayName(f))}</span>
+      ${count > 0 ? `<span class="email-folder-badge">${count > 999 ? '999+' : count}</span>` : ''}
+    </div>`;
+  };
+  const schedActive = state._libFolder === '__scheduled__';
+  host.innerHTML = [...priority, ...others].map(rowHtml).join('') + `
+    <div class="list-item${schedActive ? ' active' : ''}" data-folder="__scheduled__">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.6;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span class="grow">Scheduled</span>
+    </div>`;
+  host.querySelectorAll('.list-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const folder = item.dataset.folder;
+      if (folder === state._libFolder) {
+        // Same folder re-tapped (e.g. mobile: tapping "Inbox" again just to
+        // step from the folder pane back into the list) — still navigate.
+        _setMobilePane('list');
+        return;
+      }
+      state._libFolder = folder;
+      state._libFilter = 'all';
+      state._libSearch = '';
+      _libListCache.clear();
+      host.querySelectorAll('.list-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+      document.querySelectorAll('.email-row.active').forEach(r => r.classList.remove('active'));
+      const pane = document.querySelector('#email-lib-modal .email-pane-reader');
+      if (pane) pane.innerHTML = '<div class="email-pane-reader-empty">Select an email to read</div>';
+      _setMobilePane('list');
+      _loadEmailsFresh();
+    });
+  });
 }
 
 function _crossFolderCandidates() {
@@ -3856,12 +4035,15 @@ function _acceptSuggestion(s) {
     _hideSearchSuggestions();
     _applyPillFilter();
     const grid = document.getElementById('email-lib-grid');
-    const card = grid?.querySelector(`.doclib-card[data-uid="${CSS.escape(String(s.uid))}"]`);
+    const row = grid?.querySelector(`.email-row[data-uid="${CSS.escape(String(s.uid))}"]`);
     const em = (state._libEmails || []).find(x => String(x.uid) === String(s.uid))
             || (_libPreSearchEmails || []).find(x => String(x.uid) === String(s.uid));
-    if (card && em) {
-      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      _toggleCardPreview(card, em);
+    if (row && em) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      grid.querySelectorAll('.email-row.active').forEach(r => r.classList.remove('active'));
+      row.classList.add('active');
+      _setMobilePane('reader');
+      _loadReadingPane(em);
     }
     return;
   } else {
@@ -4810,7 +4992,7 @@ function _renderGrid() {
       grid.appendChild(_createEmailDateHeader(dateLabel));
       lastDateLabel = dateLabel;
     }
-    grid.appendChild(_createCard(em));
+    grid.appendChild(_createEmailRow(em));
   }
   _appendEmailSearchProgressRow(grid);
 
@@ -4820,10 +5002,15 @@ function _renderGrid() {
     const wantUid = state._libPendingExpandUid;
     state._libPendingExpandUid = null;
     if (target) {
-      const cards = grid.querySelectorAll('.doclib-card');
-      const targetCard = Array.from(cards).find(c => c.dataset.uid === String(wantUid));
-      if (targetCard) {
-        requestAnimationFrame(() => _toggleCardPreview(targetCard, target));
+      const rows = grid.querySelectorAll('.email-row');
+      const targetRow = Array.from(rows).find(r => r.dataset.uid === String(wantUid));
+      if (targetRow) {
+        requestAnimationFrame(() => {
+          grid.querySelectorAll('.email-row.active').forEach(r => r.classList.remove('active'));
+          targetRow.classList.add('active');
+          _setMobilePane('reader');
+          _loadReadingPane(target);
+        });
       }
     }
   }
@@ -5097,6 +5284,223 @@ function _createCard(em) {
   });
 
   return card;
+}
+
+// Pure data-shaping lifted out of _createCard (lines 3610-3637 there) so the
+// new compact row renderer doesn't duplicate the sender/date logic. Zero
+// behavior change from what _createCard already computed.
+function _emailRowData(em) {
+  const cardFolder = em.folder || state._libFolder || 'INBOX';
+  const isSentFolder = /sent/i.test(cardFolder);
+  let senderName, senderAddress;
+  if (isSentFolder) {
+    senderName = _formatRecipients(em.to) || em.to || '(no recipient)';
+    const _firstTo = String(em.to || '').split(',')[0] || '';
+    const _m = _firstTo.match(/<([^>]+)>/);
+    senderAddress = (_m ? _m[1] : _firstTo).trim();
+  } else {
+    senderName = em.from_name || em.from_address;
+    senderAddress = em.from_address || '';
+  }
+  const color = _senderColor(senderName);
+  let dateStr = '';
+  if (em.date) {
+    try {
+      const d = new Date(em.date);
+      const now = new Date();
+      const sameYear = d.getFullYear() === now.getFullYear();
+      const dateOpts = sameYear
+        ? { month: 'short', day: 'numeric' }
+        : { year: 'numeric', month: 'short', day: 'numeric' };
+      dateStr = d.toLocaleString([], dateOpts);
+    } catch (_) {}
+  }
+  return { cardFolder, isSentFolder, senderName, senderAddress, color, dateStr };
+}
+
+// Compact list row — replaces _createCard() for the 3-pane list view.
+// Preserves: select-mode checkbox, done-check toggle, tag pills + spam
+// pill, flagged/star indicator, "..." actions menu + long-press. Drops:
+// prev/next nav arrows (meaningless once the list stays permanently
+// visible next to the reading pane — see _findSiblingEmailCard, no longer
+// needed) and the folder/sent chips (the compact row has no room; the
+// reading pane's badge row is the place for that context now).
+function _createEmailRow(em) {
+  const { cardFolder, isSentFolder, senderName, senderAddress, color, dateStr } = _emailRowData(em);
+  const row = document.createElement('div');
+  row.className = 'email-row' + (em.is_read ? '' : ' unread') + (state._selectMode && state._selectedUids.has(em.uid) ? ' selected' : '');
+  row.dataset.uid = String(em.uid);
+
+  if (state._selectMode) {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'memory-select-cb';
+    cb.checked = state._selectedUids.has(em.uid);
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      if (cb.checked) state._selectedUids.add(em.uid);
+      else state._selectedUids.delete(em.uid);
+      row.classList.toggle('selected', cb.checked);
+      _updateBulkBar();
+    });
+    row.appendChild(cb);
+  }
+
+  const avatar = document.createElement('div');
+  avatar.className = 'email-row-avatar';
+  avatar.style.background = color;
+  avatar.textContent = (senderName || '?')[0].toUpperCase();
+  row.appendChild(avatar);
+
+  const body = document.createElement('div');
+  body.className = 'email-row-body';
+
+  const top = document.createElement('div');
+  top.className = 'email-row-top';
+  const senderEl = document.createElement('span');
+  senderEl.className = 'email-row-sender';
+  senderEl.textContent = (isSentFolder ? 'To: ' : '') + (senderName || '');
+  top.appendChild(senderEl);
+  if (em.is_flagged) {
+    const star = document.createElement('span');
+    star.title = 'Favorited';
+    star.style.cssText = 'color:var(--accent, var(--red));opacity:0.85;flex-shrink:0;display:inline-flex;';
+    star.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
+    top.appendChild(star);
+  }
+  const dateEl = document.createElement('span');
+  dateEl.className = 'email-row-date';
+  dateEl.textContent = dateStr;
+  top.appendChild(dateEl);
+  body.appendChild(top);
+
+  const subjectRow = document.createElement('div');
+  subjectRow.style.cssText = 'display:flex;align-items:center;gap:5px;';
+  const subjectEl = document.createElement('span');
+  subjectEl.className = 'email-row-subject';
+  subjectEl.textContent = em.subject || '(no subject)';
+  if (em.cached_summary) {
+    subjectEl.title = em.cached_summary;
+    subjectEl.classList.add('email-card-has-summary');
+  }
+  subjectRow.appendChild(subjectEl);
+  if (em.has_attachments) {
+    const att = document.createElement('span');
+    att.title = 'Has attachments';
+    att.style.cssText = 'opacity:0.5;flex-shrink:0;display:inline-flex;';
+    att.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+    subjectRow.appendChild(att);
+  }
+  if (!isSentFolder) {
+    const doneCheck = document.createElement('span');
+    doneCheck.className = 'email-card-done' + (em.is_answered ? ' active' : '');
+    doneCheck.title = em.is_answered ? 'Mark not done' : 'Mark done';
+    doneCheck.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    doneCheck.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const wasActive = doneCheck.classList.contains('active');
+      const newState = !wasActive;
+      em.is_answered = newState;
+      doneCheck.classList.toggle('active', newState);
+      doneCheck.title = newState ? 'Mark not done' : 'Mark done';
+      if (newState) {
+        _clearDoneResponseTagsLocal(em);
+        _syncEmailReadState(em.uid, true);
+      }
+      try {
+        if (newState) {
+          await fetch(`${API_BASE}/api/email/mark-answered/${em.uid}?folder=${encodeURIComponent(cardFolder)}${_acct()}`, { method: 'POST' });
+          await fetch(`${API_BASE}/api/email/mark-read/${em.uid}?folder=${encodeURIComponent(cardFolder)}${_acct()}`, { method: 'POST' });
+        } else {
+          await fetch(`${API_BASE}/api/email/clear-answered/${em.uid}?folder=${encodeURIComponent(cardFolder)}${_acct()}`, { method: 'POST' });
+        }
+      } catch (err) { console.error(err); }
+    });
+    subjectRow.appendChild(doneCheck);
+  }
+  const tags = state._libShowTags ? _visibleEmailTagsForRender(em) : [];
+  if (state._libShowTags && (tags.length || em.is_spam_verdict)) {
+    const tagWrap = document.createElement('span');
+    tagWrap.className = 'email-tags email-card-tags' + (tags.length > 1 ? ' email-tags-collapsed' : '');
+    tagWrap.innerHTML = _emailTagGroupHtml(tags, em);
+    if (em.is_spam_verdict) {
+      tagWrap.insertAdjacentHTML('beforeend', '<span class="email-tag email-tag-spam">spam</span>');
+    }
+    tagWrap.addEventListener('click', (ev) => {
+      const calBtn = ev.target.closest('[data-calendar-event-uid]');
+      const tagBtn = ev.target.closest('[data-email-filter-tag]');
+      const moreBtn = ev.target.closest('[data-email-tags-more]');
+      if (!calBtn && !tagBtn && !moreBtn) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (moreBtn) {
+        const expanded = tagWrap.classList.toggle('email-tags-expanded');
+        moreBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      } else if (calBtn) _openCalendarEventFromEmail(calBtn.dataset.calendarEventUid);
+      else _applyTagFilterFromPill(tagBtn.dataset.emailFilterTag);
+    });
+    subjectRow.appendChild(tagWrap);
+  }
+  body.appendChild(subjectRow);
+  row.appendChild(body);
+
+  const indicator = document.createElement('span');
+  indicator.className = 'email-row-indicator';
+  row.appendChild(indicator);
+
+  if (!state._selectMode) {
+    const actionsWrap = document.createElement('div');
+    actionsWrap.className = 'memory-item-actions';
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'memory-item-btn';
+    menuBtn.title = 'Actions';
+    menuBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _showCardMenu(em, menuBtn);
+    });
+    actionsWrap.appendChild(menuBtn);
+    row.appendChild(actionsWrap);
+
+    let _hold = null, _holdStart = null;
+    const _cancelHold = () => { if (_hold) { clearTimeout(_hold); _hold = null; } _holdStart = null; };
+    row.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button, .email-card-done, .recipient-chip, .memory-select-cb')) return;
+      _holdStart = { x: e.clientX, y: e.clientY };
+      _hold = setTimeout(() => {
+        _hold = null;
+        row._suppressNextClick = true;
+        setTimeout(() => { row._suppressNextClick = false; }, 400);
+        if (navigator.vibrate) try { navigator.vibrate(15); } catch {}
+        _showCardMenu(em, menuBtn);
+      }, 500);
+    });
+    row.addEventListener('pointermove', (e) => {
+      if (!_holdStart) return;
+      if (Math.hypot(e.clientX - _holdStart.x, e.clientY - _holdStart.y) > 10) _cancelHold();
+    });
+    row.addEventListener('pointerup', _cancelHold);
+    row.addEventListener('pointercancel', _cancelHold);
+  }
+
+  row.addEventListener('click', async () => {
+    if (row._suppressNextClick) { row._suppressNextClick = false; return; }
+    if (state._selectMode) {
+      if (state._selectedUids.has(em.uid)) state._selectedUids.delete(em.uid);
+      else state._selectedUids.add(em.uid);
+      row.classList.toggle('selected', state._selectedUids.has(em.uid));
+      const cb = row.querySelector('.memory-select-cb');
+      if (cb) cb.checked = state._selectedUids.has(em.uid);
+      _updateBulkBar();
+      return;
+    }
+    document.querySelectorAll('.email-row.active').forEach(r => r.classList.remove('active'));
+    row.classList.add('active');
+    _setMobilePane('reader');
+    await _loadReadingPane(em);
+  });
+
+  return row;
 }
 
 function _findSiblingEmailCard(card, dir) {
@@ -5440,6 +5844,169 @@ async function _toggleCardPreview(card, em) {
     reader.addEventListener('click', (ev) => { ev.stopPropagation(); });
   } catch (e) {
     showFailedReader(e?.message ? `Failed to load email: ${e.message}` : 'Failed to load email');
+  }
+}
+
+// Shared reader-header markup (From chip, recipient toggle, action-buttons
+// row) extracted from _toggleCardPreview's inline build (its `reader.innerHTML`
+// block above) so both the old card-expansion path and the new persistent
+// pane can share it without duplicating the button wiring HTML.
+function _buildEmailReaderHeaderHtml(em, data) {
+  const buildRecipients = (str) => {
+    if (!str) return '';
+    const addrs = _splitRecipientList(str);
+    if (addrs.length === 0) return '';
+    return addrs.map(a => _recipientChipHtml(a, _extractName(a))).join('');
+  };
+  const fromChip = _recipientChipHtml(`${data.from_name || ''} <${data.from_address || ''}>`, data.from_name || data.from_address, 'from-chip');
+  return `
+    <div class="email-reader-meta">
+      <div class="email-reader-meta-row email-reader-meta-from">
+        <strong>From:</strong>
+        <span class="recipient-chips">${fromChip}${(data.to || data.cc) ? `<button class="email-reader-meta-toggle" type="button" aria-expanded="false" title="Show recipients"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>` : ''}</span>
+      </div>
+      ${(data.to || data.cc) ? `<div class="email-reader-meta-details" hidden>
+        ${data.to ? `<div class="email-reader-meta-row"><strong>To:</strong><span class="recipient-chips">${buildRecipients(data.to)}</span></div>` : ''}
+        ${data.cc ? `<div class="email-reader-meta-row"><strong>Cc:</strong><span class="recipient-chips">${buildRecipients(data.cc)}</span></div>` : ''}
+      </div>` : ''}
+      <div class="email-reader-actions-inline">
+        <button class="memory-toolbar-btn reader-icon-btn" data-act="ai-reply" title="${data.cached_ai_reply ? 'AI Reply (cached draft ready)' : 'AI Reply (suggest a draft)'}">${_aiReplyIcon(data)}<span class="reader-btn-label">AI reply</span></button>
+        <button class="memory-toolbar-btn reader-icon-btn" data-act="reply" title="Reply"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg><span class="reader-btn-label">Reply</span></button>
+        ${_hasMultipleRecipients(data) ? `<button class="memory-toolbar-btn reader-icon-btn" data-act="reply-all" title="Reply All"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/></svg><span class="reader-btn-label">Reply all</span></button>` : ''}
+        <button class="memory-toolbar-btn reader-icon-btn" data-act="forward" title="Forward"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg><span class="reader-btn-label">Forward</span></button>
+        <button class="memory-toolbar-btn reader-icon-btn" data-act="summarize" title="Summarize">${_summaryIcon(data)}<span class="reader-btn-label">Summary</span></button>
+        <div class="email-reader-more-wrap" style="position:relative">
+          <button class="memory-toolbar-btn reader-icon-btn" data-act="more" title="More actions"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg><span class="reader-btn-label">More</span></button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// Persistent reading-pane loader for the 3-pane layout — replaces
+// _toggleCardPreview's in-place card expansion. Reuses the same stale-
+// response guard, fetch call, post-render wiring, and _stampReaderContext
+// as the old path (copied, not rewritten), targeting the always-visible
+// .email-pane-reader element instead of a child of the clicked card.
+async function _loadReadingPane(em) {
+  const pane = document.querySelector('#email-lib-modal .email-pane-reader');
+  if (!pane) return;
+  const accountAtStart = state._libAccountId || '';
+  const libraryFolderAtStart = state._libFolder || 'INBOX';
+  const folderAtStart = (em && em.folder) || libraryFolderAtStart;
+  const uidAtStart = String(em?.uid || '');
+  state._libReaderUid = uidAtStart;
+
+  if (!em.is_read) {
+    _syncEmailReadState(em.uid, true);
+    fetch(`${API_BASE}/api/email/mark-read/${em.uid}?folder=${encodeURIComponent(folderAtStart)}${_acct()}`, { method: 'POST' })
+      .catch(err => console.error('Failed to mark email read:', err));
+  }
+
+  pane.innerHTML = `<div class="email-card-reader email-card-reader-loading">${_emailReaderSkeletonHtml()}</div>`;
+  _markEmailReaderActive(pane);
+
+  try {
+    const res = await fetch(`${API_BASE}/api/email/read/${em.uid}?folder=${encodeURIComponent(folderAtStart)}${_acct()}`);
+    const data = await res.json();
+    if (
+      accountAtStart !== (state._libAccountId || '') ||
+      libraryFolderAtStart !== (state._libFolder || 'INBOX') ||
+      uidAtStart !== String(state._libReaderUid || '')
+    ) {
+      return; // user switched account/folder/email while this was in flight
+    }
+    if (data.error) {
+      pane.innerHTML = `<div style="padding:20px;color:var(--red,#e55)">Error: ${_esc(data.error)}</div>`;
+      return;
+    }
+    _syncEmailReadState(em.uid, true);
+    _stampReaderContext(pane, { ...em, ...data }, state._libFolder, state._libAccountId);
+
+    const attsHtml = _buildAttsHtmlFor(em.uid, data);
+
+    // Badge row: tags + spam-verdict (existing pill classes), urgency tier
+    // from the already-existing /api/email/urgency-state per-uid map (fetched
+    // once per pane-load, not blocking the rest of the render).
+    const tags = _visibleEmailTagsForRender({ ...em, tags: data.tags || em.tags });
+    let badgesHtml = _emailTagGroupHtml(tags, em);
+    if (em.is_spam_verdict) badgesHtml += '<span class="email-tag email-tag-spam">spam</span>';
+
+    pane.innerHTML = `
+      <div class="email-reader-subject-row">
+        <div class="email-reader-subject">${_esc(data.subject || em.subject || '(no subject)')}</div>
+        <div class="email-reader-subject-actions">
+          <button class="doc-action-icon-btn" id="email-reader-star-btn" title="${em.is_flagged ? 'Unstar' : 'Star'}" style="opacity:${em.is_flagged ? '1' : '0.6'};color:${em.is_flagged ? 'var(--accent, var(--red))' : 'inherit'}"><svg width="16" height="16" viewBox="0 0 24 24" fill="${em.is_flagged ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+          <button class="doc-action-icon-btn" id="email-reader-trash-btn" title="Delete" style="opacity:0.6"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+        </div>
+      </div>
+      ${badgesHtml ? `<div class="email-reader-badges">${badgesHtml}</div>` : ''}
+      <div class="email-reader-header">${_buildEmailReaderHeaderHtml(em, data)}</div>
+      ${attsHtml}
+      <div class="email-reader-body${data.body_html ? ' html-body' : ''}">${_safeRenderEmailBody(data)}</div>
+    `;
+    _markEmailReaderActive(pane);
+
+    _wireEmailAttachmentWrap(pane, folderAtStart);
+    _wireEmailInlineImages(pane);
+    _loadDeferredAttachmentsIntoReader(pane, em.uid, folderAtStart, data, !!em.has_attachments);
+    _maybeAutoTranslateEmail(pane);
+
+    pane.querySelector('#email-reader-star-btn')?.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const btn = ev.currentTarget;
+      const next = !em.is_flagged;
+      em.is_flagged = next;
+      btn.style.opacity = next ? '1' : '0.6';
+      btn.style.color = next ? 'var(--accent, var(--red))' : 'inherit';
+      btn.querySelector('svg').setAttribute('fill', next ? 'currentColor' : 'none');
+      btn.title = next ? 'Unstar' : 'Star';
+      try {
+        await fetch(`${API_BASE}/api/email/flag/${em.uid}?folder=${encodeURIComponent(folderAtStart)}${_acct()}&on=${next ? 'true' : 'false'}`, { method: 'POST' });
+      } catch (err) { console.error(err); }
+    });
+    pane.querySelector('#email-reader-trash-btn')?.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      try {
+        await fetch(`${API_BASE}/api/email/delete/${em.uid}?folder=${encodeURIComponent(folderAtStart)}${_acct()}`, { method: 'DELETE' });
+        pane.innerHTML = '<div class="email-pane-reader-empty">Deleted</div>';
+        _loadEmailsFresh();
+      } catch (err) { console.error(err); }
+    });
+
+    pane.querySelector('[data-act="reply"]')?.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      _snapEmailModalToLeftSidebar(ev.currentTarget.closest('.modal'));
+      if (state._onEmailClick) await state._onEmailClick({ email: em, emailData: data, mode: 'reply' });
+    });
+    pane.querySelector('[data-act="reply-all"]')?.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      _snapEmailModalToLeftSidebar(ev.currentTarget.closest('.modal'));
+      if (state._onEmailClick) await state._onEmailClick({ email: em, emailData: data, mode: 'reply-all' });
+    });
+    pane.querySelector('[data-act="ai-reply"]')?.addEventListener('click', (ev) => _handleAiReplyButton(ev, em, data));
+    pane.querySelector('[data-act="forward"]')?.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      if (state._onEmailClick) await state._onEmailClick({ email: em, emailData: data, mode: 'forward' });
+    });
+    pane.querySelector('[data-act="more"]')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      _showReaderMoreMenu(em, null, pane, ev.currentTarget);
+    });
+    pane.querySelector('[data-act="summarize"]')?.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      await _summarizeEmail(pane, data, ev.currentTarget);
+    });
+    _wireMetaToggle(pane);
+    pane.querySelector('[data-act="from-sender"]')?.remove();
+
+    if (data.cached_summary) {
+      const sumBtn = pane.querySelector('[data-act="summarize"]');
+      _showCachedSummary(pane, data.cached_summary, sumBtn);
+    }
+
+    _wireRecipientChips(pane);
+  } catch (e) {
+    pane.innerHTML = `<div style="padding:20px;color:var(--red,#e55)">Failed to load email</div>`;
   }
 }
 
@@ -7420,22 +7987,26 @@ function _showReaderMoreMenu(em, card, reader, anchor) {
 
   const closeAndRemove = async () => {
     // Pick the next neighbour BEFORE we re-render so we know which email to
-    // jump to. Prefer the next card; fall back to the previous one if this
-    // was the last card.
-    const sibling = _findSiblingEmailCard(card, +1) || _findSiblingEmailCard(card, -1);
-    const nextUid = sibling ? sibling.dataset.uid : null;
+    // jump to. Prefer the next email in the list array; fall back to the
+    // previous one if this was the last. List-array-based (not DOM sibling
+    // lookup) so this works whether or not a `card` element was passed in —
+    // the 3-pane reading pane calls this with card=null.
+    const idx = state._libEmails.findIndex(e => String(e.uid) === String(em.uid));
+    const nextUid = idx === -1 ? null
+      : (state._libEmails[idx + 1]?.uid ?? state._libEmails[idx - 1]?.uid ?? null);
     await _animateEmailCardRemoval([em.uid]);
     state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
     _renderGrid();
     _libCacheWriteBack();
     if (!nextUid) return;
-    // After _renderGrid, the card nodes are fresh — re-resolve and expand.
     const grid = document.getElementById('email-lib-grid');
-    const nextCard = grid?.querySelector(`.doclib-card[data-uid="${CSS.escape(String(nextUid))}"]`);
+    const nextRow = grid?.querySelector(`.email-row[data-uid="${CSS.escape(String(nextUid))}"]`);
     const nextEm = state._libEmails.find(e => String(e.uid) === String(nextUid));
-    if (nextCard && nextEm) {
-      _toggleCardPreview(nextCard, nextEm);
-      nextCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (nextRow && nextEm) {
+      grid.querySelectorAll('.email-row.active').forEach(r => r.classList.remove('active'));
+      nextRow.classList.add('active');
+      _loadReadingPane(nextEm);
+      nextRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   };
 
@@ -7686,11 +8257,15 @@ function _showCardMenu(em, anchor) {
   const _newTabIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
   const actions = [
     { label: 'Open', icon: _replyIcon, action: async () => {
-      // Just expand inline (same as tapping the row).
-      const card = anchor.closest('.doclib-card');
-      if (card && !card.classList.contains('doclib-card-expanded')) {
-        await _toggleCardPreview(card, em);
+      // Same as clicking the row — load it into the persistent reading pane.
+      const grid = document.getElementById('email-lib-grid');
+      const row = grid?.querySelector(`.email-row[data-uid="${CSS.escape(String(em.uid))}"]`);
+      if (row) {
+        grid.querySelectorAll('.email-row.active').forEach(r => r.classList.remove('active'));
+        row.classList.add('active');
       }
+      _setMobilePane('reader');
+      await _loadReadingPane(em);
     }},
     { label: 'Open in new tab', icon: _newTabIcon, action: async () => {
       // Open this email as its own in-app modal that registers a dock

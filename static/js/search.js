@@ -12,6 +12,7 @@ export function init(apiBase) {
   API_BASE = apiBase;
   // Fetch provider on init so it's ready when chat needs it
   _fetchProvider();
+  _fetchLabels();
 }
 
 async function _fetchProvider() {
@@ -27,11 +28,17 @@ export function getCurrentProvider() {
   return _provider;
 }
 
-const _labels = {
-  searxng: 'SearXNG', brave: 'Brave', duckduckgo: 'DuckDuckGo',
-  google_pse: 'Google', tavily: 'Tavily', serper: 'Serper',
-  disabled: 'search (disabled)',
-};
+let _labels = {};
+
+async function _fetchLabels() {
+  try {
+    const res = await fetch((API_BASE || '') + '/api/search/providers', { credentials: 'same-origin' });
+    const list = await res.json();
+    _labels = {};
+    list.forEach(function(p) { _labels[p.id] = p.label; });
+    _labels.disabled = 'search (disabled)';
+  } catch (e) { /* keep default */ }
+}
 
 export function getProviderLabel() {
   return _labels[_provider] || _provider;
@@ -40,6 +47,7 @@ export function getProviderLabel() {
 /** Re-fetch after admin saves new settings */
 export function refresh() {
   _fetchProvider();
+  _fetchLabels();
 }
 
 const searchModule = {

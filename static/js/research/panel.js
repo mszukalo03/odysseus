@@ -39,6 +39,16 @@ const _collapsedSections = new Set();
 // applies to every running job.
 const _SYNAPSE_MIN_KEY = 'research.synapseMinimized';
 let _synapseMinimized = (() => { try { return localStorage.getItem(_SYNAPSE_MIN_KEY) === '1'; } catch { return false; } })();
+
+let _cachedProviders = [];
+
+async function _fetchProviders() {
+  try {
+    const r = await fetch('/api/search/providers', { credentials: 'same-origin' });
+    const list = await r.json();
+    _cachedProviders = [{id:'',label:'Default'}].concat(list);
+  } catch (e) { /* keep empty */ }
+}
 const _vizCollapseIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>';
 const _vizExpandIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 function _toggleSynapseMinimized() {
@@ -214,6 +224,7 @@ export function init(apiBase, markdownMod, sessionMod) {
   jobs.init(apiBase);
   jobs.setRenderCallback(_renderJobs);
   jobs.onComplete(() => { if (!_open) _showBadge(); });
+  _fetchProviders();
 }
 
 export function isOpen() { return _open; }
@@ -343,9 +354,9 @@ export function closePanel() {
 }
 
 function _buildPanelHTML() {
-  const searchProviders = ['', 'searxng', 'duckduckgo', 'tavily', 'brave', 'google', 'serper'];
+  const searchProviders = _cachedProviders.length ? _cachedProviders : [{id:'',label:'Default'}];
   const providerOpts = searchProviders.map(p =>
-    `<option value="${p}">${p || 'Default'}</option>`
+    `<option value="${p.id}">${p.label || p.id || 'Default'}</option>`
   ).join('');
 
   let roundOpts = '<option value="0" selected>Auto</option>';
@@ -386,6 +397,7 @@ function _buildPanelHTML() {
             <span class="research-setting-label">Format <span class="hwfit-help-chip hwfit-help-chip-inline" title="Auto lets the LLM pick the output shape. Override when you specifically want a Compare table, How-to, Product, or Fact-check.">?</span></span>
             <select id="research-category">
               <option value="" selected>Auto</option>
+              <option value="general">General</option>
               <option value="product">Product</option>
               <option value="comparison">Compare</option>
               <option value="howto">How-to</option>

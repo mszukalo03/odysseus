@@ -619,6 +619,44 @@ async def action_summarize_emails(owner: str, **kwargs) -> Tuple[str, bool]:
         return str(e), False
 
 
+async def action_refresh_due_feeds(owner: str, **kwargs) -> Tuple[str, bool]:
+    """Refresh any RSS feed whose fetch_interval has elapsed since last_fetched."""
+    try:
+        import asyncio
+        from datetime import timezone, timedelta
+        from core.database import SessionLocal, Feed
+        from routes.feed_routes import _refresh_single
+
+        db = SessionLocal()
+        try:
+            feeds = db.query(Feed).filter(Feed.owner == owner, Feed.enabled == True).all()  # noqa: E712
+            due = []
+            now = datetime.now(timezone.utc)
+            for f in feeds:
+                if f.last_fetched is None:
+                    due.append(f.id)
+                    continue
+                last = f.last_fetched
+                if last.tzinfo is None:
+                    last = last.replace(tzinfo=timezone.utc)
+                if now - last >= timedelta(minutes=f.fetch_interval or 60):
+                    due.append(f.id)
+        finally:
+            db.close()
+
+        if not due:
+            raise TaskNoop("no feeds due")
+        for feed_id in due:
+            # _refresh_single does blocking network I/O (feed fetch) — run it
+            # off the event loop so a slow/hung feed doesn't stall every other
+            # concurrent request while this sweep runs.
+            await asyncio.to_thread(_refresh_single, feed_id, owner)
+        return f"Checked {len(due)} due feed(s)", True
+    except Exception as e:
+        logger.error(f"refresh_due_feeds action failed: {e}")
+        return str(e), False
+
+
 async def action_draft_email_replies(owner: str, **kwargs) -> Tuple[str, bool]:
     """Run one pass of AI reply drafting."""
     try:
@@ -2821,6 +2859,7 @@ BUILTIN_ACTIONS = {
     "audit_skills": action_audit_skills,
     "check_email_urgency": action_check_email_urgency,
     "cookbook_serve": action_cookbook_serve,
+    "refresh_due_feeds": action_refresh_due_feeds,
     # ping_notes removed from the registry — runs only inside `_note_pings_loop`.
 }
 
@@ -2842,4 +2881,5 @@ BUILTIN_ACTION_INFO = {
     "test_skills": "Run the per-skill Test on every skill: agent run + LLM judge → records verdict on the skill (pass/needs_work/fail/inconclusive). Advisory only — never rewrites or demotes anything.",
     "audit_skills": "Audit unaudited skills after enough new skills are added: test, narrow metadata, self-edit/retry, optional teacher rewrite, tag duplicates/trivial skills, and publish/draft using the auto-approve threshold.",
     "check_email_urgency": "Scan unread emails hourly, tag urgent/reply-soon/newsletter/marketing/spam, and send a reminder when a new email needs a fast reply.",
+    "refresh_due_feeds": "Auto-refresh RSS feeds whose refresh interval has elapsed",
 }

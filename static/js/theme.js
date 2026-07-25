@@ -29,6 +29,7 @@ export const THEMES = {
                             inputBg: '#2f2f2f', brandColor: '#ffffff', brandMixTo: '#ffffff' } },
   claude:     { bg:'#262624', fg:'#f5f4f0', panel:'#30302e', border:'#4a4a47', red:'#c6613f' },
   cute:       { bg:'#fff0f5', fg:'#d4608a', panel:'#fff8fa', border:'#f0c0d0', red:'#ff6b9d' },
+  navyseal:   { bg:'#0a1628', fg:'#b0cce8', panel:'#0e1e36', border:'#f0c800', red:'#00bcd4' },
 };
 
 const DEFAULT_THEME = 'dark';
@@ -59,6 +60,7 @@ const THEME_DEFAULT_PATTERN = {
   organs:     'rain',
   ume:        'petals',
   cute:       'sparkles',
+  navyseal:   'aurora',
 };
 
 // Default effect colors for specific themes (overrides --fg)
@@ -67,6 +69,7 @@ const THEME_DEFAULT_EFFECT_COLOR = {
   organs:     '#451616',
   cute:       '#ff8cb8',
   ume:        '#f5a0c0',
+  navyseal:   '#ffffff',
 };
 
 // Default effect intensity (0..1) per theme. Any theme not listed defaults to 1.
@@ -74,6 +77,7 @@ const THEME_DEFAULT_INTENSITY = {
   midnight:   0.5,
   terminal:   0.8,
   organs:     0.65,
+  navyseal:   0.5,
 };
 
 // Default frosted-glass state per theme. Themes not listed default to false.
@@ -103,6 +107,7 @@ export function saveCustomTheme(name, colors, opts) {
     if (opts.bgEffectIntensity !== undefined) entry.bgEffectIntensity = opts.bgEffectIntensity;
     if (opts.bgEffectSize !== undefined) entry.bgEffectSize = opts.bgEffectSize;
     if (opts.frosted !== undefined) entry.frosted = !!opts.frosted;
+    if (opts.neonGlow !== undefined) entry.neonGlow = !!opts.neonGlow;
   }
   ct[name] = entry;
   _saveCustomThemes(ct);
@@ -405,10 +410,14 @@ export function applyUiScale(scale) {
 const _BG_CLASSES = ['bg-pattern-dots',
   'bg-pattern-synapse', 'bg-pattern-rain', 'bg-pattern-constellations',
   'bg-pattern-perlin-flow',
-  'bg-pattern-petals', 'bg-pattern-sparkles', 'bg-pattern-embers'];
+  'bg-pattern-petals', 'bg-pattern-sparkles', 'bg-pattern-embers',
+  'bg-pattern-aurora', 'bg-pattern-matrix', 'bg-pattern-waves',
+  'bg-pattern-nebula', 'bg-pattern-ripples', 'bg-pattern-hexgrid'];
 const _CANVAS_PATTERNS = { synapse: _initSynapse, rain: _initRain, constellations: _initConstellations,
   'perlin-flow': _initPerlinFlow,
-  petals: _initPetals, sparkles: _initSparkles, embers: _initEmbers };
+  petals: _initPetals, sparkles: _initSparkles, embers: _initEmbers,
+  aurora: _initAurora, matrix: _initMatrix, waves: _initWaves,
+  nebula: _initNebula, ripples: _initRipples, hexgrid: _initHexGrid };
 
 export function applyBgEffectColor(color) {
   document.documentElement.style.setProperty('--bg-effect-color', color || '');
@@ -433,6 +442,12 @@ export function applyFrostedGlass(on) {
   document.body.classList.toggle('theme-frosted', !!on);
 }
 
+/** Toggle neon border glow — applies a pulsing box-shadow glow on all
+ *  bordered elements via CSS rules scoped to `body.neon-glow`. */
+export function applyNeonGlow(on) {
+  document.body.classList.toggle('neon-glow', !!on);
+}
+
 // Read current size multiplier for JS effects (canvas-based).
 function _getEffectSize() {
   const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bg-effect-size'));
@@ -446,7 +461,7 @@ export function applyBgPattern(pattern) {
   const p = pattern || 'none';
   document.body.classList.remove(..._BG_CLASSES);
   // Clean up any canvas backgrounds
-  document.querySelectorAll('#synapse-canvas, #rain-canvas, #constellations-canvas, #perlin-flow-canvas, #petals-canvas, #sparkles-canvas, #embers-canvas').forEach(c => c.remove());
+  document.querySelectorAll('#synapse-canvas, #rain-canvas, #constellations-canvas, #perlin-flow-canvas, #petals-canvas, #sparkles-canvas, #embers-canvas, #aurora-canvas, #matrix-canvas, #waves-canvas, #nebula-canvas, #ripples-canvas, #hexgrid-canvas').forEach(c => c.remove());
   if (p !== 'none') document.body.classList.add('bg-pattern-' + p);
   if (_CANVAS_PATTERNS[p]) _CANVAS_PATTERNS[p]();
   // Hide sliders that do nothing on static patterns.
@@ -476,6 +491,7 @@ export function save(name, colors, opts) {
     if (opts.bgEffectIntensity !== undefined && opts.bgEffectIntensity !== 1) obj.bgEffectIntensity = opts.bgEffectIntensity;
     if (opts.bgEffectSize !== undefined && opts.bgEffectSize !== 1) obj.bgEffectSize = opts.bgEffectSize;
     if (opts.frosted) obj.frosted = true;
+    if (opts.neonGlow) obj.neonGlow = true;
   }
   Storage.setJSON(LS_KEY, obj);
   _syncToServer(obj);
@@ -690,6 +706,8 @@ export function initThemeUI() {
     if (sz) opts.bgEffectSize = parseFloat(sz.value) / 100;
     const fr = document.getElementById('theme-frosted-toggle');
     if (fr) opts.frosted = !!fr.checked;
+    const ng = document.getElementById('theme-neon-toggle');
+    if (ng) opts.neonGlow = !!ng.checked;
     return opts;
   }
   function _saveFull(name, colors) { save(name, colors, _getOpts()); }
@@ -718,11 +736,15 @@ export function initThemeUI() {
         const fr = (ct && ct.frosted !== undefined)
           ? !!ct.frosted
           : (THEME_DEFAULT_FROSTED[name] === true);
+        const ng = (ct && ct.neonGlow !== undefined)
+          ? !!ct.neonGlow
+          : false;
         applyFontDensity(f, d);
         applyBgEffectColor(ec);
         applyBgEffectIntensity(ei);
         applyBgEffectSize(sz);
         applyFrostedGlass(fr);
+        applyNeonGlow(ng);
         applyBgPattern(p);
         const fs = document.getElementById('theme-font-select');
         const ds = document.getElementById('theme-density-select');
@@ -731,6 +753,7 @@ export function initThemeUI() {
         const eis = document.getElementById('theme-bg-intensity');
         const szs = document.getElementById('theme-bg-size');
         const frs = document.getElementById('theme-frosted-toggle');
+        const ngs = document.getElementById('theme-neon-toggle');
         if (fs) fs.value = f;
         if (ds) ds.value = d;
         if (ps) ps.value = p;
@@ -738,7 +761,8 @@ export function initThemeUI() {
         if (eis) eis.value = String(Math.round(ei * 100));
         if (szs) szs.value = String(Math.round(sz * 100));
         if (frs) frs.checked = fr;
-        save(name, colors, { font: f, density: d, bgPattern: p, bgEffectColor: ec, bgEffectIntensity: ei, bgEffectSize: sz, frosted: fr });
+        if (ngs) ngs.checked = ng;
+        save(name, colors, { font: f, density: d, bgPattern: p, bgEffectColor: ec, bgEffectIntensity: ei, bgEffectSize: sz, frosted: fr, neonGlow: ng });
       });
     });
     g.querySelectorAll('.theme-delete-btn').forEach(btn => {
@@ -1103,11 +1127,15 @@ export function initThemeUI() {
   const _initFrosted = (saved && saved.frosted !== undefined)
     ? !!saved.frosted
     : (saved && THEME_DEFAULT_FROSTED[saved.name] === true);
+  const _initNeonGlow = (saved && saved.neonGlow !== undefined)
+    ? !!saved.neonGlow
+    : false;
   applyFontDensity(_initFont, _initDensity);
   applyBgEffectColor(_initEffectColor);
   applyBgEffectIntensity(_initEffectIntensity);
   applyBgEffectSize(_initEffectSize);
   applyFrostedGlass(_initFrosted);
+  applyNeonGlow(_initNeonGlow);
   applyBgPattern(_initPattern);
 
   const fontSelect = document.getElementById('theme-font-select');
@@ -1201,6 +1229,15 @@ export function initThemeUI() {
     frostedToggle.checked = _initFrosted;
     frostedToggle.addEventListener('change', () => {
       applyFrostedGlass(frostedToggle.checked);
+      const s = getSaved(); if (s) _saveFull(s.name, s.colors);
+    });
+  }
+
+  const neonToggle = document.getElementById('theme-neon-toggle');
+  if (neonToggle) {
+    neonToggle.checked = _initNeonGlow;
+    neonToggle.addEventListener('change', () => {
+      applyNeonGlow(neonToggle.checked);
       const s = getSaved(); if (s) _saveFull(s.name, s.colors);
     });
   }
@@ -2071,10 +2108,437 @@ function _initEmbers() {
   draw();
 }
 
+// ── Aurora — slow-moving colorful light curtains ──
+function _initAurora() {
+  if (document.getElementById('aurora-canvas')) return;
+  const canvas = document.createElement('canvas');
+  canvas.id = 'aurora-canvas';
+  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+  canvas.setAttribute('aria-hidden', 'true');
+  document.body.prepend(canvas);
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let W, H, t = 0;
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  const _onResize = () => resize();
+  window.addEventListener('resize', _onResize);
+  function getColor() {
+    const s = getComputedStyle(document.documentElement);
+    return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#9cdef2';
+  }
+  function draw() {
+    if (!document.body.classList.contains('bg-pattern-aurora')) {
+      window.removeEventListener('resize', _onResize);
+      canvas.remove();
+      return;
+    }
+    requestAnimationFrame(draw);
+    t += 0.004;
+    ctx.clearRect(0, 0, W, H);
+    const c = getColor();
+    const inten = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bg-effect-intensity'));
+    const intensity = isNaN(inten) ? 1 : inten;
+    const layers = 4;
+    for (let l = 0; l < layers; l++) {
+      const phase = t + l * 2.1;
+      const amp = 30 + l * 18;
+      const freq = 0.004 - l * 0.0003;
+      const yOff = H * 0.15 + l * (H * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(0, H);
+      for (let x = 0; x <= W; x += 4) {
+        const y = yOff + Math.sin(x * freq + phase) * amp * intensity
+          + Math.sin(x * freq * 2.3 + phase * 1.7) * amp * 0.4 * intensity;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, H);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, yOff - amp, 0, yOff + amp * 1.5);
+      grad.addColorStop(0, 'transparent');
+      const hueShift = l * 40;
+      const alpha = (0.06 + l * 0.03) * intensity;
+      grad.addColorStop(0.3, `rgba(0, ${180 + hueShift * 0.3}, ${255 - l * 30}, ${alpha})`);
+      grad.addColorStop(0.6, `rgba(${100 + l * 30}, 200, 255, ${alpha * 0.5})`);
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  draw();
+}
+
+// ── Matrix Rain — falling green characters ──
+function _initMatrix() {
+  if (document.getElementById('matrix-canvas')) return;
+  const canvas = document.createElement('canvas');
+  canvas.id = 'matrix-canvas';
+  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+  canvas.setAttribute('aria-hidden', 'true');
+  document.body.prepend(canvas);
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let W, H;
+  const chars = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789';
+  const fontSize = 14;
+  const drops = [];
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const cols = Math.ceil(W / fontSize);
+    while (drops.length < cols) drops.push(Math.random() * -H);
+    while (drops.length > cols) drops.pop();
+  }
+  resize();
+  const _onResize = () => resize();
+  window.addEventListener('resize', _onResize);
+  function getColor() {
+    const s = getComputedStyle(document.documentElement);
+    return s.getPropertyValue('--bg-effect-color').trim() || '#00ff41';
+  }
+  function draw() {
+    if (!document.body.classList.contains('bg-pattern-matrix')) {
+      window.removeEventListener('resize', _onResize);
+      canvas.remove();
+      return;
+    }
+    requestAnimationFrame(draw);
+    const inten = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bg-effect-intensity'));
+    const intensity = isNaN(inten) ? 1 : inten;
+    const speedMult = 0.3 + intensity * 0.7;
+    ctx.fillStyle = 'rgba(0,0,0,0.05)';
+    ctx.fillRect(0, 0, W, H);
+    const c = getColor();
+    ctx.font = fontSize + 'px monospace';
+    for (let i = 0; i < drops.length; i++) {
+      const ch = chars[Math.floor(Math.random() * chars.length)];
+      const alpha = 0.3 + Math.random() * 0.7;
+      ctx.fillStyle = c;
+      ctx.globalAlpha = alpha * 0.6;
+      ctx.fillText(ch, i * fontSize, drops[i]);
+      ctx.globalAlpha = alpha;
+      ctx.fillText(ch, i * fontSize, drops[i] - fontSize);
+      drops[i] += fontSize * 0.3 * speedMult;
+      if (drops[i] > H + fontSize * 4 && Math.random() < 0.975) drops[i] = -fontSize * (2 + Math.random() * 20);
+    }
+    ctx.globalAlpha = 1;
+  }
+  draw();
+}
+
+// ── Waves — smooth undulating ocean waves ──
+function _initWaves() {
+  if (document.getElementById('waves-canvas')) return;
+  const canvas = document.createElement('canvas');
+  canvas.id = 'waves-canvas';
+  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+  canvas.setAttribute('aria-hidden', 'true');
+  document.body.prepend(canvas);
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let W, H, t = 0;
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  const _onResize = () => resize();
+  window.addEventListener('resize', _onResize);
+  function getColor() {
+    const s = getComputedStyle(document.documentElement);
+    return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#64d2ff';
+  }
+  function draw() {
+    if (!document.body.classList.contains('bg-pattern-waves')) {
+      window.removeEventListener('resize', _onResize);
+      canvas.remove();
+      return;
+    }
+    requestAnimationFrame(draw);
+    t += 0.008;
+    ctx.clearRect(0, 0, W, H);
+    const c = getColor();
+    const inten = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bg-effect-intensity'));
+    const intensity = isNaN(inten) ? 1 : inten;
+    const sz = _getEffectSize();
+    const numWaves = 3;
+    for (let w = 0; w < numWaves; w++) {
+      const phase = t + w * 2.5;
+      const amp = (20 + w * 10) * intensity * sz;
+      const freq = 0.008 - w * 0.001;
+      const yBase = H * (0.4 + w * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(0, H);
+      for (let x = 0; x <= W; x += 3) {
+        const y = yBase + Math.sin(x * freq + phase) * amp
+          + Math.sin(x * freq * 1.8 + phase * 2.1) * amp * 0.3;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, H);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, yBase - amp, 0, yBase + amp);
+      grad.addColorStop(0, 'transparent');
+      const alpha = (0.04 + w * 0.025) * intensity;
+      grad.addColorStop(0.4, `rgba(100, 210, 255, ${alpha})`);
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  draw();
+}
+
+// ── Nebula — slow swirling gas cloud with color gradients ──
+function _initNebula() {
+  if (document.getElementById('nebula-canvas')) return;
+  const canvas = document.createElement('canvas');
+  canvas.id = 'nebula-canvas';
+  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+  canvas.setAttribute('aria-hidden', 'true');
+  document.body.prepend(canvas);
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let W, H, t = 0;
+  const blobs = [];
+  function makeBlob() {
+    return {
+      x: Math.random(), y: Math.random(),
+      vx: (Math.random() - 0.5) * 0.0002,
+      vy: (Math.random() - 0.5) * 0.0002,
+      r: 0.1 + Math.random() * 0.2,
+      hue: Math.random() * 60 + 200,
+      sat: 40 + Math.random() * 40,
+      light: 30 + Math.random() * 30,
+      alpha: 0.02 + Math.random() * 0.03,
+      pulse: Math.random() * Math.PI * 2,
+      pulseSpeed: 0.003 + Math.random() * 0.005,
+    };
+  }
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (blobs.length === 0) for (let i = 0; i < 8; i++) blobs.push(makeBlob());
+  }
+  resize();
+  const _onResize = () => resize();
+  window.addEventListener('resize', _onResize);
+  function getColor() {
+    const s = getComputedStyle(document.documentElement);
+    return s.getPropertyValue('--bg-effect-color').trim() || '';
+  }
+  function getBg() {
+    return getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0a1628';
+  }
+  function draw() {
+    if (!document.body.classList.contains('bg-pattern-nebula')) {
+      window.removeEventListener('resize', _onResize);
+      canvas.remove();
+      return;
+    }
+    requestAnimationFrame(draw);
+    t += 0.002;
+    const sz = _getEffectSize();
+    const inten = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bg-effect-intensity'));
+    const intensity = isNaN(inten) ? 1 : inten;
+    ctx.clearRect(0, 0, W, H);
+    const bg = hexToRgb(getBg()) || { r: 10, g: 22, b: 40 };
+    // Faint radial gradient to blend with bg
+    const bgGrad = ctx.createRadialGradient(W * 0.5, H * 0.5, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.7);
+    bgGrad.addColorStop(0, `rgba(${bg.r + 15}, ${bg.g + 20}, ${bg.b + 30}, 0.3)`);
+    bgGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, W, H);
+    for (const b of blobs) {
+      b.x += b.vx; b.y += b.vy;
+      if (b.x < -0.2) b.x = 1.2; if (b.x > 1.2) b.x = -0.2;
+      if (b.y < -0.2) b.y = 1.2; if (b.y > 1.2) b.y = -0.2;
+      b.pulse += b.pulseSpeed;
+      const pulseAlpha = 0.7 + 0.3 * Math.sin(b.pulse);
+      const cx = b.x * W; const cy = b.y * H;
+      const radius = b.r * Math.max(W, H) * sz * 0.4;
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+      const a = b.alpha * intensity * pulseAlpha;
+      grad.addColorStop(0, `hsla(${b.hue}, ${b.sat}%, ${b.light}%, ${a})`);
+      grad.addColorStop(0.5, `hsla(${b.hue + 20}, ${b.sat}%, ${b.light + 10}%, ${a * 0.4})`);
+      grad.addColorStop(1, `hsla(${b.hue + 40}, ${b.sat}%, ${b.light + 20}%, 0)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+    }
+    ctx.globalAlpha = 1;
+  }
+  draw();
+}
+
+// ── Ripples — expanding concentric rings from random points ──
+function _initRipples() {
+  if (document.getElementById('ripples-canvas')) return;
+  const canvas = document.createElement('canvas');
+  canvas.id = 'ripples-canvas';
+  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+  canvas.setAttribute('aria-hidden', 'true');
+  document.body.prepend(canvas);
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let W, H;
+  const ripples = [];
+  const MAX_RIPPLES = 12;
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  const _onResize = () => resize();
+  window.addEventListener('resize', _onResize);
+  function getColor() {
+    const s = getComputedStyle(document.documentElement);
+    return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#9cdef2';
+  }
+  function spawn() {
+    ripples.push({
+      x: Math.random() * W, y: Math.random() * H,
+      radius: 0, maxRadius: 60 + Math.random() * 120,
+      speed: 0.4 + Math.random() * 0.6,
+      alpha: 0.12 + Math.random() * 0.1,
+    });
+  }
+  function draw() {
+    if (!document.body.classList.contains('bg-pattern-ripples')) {
+      window.removeEventListener('resize', _onResize);
+      canvas.remove();
+      return;
+    }
+    requestAnimationFrame(draw);
+    const inten = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bg-effect-intensity'));
+    const intensity = isNaN(inten) ? 1 : inten;
+    const sz = _getEffectSize();
+    ctx.clearRect(0, 0, W, H);
+    const c = getColor();
+    if (ripples.length < MAX_RIPPLES && Math.random() < 0.03 * intensity) spawn();
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const r = ripples[i];
+      r.radius += r.speed * sz;
+      if (r.radius > r.maxRadius) { ripples.splice(i, 1); continue; }
+      const progress = r.radius / r.maxRadius;
+      const a = r.alpha * (1 - progress) * intensity;
+      ctx.strokeStyle = c;
+      ctx.globalAlpha = a;
+      ctx.lineWidth = 1.2 * (1 - progress * 0.7) * sz;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+      ctx.stroke();
+      // Inner ring
+      if (r.radius > 8) {
+        ctx.globalAlpha = a * 0.5;
+        ctx.lineWidth = 0.6 * (1 - progress * 0.7) * sz;
+        ctx.beginPath();
+        ctx.arc(r.x, r.y, r.radius * 0.6, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  draw();
+}
+
+// ── Hex Grid — pulsing hexagonal grid ──
+function _initHexGrid() {
+  if (document.getElementById('hexgrid-canvas')) return;
+  const canvas = document.createElement('canvas');
+  canvas.id = 'hexgrid-canvas';
+  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+  canvas.setAttribute('aria-hidden', 'true');
+  document.body.prepend(canvas);
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let W, H, t = 0;
+  const hexSize = 32;
+  const cells = [];
+  function buildGrid() {
+    cells.length = 0;
+    const spacingX = hexSize * 1.5;
+    const spacingY = hexSize * Math.sqrt(3) * 0.75;
+    const cols = Math.ceil(W / spacingX) + 3;
+    const rows = Math.ceil(H / spacingY) + 3;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = c * spacingX + (r % 2) * spacingX * 0.5 - hexSize;
+        const y = r * spacingY - hexSize;
+        cells.push({
+          x, y,
+          phase: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+  }
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    buildGrid();
+  }
+  resize();
+  const _onResize = () => resize();
+  window.addEventListener('resize', _onResize);
+  function getColor() {
+    const s = getComputedStyle(document.documentElement);
+    return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#9cdef2';
+  }
+  function drawHex(cx, cy, size, alpha, glow) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const angle = Math.PI / 3 * i - Math.PI / 6;
+      const px = cx + size * Math.cos(angle);
+      const py = cy + size * Math.sin(angle);
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    const c = getColor();
+    // Inner glow fill
+    ctx.fillStyle = c;
+    ctx.globalAlpha = alpha * 0.35;
+    ctx.fill();
+    // Stroke outline
+    ctx.strokeStyle = c;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  }
+  function draw() {
+    if (!document.body.classList.contains('bg-pattern-hexgrid')) {
+      window.removeEventListener('resize', _onResize);
+      canvas.remove();
+      return;
+    }
+    requestAnimationFrame(draw);
+    t += 0.025;
+    const inten = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bg-effect-intensity'));
+    const intensity = isNaN(inten) ? 1 : inten;
+    const sz = _getEffectSize();
+    ctx.clearRect(0, 0, W, H);
+    for (const cell of cells) {
+      const breathe = 0.5 + 0.5 * Math.sin(cell.phase + t * 0.6);
+      const alpha = (0.08 + breathe * 0.2) * intensity;
+      const size = hexSize * sz * (0.5 + breathe * 0.15);
+      drawHex(cell.x, cell.y, size, alpha);
+    }
+    ctx.globalAlpha = 1;
+  }
+  draw();
+}
 const themeModule = { initThemeUI, togglePopup, closePopup, makeDraggable,
                        THEMES, applyColors, applyFontDensity, applyBgPattern,
                        applyBgEffectColor, applyBgEffectIntensity, applyBgEffectSize,
-                       applyFrostedGlass,
+                       applyFrostedGlass, applyNeonGlow,
                        save, getSaved, saveCustomTheme, deleteCustomTheme,
                        getCustomThemes };
 

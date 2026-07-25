@@ -91,8 +91,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "script-src 'self' 'unsafe-inline'; "
                 "style-src 'self' 'unsafe-inline'; "
                 "font-src 'self'; "
+                # img-src is intentionally broad (any https: origin), not scoped
+                # to a CDN allowlist: the RSS feed reader aggregates arbitrary
+                # user-subscribed feeds, each hosting its own thumbnails/favicons
+                # on its own arbitrary domain (e.g. a podcast host serving its
+                # own artwork, not any fixed CDN) — a narrow allowlist would
+                # break legitimate feed images for any site not on the list.
                 "img-src 'self' data: blob: https:; "
                 "connect-src 'self'; "
+                "frame-src https://www.youtube.com https://www.youtube-nocookie.com; "
                 "frame-ancestors 'none'"
             )
         elif is_tool_render:
@@ -117,10 +124,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
                 "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
                 "font-src 'self' https://cdn.jsdelivr.net; "
+                # img-src is intentionally broad (any https: origin), not scoped
+                # to a CDN allowlist: the RSS feed reader aggregates arbitrary
+                # user-subscribed feeds, each hosting its own thumbnails/favicons
+                # on its own arbitrary domain (e.g. a podcast host serving its
+                # own artwork, not any fixed CDN) — a narrow allowlist would
+                # break legitimate feed images for any site not on the list.
                 "img-src 'self' data: blob: https:; "
                 "media-src 'self' blob:; "
                 "connect-src 'self'; "
-                "frame-src 'self'; "
+                "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; "
                 "frame-ancestors 'none'"
             )
         return response

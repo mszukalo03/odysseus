@@ -150,6 +150,7 @@ scripts/check-docker-gpu.sh --enable-nvidia-overlay
 # Full assisted setup — install toolkit, then enable overlay if passthrough works:
 scripts/check-docker-gpu.sh --install-nvidia-toolkit --enable-nvidia-overlay
 ```
+
 #### Arch Linux NVIDIA Docker notes
 
 On Arch Linux, verify the host NVIDIA driver and Docker GPU passthrough before enabling the Odysseus NVIDIA overlay.
@@ -304,8 +305,8 @@ OLLAMA_HOST=0.0.0.0:11434 ollama serve
 
 This connects Odysseus in Docker to an Ollama server that is already running on
 your host machine; it does not start Ollama inside the container.
-`host.docker.internal` is Docker's hostname for the host machine from inside the
-container. Cookbook **Serve** is a separate workflow for serving downloaded
+`host.docker.internal` is Docker's hostname for the host machine from inside
+the container. Cookbook **Serve** is a separate workflow for serving downloaded
 models through Odysseus/llama.cpp, so Windows users with an existing Ollama
 install usually only need to add the endpoint in Settings.
 

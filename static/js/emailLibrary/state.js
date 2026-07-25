@@ -32,4 +32,6 @@ export const state = {
   _libEscHandler: null,
   _selectMode: false,
   _selectedUids: new Set(),
+  _libReaderUid: null,           // 3-pane layout: uid currently shown in .email-pane-reader
+  _libUnreadCounts: {},          // 3-pane layout: per-folder unread count, from GET /api/email/folders
 };

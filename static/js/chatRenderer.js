@@ -2489,7 +2489,20 @@ export function addMessage(role, content, modelName, metadata) {
     const isCompacted = metadata?.compacted;
     const replyModels = replyModelPair(modelName, metadata);
     const resolvedModel = replyModels.actualModel || replyModels.requestedModel;
-    var _roleText = role === 'user' ? 'You' : (isSlash || isCompacted) ? 'Odysseus' : modelRouteLabel(replyModels.requestedModel, resolvedModel);
+    if (role === 'user') {
+      r.classList.add('has-avatar');
+      var _avatarEl = document.createElement('span');
+      _avatarEl.className = 'msg-user-avatar';
+      var _initial = (window._currentUsername || 'You')[0].toUpperCase();
+      _avatarEl.textContent = _initial;
+      var _avatarUrl = window._userAvatarUrl;
+      if (_avatarUrl) {
+        _avatarEl.style.backgroundImage = 'url(' + _avatarUrl + ')';
+        _avatarEl.textContent = '';
+      }
+      r.appendChild(_avatarEl);
+    }
+    var _roleText = role === 'user' ? (window._currentUsername || 'You') : (isSlash || isCompacted) ? 'Odysseus' : modelRouteLabel(replyModels.requestedModel, resolvedModel);
     if (role === 'assistant' && (metadata?.research || metadata?.research_clarification)) {
       _roleText += ' (Research)';
     }
@@ -2498,12 +2511,13 @@ export function addMessage(role, content, modelName, metadata) {
     } else if (metadata?.character_name && role !== 'user' && !isSlash && !isCompacted) {
       _roleText = metadata.character_name;
     }
-    r.textContent = _roleText;
+    r.appendChild(document.createTextNode(_roleText));
     if (role !== 'user') {
       if (!isSlash && !isCompacted && replyModels.requestedModel && resolvedModel && !sameModelName(replyModels.requestedModel, resolvedModel)) {
         r.title = replyModels.requestedModel + ' -> ' + resolvedModel;
       }
       if (!isSlash && !isCompacted) applyModelColor(r, resolvedModel);
+      r.appendChild(document.createTextNode(' '));
       r.appendChild(roleTimestamp(metadata?.timestamp));
     }
 
@@ -2753,6 +2767,7 @@ export function addMessage(role, content, modelName, metadata) {
       if (metadata) displayMetrics(wrap, metadata);
     } else {
       // Add timestamp to user header (like AI messages)
+      r.appendChild(document.createTextNode(' '));
       r.appendChild(roleTimestamp(metadata?.timestamp));
 
       wrap.appendChild(createUserMsgFooter(wrap));
