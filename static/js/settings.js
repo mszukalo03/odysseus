@@ -2452,6 +2452,7 @@ function initAll() {
   initShortcuts();
   initAccount();
   initIntegrations();
+  initIthacaSettings();
   initEmailSettings();
   initEmailAccountsSettings();
   initReminderSettings();
@@ -2462,6 +2463,64 @@ function notifyIntegrationsChanged() {
   try {
     window.dispatchEvent(new CustomEvent('odysseus-integrations-changed'));
   } catch (_) {}
+}
+
+/* ── Ithaca hub API keys (Weather + Software Updates tiles) ──
+   Mirrors initSearchSettings()'s pattern: load full settings once (admin
+   only — the card itself is .admin-only and hidden for non-admins), populate
+   the fields, auto-save the whole group on any field's `change` event. */
+async function initIthacaSettings() {
+  var keyInput = el('set-ithacaOwmKey');
+  if (!keyInput) return; // settings modal markup not present (shouldn't happen)
+  var latInput = el('set-ithacaLat');
+  var lonInput = el('set-ithacaLon');
+  var unitsSel = el('set-ithacaUnits');
+  var vaultPathInput = el('set-ithacaVaultPath');
+  var obsUrlInput = el('set-ithacaObsUrl');
+  var obsTokenInput = el('set-ithacaObsToken');
+  var digestDirInput = el('set-ithacaDigestDir');
+  var msg = el('set-ithacaMsg');
+
+  try {
+    var res = await fetch('/api/auth/settings', { credentials: 'same-origin' });
+    var s = await res.json();
+    keyInput.value = s.openweather_api_key || '';
+    latInput.value = s.openweather_lat || '';
+    lonInput.value = s.openweather_lon || '';
+    unitsSel.value = s.openweather_units || '';
+    vaultPathInput.value = s.obsidian_vault_path || '';
+    obsUrlInput.value = s.obsidian_api_url || '';
+    obsTokenInput.value = s.obsidian_api_token || '';
+    digestDirInput.value = s.obsidian_digest_dir || '';
+  } catch (e) { console.warn('Failed to load Ithaca settings', e); }
+
+  async function saveIthaca() {
+    try {
+      await fetch('/api/auth/settings', { method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          openweather_api_key: keyInput.value.trim(),
+          openweather_lat: latInput.value.trim(),
+          openweather_lon: lonInput.value.trim(),
+          openweather_units: unitsSel.value,
+          obsidian_vault_path: vaultPathInput.value.trim(),
+          obsidian_api_url: obsUrlInput.value.trim(),
+          obsidian_api_token: obsTokenInput.value.trim(),
+          obsidian_digest_dir: digestDirInput.value.trim(),
+        })
+      });
+      if (msg) {
+        msg.textContent = 'Saved'; msg.style.color = 'var(--fg)';
+        setTimeout(function() { msg.textContent = ''; }, 2000);
+      }
+    } catch (e) {
+      if (msg) { msg.textContent = 'Failed to save'; msg.style.color = 'var(--red)'; }
+    }
+  }
+
+  [keyInput, latInput, lonInput, unitsSel, vaultPathInput, obsUrlInput, obsTokenInput, digestDirInput].forEach(function(input) {
+    input.addEventListener('change', saveIthaca);
+  });
 }
 
 async function initReminderSettings() {
@@ -5359,6 +5418,7 @@ async function initUnifiedIntegrations() {
       { key: 'cookbook:launch', label: 'Cookbook launch', detail: 'Launch and stop cookbook serve tasks. Powerful: runs SSH commands on your configured servers, bounded by the same allowlist the UI uses (vllm/python3/sglang/llama-server/...)' },
       { key: 'feeds:read', label: 'Feeds', detail: 'List feeds/groups and read articles (e.g. unread counts, search)' },
       { key: 'feeds:write', label: 'Feeds write', detail: 'Mark articles read/starred' },
+      { key: 'ithaca:read', label: 'Ithaca hub', detail: 'Read the Ithaca dashboard data (weather, daily digest, app links)' },
     ];
     // Strict name-prefix match keeps Codex and Claude tokens in their own forms.
     const agentTokens = (Array.isArray(tokens) ? tokens : []).filter(tok =>
@@ -5373,6 +5433,7 @@ async function initUnifiedIntegrations() {
       memory: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2a2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 0-2.5 2.5A2.5 2.5 0 0 0 2 9.5v3A2.5 2.5 0 0 0 4.5 15a2.5 2.5 0 0 0 2.5 2.5A2.5 2.5 0 0 0 9.5 20H10V2z"/><path d="M14.5 2a2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1 2.5 2.5A2.5 2.5 0 0 1 22 9.5v3A2.5 2.5 0 0 1 19.5 15a2.5 2.5 0 0 1-2.5 2.5A2.5 2.5 0 0 1 14.5 20H14V2z"/></svg>',
       cookbook: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
       feeds: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/><path d="M4 4a16 16 0 0 1 16 16"/><path d="M4 11a9 9 0 0 1 9 9"/></svg>',
+      ithaca: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 4l9 5.5"/><line x1="5" y1="12" x2="19" y2="12"/><line x1="7" y1="12" x2="7" y2="18"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="17" y1="12" x2="17" y2="18"/><line x1="4" y1="20.5" x2="20" y2="20.5"/></svg>',
     };
     const _scopeNiceLabel = (label) => label.replace(/\s+(write|drafts?|send)$/i, '');
     const _scopeAction = (key) => (key.split(':')[1] || '').toLowerCase();

@@ -116,3 +116,8 @@ Canonically `/api/codex/*` (shared by **all** agent integrations — "codex" nam
 | `POST /api/feeds/opml/import` | Session | Import feeds from OPML |
 | `POST /api/feeds/groups/{group_id}/summarize` | Session | AI-generated digest of a group's articles |
 | `GET /api/companion/ping/info/models/pair` | Session | Companion app endpoints |
+| `GET /api/ithaca/weather` | Session / `ithaca:read` | Live OpenWeatherMap current + 3-hourly forecast (server-side proxy, 10-min TTL cache; env: OPENWEATHER_API_KEY/LAT/LON/UNITS) |
+| `GET /api/ithaca/digest` | Session / `ithaca:read` | Latest daily-digest md, split by headings; Software Updates table parsed to rows + enriched with per-app links (5-min TTL cache). Source: the vault on disk when `OBSIDIAN_VAULT_PATH` is set (preferred — the Local REST API only answers while the Obsidian desktop app is open), else the Obsidian Local REST API; the `source` field reports which |
+| `GET /api/ithaca/config` | Session / `ithaca:read` | Per-app link config (repo_url, ssh_host, path) — data/ithaca.json merged over defaults |
+| `PUT /api/ithaca/config` | Admin | Update data/ithaca.json (atomic write; drops digest cache) |
+| `POST /api/ithaca/ssh/open` | Admin | ssh into an app's configured host and `ls -la` its deploy path (host/path from server config only; BatchMode, 20s timeout) |

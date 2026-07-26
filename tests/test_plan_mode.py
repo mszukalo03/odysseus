@@ -42,7 +42,8 @@ def test_plan_mode_allows_readonly_tools():
     disabled = plan_mode_disabled_tools()
     # Read-only investigation tools stay enabled, including the discovery tools
     # (grep/glob/ls) that replace freestyle shell.
-    for name in ("read_file", "grep", "glob", "ls", "web_search", "web_fetch", "search_chats"):
+    for name in ("read_file", "grep", "glob", "ls", "web_search", "web_fetch", "search_chats",
+                 "get_home_weather", "get_homelab_updates"):
         assert name not in disabled, f"{name} should be usable in plan mode"
 
 

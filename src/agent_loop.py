@@ -495,6 +495,11 @@ _DOMAIN_RULES = {
 ## Integration/API rules
 - To query or control a configured service integration (Home Assistant, Miniflux, Gitea, Linkding, Jellyfin, or any other registered service), use `api_call` with the integration name, HTTP method, path, and optional JSON body.
 - Do not use shell, curl, or `app_api` to reach a user's connected integration when `api_call` is available.""",
+    "ithaca": """\
+## Home weather / homelab update rules
+- For the user's OWN local weather ("is it raining", "how cold is it", "do I need an umbrella", "what's the weather"), call `get_home_weather`. It already knows their configured location — do not ask which city, and prefer it over `web_search`. Use `web_search` only for a DIFFERENT named place ("weather in Tokyo").
+- For pending updates to the user's self-hosted apps ("any software updates", "what needs updating", "is Jellyfin up to date", "is Radarr outdated"), call `get_homelab_updates`. This reads their own weekly digest — you cannot know it from training data, so never answer from memory and never say you lack real-time access.
+- Both are read-only and take no arguments. Answer from the tool result.""",
 }
 
 _DOMAIN_TOOL_MAP = {
@@ -509,6 +514,7 @@ _DOMAIN_TOOL_MAP = {
     "settings": {"manage_settings", "manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens", "app_api"},
     "contacts": {"resolve_contact", "manage_contact"},
     "integrations": {"api_call"},
+    "ithaca": {"get_home_weather", "get_homelab_updates"},
 }
 
 _WORKSPACE_TERMINUS_TOOLS = (
@@ -720,6 +726,8 @@ If `dtend` omitted, defaults to dtstart+1h (or +1d when `all_day: true`). \
 For a RECURRING event pass `rrule` as an iCalendar RRULE string, e.g. `"FREQ=WEEKLY;BYDAY=MO"` (every Monday), `"FREQ=DAILY;COUNT=10"`, or `"FREQ=MONTHLY;BYMONTHDAY=1"` — create ONE event with the rrule, do not loop creating many events. Do not pass `rrule` for "next Wednesday only", "just this once", or any single occurrence. \
 If the user asks for a reminder/alarm before the event, pass `reminder_minutes` as an integer; do not write reminder text into the event description and do NOT also call `manage_notes` for the same reminder because calendar reminders are routed through Notes automatically. \
 `calendar` accepts a name ("Main") or short-id prefix.""",
+    "get_home_weather": "- ```get_home_weather``` — Get the user's own home weather (current conditions + upcoming hourly forecast) for whatever city they configured, NOT restricted to any specific named place — queried directly from OpenWeatherMap. No arguments needed; optionally `{\"refresh\": true}` to bypass the cache. Prefer this over web_search for the user's own weather, no matter what city that is.",
+    "get_homelab_updates": "- ```get_homelab_updates``` — List pending updates for the user's self-hosted apps (Radarr, Sonarr, Prowlarr, Jellyfin, etc.), from the latest n8n-generated digest — the same data as the Ithaca hub's Software Updates tile. No arguments needed; optionally `{\"refresh\": true}` to bypass the cache.",
     "create_session": "- ```create_session``` — Create a new chat. Line 1 = chat name, line 2 = model name. Use for background/parallel work.",
     "list_sessions": "- ```list_sessions``` — List chats sorted MOST-RECENT FIRST (the UI calls them 'chats') with clickable chat-title links. Output includes a relative \"last active\" timestamp per row, so the first row is the user's most recent chat. Content = optional filter keyword (matches chat name). When answering, preserve the `[title](#session-id)` links exactly; do not convert them into plain text.",
     "send_to_session": "- ```send_to_session``` — Send a message to another session. Line 1 = session_id, rest = message. Use for orchestrating work across sessions.",
@@ -1364,6 +1372,33 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
     if has(r"\bapi[ _]call\b", r"\bintegrations?\b",
            r"\b(?:home ?assistant|miniflux|gitea|linkding|jellyfin)\b"):
         domains.add("integrations")
+    # Ithaca hub data — the user's own home weather and their homelab software
+    # -update digest. Same failure shape as the api_call bug above: these
+    # questions are short and matched no domain, so `low_signal` came out True
+    # and `_direct_low_signal` answered them with a bare user message — no
+    # system prompt, no tools (metrics showed input_tokens=16, tool_calls=0).
+    # The model then replied "I don't have real-time data access" for a question
+    # its own get_homelab_updates tool answers. Naming the domain both keeps the
+    # turn on the agent path and seeds the two tools deterministically via
+    # _DOMAIN_TOOL_MAP, independent of embedding retrieval.
+    if has(r"\b(?:weather|forecast|raining|snowing|umbrella)\b",
+           r"\bhow\s+(?:hot|cold|warm|chilly|humid|windy)\s+is\s+it\b",
+           r"\bis\s+it\s+(?:raining|snowing|hot|cold|warm|chilly|freezing|sunny|cloudy|windy)\b",
+           r"\btemp(?:erature)?\s+outside\b",
+           r"\bit\s+like\s+outside\b"):
+        domains.add("ithaca")
+    if has(r"\bhome\s?lab\b",
+           r"\b(?:software|app|apps|application|applications|package|packages|firmware)\s+updates?\b",
+           r"\bneeds?\s+updat(?:e|es|ing)\b",
+           r"\bup[\s-]?to[\s-]?date\b",
+           r"\b(?:outdated|out\s+of\s+date)\b",
+           r"\bupdates?\s+(?:are\s+)?(?:available|pending|waiting)\b",
+           # Same guard as action_intents: "any updates on the PR?" is a
+           # status-chase, so require the phrase to stand alone or carry an
+           # update-lookup qualifier.
+           r"\bany\s+(?:new\s+)?updates?\s*(?:[?.!]*$|\b(?:today|available|pending|for\s+(?:me|my)\b))",
+           r"\b(?:radarr|sonarr|prowlarr|jellyseerr|seerr|transmission|flatpak)\b"):
+        domains.add("ithaca")
 
     low_signal = not continuation and not domains
     return {

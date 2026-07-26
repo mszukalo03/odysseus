@@ -83,3 +83,86 @@ def test_router_reports_non_calendar_categories():
     assert classify_tool_intent("reply to that email").category == "email"
     assert classify_tool_intent("open my calendar").category == "ui"
     assert classify_tool_intent("research cost effective local models").category == "research"
+
+
+# ─── Ithaca hub tools (get_home_weather / get_homelab_updates) ───────────────
+#
+# Chat mode passes tools=None, so an unmatched intent here means the model
+# answers from its training data instead of calling the tool. Regression guard
+# for exactly that: these phrasings used to return needs_tools=False.
+
+
+def test_own_location_weather_questions_promote_to_agent():
+    # Indirect phrasings that never name "weather" next to a qualifier, so the
+    # pre-existing web patterns missed them entirely.
+    prompts = [
+        "is it going to rain",
+        "is it raining",
+        "will it rain later",
+        "how cold is it",
+        "how hot is it out",
+        "is it cold outside",
+        "do i need an umbrella",
+        "what's it like outside",
+        "what's the temperature",
+        "temperature outside",
+        "weather?",
+    ]
+    for prompt in prompts:
+        intent = classify_tool_intent(prompt)
+        assert intent.needs_tools, prompt
+        assert intent.category == "weather", prompt
+
+
+def test_weather_phrasings_already_claimed_by_web_keep_that_category():
+    # The Ithaca patterns are appended last on purpose, so a phrasing an older
+    # web pattern already matched is left exactly as it was. It still escalates,
+    # and tool RAG offers get_home_weather alongside web_search either way — the
+    # category only drives logging and the workspace/shell tool carve-out.
+    for prompt in ("how's the weather", "what's the weather", "whats the weather today"):
+        intent = classify_tool_intent(prompt)
+        assert intent.needs_tools, prompt
+        assert intent.category == "web", prompt
+
+
+def test_location_qualified_weather_still_routes_to_web():
+    # "weather in Tokyo" is not the user's own location, so it must keep the
+    # web category and reach web_search rather than get_home_weather.
+    for prompt in ("whats the weather in tokyo", "weather in London?"):
+        intent = classify_tool_intent(prompt)
+        assert intent.needs_tools, prompt
+        assert intent.category == "web", prompt
+
+
+def test_homelab_update_questions_promote_to_agent():
+    prompts = [
+        "any software updates for today",
+        "what software updates are there today",
+        "do any of my homelab apps need updating",
+        "is jellyfin up to date",
+        "what needs updating",
+        "any app updates",
+        "homelab updates",
+        "do i have any updates",
+        "whats new in radarr",
+        "is sonarr outdated",
+        "any updates available",
+        "check my software updates",
+    ]
+    for prompt in prompts:
+        intent = classify_tool_intent(prompt)
+        assert intent.needs_tools, prompt
+        assert intent.category == "homelab", prompt
+
+
+def test_ithaca_patterns_do_not_steal_coding_or_status_turns():
+    # Placed last in _ROUTING_PATTERNS precisely so these keep their old
+    # behavior. A coding turn mis-tagged as homelab would lose bash/python/
+    # read_file/write_file, which auto-escalation withholds for every category
+    # except shell/workspace.
+    for prompt in ("update the readme in my repo", "fix the failing tests in the codebase"):
+        assert classify_tool_intent(prompt).category == "workspace", prompt
+    assert classify_tool_intent("search the web for jellyfin news").category == "web"
+    # "any updates on X" is a status-chase, not a homelab lookup.
+    assert not message_needs_tools("any updates on the PR?")
+    assert not message_needs_tools("how do i update my resume")

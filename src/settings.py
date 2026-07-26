@@ -90,6 +90,19 @@ DEFAULT_SETTINGS = {
     "search1api_api_key": "",
     "firecrawl_api_key": "",
     "exa_api_key": "",
+    # Ithaca hub tiles (Weather + Software Updates) — override the
+    # OPENWEATHER_*/OBSIDIAN_* env vars when set. See routes/ithaca_routes.py.
+    "openweather_api_key": "",
+    "openweather_lat": "",
+    "openweather_lon": "",
+    "openweather_units": "",
+    # obsidian_vault_path reads the digest markdown straight off disk and is
+    # the preferred source — the Local REST API below only answers while the
+    # Obsidian desktop app is running.
+    "obsidian_vault_path": "",
+    "obsidian_api_url": "",
+    "obsidian_api_token": "",
+    "obsidian_digest_dir": "",
     "research_endpoint_id": "",
     "research_model": "",
     "research_search_provider": "",

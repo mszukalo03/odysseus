@@ -134,6 +134,45 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("shell", "imperative shell command request", rf"{_PLEASE}(deploy|build|install|restart|reboot|kill|tail|grep|cat|ls|cd|cp|mv|rm)\b\s+\S+"),
         ("shell", "assistant shell command request", rf"{_ACTION_QUESTION}(deploy|build|install|restart|reboot|kill|tail|grep|cat|ls|cd|cp|mv|rm)\b\s+\S+"),
         ("shell", "system/file check request", r"\b(check|see)\s+(if|whether|what)\s+.{1,40}\b(running|process|service|port|file|exists?)\b"),
+
+        # ── Ithaca hub data: the user's own home weather (get_home_weather) and
+        # the homelab software-update digest (get_homelab_updates).
+        #
+        # Both are LOCAL data a plain chat turn cannot know, and chat mode sends
+        # no tools at all (chat_routes' `chat_mode == "chat"` branch passes
+        # tools=None), so a missed intent here is not a soft degradation — the
+        # model confidently answers "any software updates?" from its training
+        # data instead of calling the tool. The web patterns above only caught
+        # weather phrasings that name the word "weather" next to a qualifier, so
+        # "is it raining" / "how cold is it" fell through, and nothing matched
+        # the update questions at all.
+        #
+        # Deliberately LAST in this tuple: classify_tool_intent returns the
+        # first match, so anything already claimed by a calendar/email/workspace/
+        # web pattern keeps its existing category and these only pick up
+        # phrasings that previously returned needs_tools=False. In particular
+        # they must not steal coding turns ("update the readme in my repo"),
+        # because auto-escalation withholds bash/python/read_file/write_file for
+        # every category except shell/workspace.
+        ("weather", "rain/snow question", r"\b(?:is|are|will)\s+it\s+(?:be\s+)?(?:going\s+to\s+)?(?:rain|raining|rains|snow|snowing|hail|sleet|storm|storming)\b"),
+        ("weather", "outside conditions question", r"\bis\s+it\s+(?:hot|cold|warm|cool|chilly|freezing|humid|windy|sunny|cloudy|clear|nice)\b"),
+        ("weather", "how hot/cold question", r"\bhow\s+(?:hot|cold|warm|cool|chilly|humid|windy)\s+is\s+it\b"),
+        ("weather", "conditions outside question", r"\bwhat(?:'s|\s+is)\s+it\s+like\s+outside\b|\bwhat(?:'s|\s+is)\s+the\s+(?:temp|temperature)\b|\bhow(?:'s|\s+is)\s+the\s+weather\b"),
+        ("weather", "temperature outside question", r"\btemp(?:erature)?\s+(?:outside|out\s+there)\b"),
+        ("weather", "weather gear question", r"\bdo\s+i\s+need\s+(?:an?\s+|my\s+)?(?:umbrella|raincoat|rain\s+jacket|jacket|coat|sweater|sunscreen|boots)\b"),
+        ("weather", "bare weather question", r"^\s*(?:the\s+)?(?:weather|forecast)\s*[?.!]*\s*$"),
+
+        ("homelab", "software update lookup request", r"\b(?:software|app|apps|application|applications|package|packages|firmware)\s+updates?\b"),
+        ("homelab", "homelab status question", r"\bhome\s?lab\b"),
+        ("homelab", "needs-updating question", r"\bneeds?\s+updat(?:e|es|ing)\b"),
+        ("homelab", "up-to-date question", r"\bup[\s-]?to[\s-]?date\b"),
+        ("homelab", "outdated question", r"\b(?:outdated|out\s+of\s+date)\b"),
+        ("homelab", "updates available question", r"\bupdates?\s+(?:are\s+)?(?:available|pending|waiting)\b"),
+        ("homelab", "have-any-updates question", r"\bdo\s+i\s+have\s+any\s+updates?\b"),
+        # "any updates on the PR?" is a status-chase, not a homelab question, so
+        # require the phrase to stand alone or carry an update-lookup qualifier.
+        ("homelab", "any updates question", r"\bany\s+(?:new\s+)?updates?\s*(?:[?.!]*$|\b(?:today|available|pending|for\s+(?:me|my)\b))"),
+        ("homelab", "tracked app question", r"\b(?:radarr|sonarr|prowlarr|jellyfin|jellyseerr|seerr|transmission|flatpak)\b"),
     )
 )
 

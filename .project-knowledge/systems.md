@@ -1,6 +1,6 @@
 # Systems
 
-> Part of odysseus/.project-knowledge/ | Last updated: 2026-07-24
+> Part of odysseus/.project-knowledge/ | Last updated: 2026-07-25
 
 | System | Status | Details |
 |--------|--------|---------|
@@ -37,6 +37,26 @@
 | Backup & Restore | ✅ Active | `scripts/odysseus-backup` — see [[history]] |
 
 ---
+
+## Adding a New Agent Tool — Registration Checklist
+
+> A tool JUST added to `FUNCTION_TOOL_SCHEMAS` will not actually reach the model in most turns and will be denylisted in Plan Mode — the pipeline has ~7 registration points, discovered while wiring `get_home_weather`/`get_homelab_updates` (2026-07-25, see `src/tools/ithaca.py` for a worked example of a simple read-only tool).
+
+1. **Schema** — `src/tool_schemas.py`: add the OpenAI-style entry to `FUNCTION_TOOL_SCHEMAS`.
+2. **Implementation** — new or existing `src/tools/<domain>.py`: `async def do_<name>(content, owner=None) -> Dict`. Wrap the WHOLE body in `try: ... except Exception as e: logger.error(...); return {"error": str(e), "exit_code": 1}` (every sibling — `calendar.py`, `notes.py` — does this; a tool that only catches its own expected exception type lets a raw network/DB failure propagate unhandled). Re-export it from `src/tool_implementations.py`.
+3. **Dispatch** — `src/tool_execution.py`: import the `do_*` function and add an `elif tool == "<name>":` branch in `_execute_tool_block_impl` (or register in `TOOL_HANDLERS` in `src/agent_tools/__init__.py` for the newer class-based style).
+4. **Recognized-tool set** — `src/agent_tools/__init__.py`'s `TOOL_TAGS`: without this, the fenced/XML tool-call parsers (`tool_parsing.py`) silently drop the call even if native function-calling delivers it fine.
+5. **RAG selection** — `src/tool_index.py`'s `BUILTIN_TOOL_DESCRIPTIONS` (a richer description than the schema one, embedded for retrieval) — **this is the actual gate that decides whether the tool's schema gets sent to the model at all**; `_relevant_tools` (RAG + keyword hits + `ALWAYS_AVAILABLE`) filters `FUNCTION_TOOL_SCHEMAS` down before every API call (`agent_loop.py` ~3910). Add keyword-hint `frozenset(...): {tool_names}` entries too if there's an obvious trigger phrase.
+6. **Prompt guidance** — `src/agent_loop.py`'s `TOOL_SECTIONS`: a one-liner (`"- \`name\` — description"`) for simple/no-arg tools, or a fenced example block for tools with a non-obvious arg shape. Read from here into `_assemble_prompt()`'s "## Available tools" / "## Additional tools" text.
+7. **Plan Mode allowlist** — `src/tool_security.py`'s `PLAN_MODE_READONLY_TOOLS`: fail-closed by design (every tool in `FUNCTION_TOOL_SCHEMAS` is denylisted in Plan Mode unless explicitly allowlisted here) — a genuinely read-only tool left out is silently unusable in Plan Mode. Only add mutating tools if there's a corresponding `_PLAN_MODE_KNOWN_MUTATORS` reason not to.
+8. **Turn routing — the two gates that decide whether the schema is ever sent.** Points 1–7 make a tool *callable*; these decide whether the model is even offered it, and BOTH default to "no". Missing either gives the identical symptom: the tool looks fully wired, RAG retrieval returns it, and the LLM still answers from training data — often claiming it "doesn't have real-time access". Discovered 2026-07-26 for `get_home_weather`/`get_homelab_updates`, the third time this bit (see also the `contacts` domain and the api_call/`integrations` domain, each with its own regression test).
+   * **`src/action_intents.py`'s `_ROUTING_PATTERNS`** — chat mode is the UI default, and `routes/chat_routes.py`'s `chat_mode == "chat"` branch calls the LLM with **`tools=None`**. The turn only reaches the agent path if `classify_tool_intent` matches, so with no pattern the tool is unreachable regardless of everything else. Append new patterns at the END of the tuple: first match wins, so appending cannot change an existing category. They must not steal coding turns — auto-escalation withholds bash/python/read_file/write_file for every category except `shell`/`workspace`.
+   * **`src/agent_loop.py`'s `_classify_agent_request` domains** — `low_signal = not continuation and not domains`, and a low-signal *first* turn takes the `_direct_low_signal` path, which replies from a bare user message with **no system prompt and no tools** (visible in metrics as `direct_low_signal: true`, `input_tokens` in the tens, `tool_calls: 0`). Short questions like "is it raining" match no domain and land here even after chat→agent promotion. Add a domain, then add the SAME key to `_DOMAIN_TOOL_MAP` (seeds the tools deterministically, independent of embedding retrieval) **and** to `_DOMAIN_RULES` — `_domain_rules_for_tools` does `_DOMAIN_RULES[domain]` and raises KeyError otherwise.
+9. **Secrets, if any settings the tool reads are user-configurable API keys**: name the setting `*_api_key`/`*_token`/`*_secret`/`*_password`-suffixed in `src/settings.py`'s `DEFAULT_SETTINGS` — `src/settings_scrub.py:is_secret_key()` and `admin_tools.py`'s `do_manage_settings` `_is_secret()` both auto-mask/protect by name shape, no extra code needed.
+
+Tests worth writing: the tool's own logic (mock the fetch/impl layer), `"<name>" in TOOL_TAGS`, `FUNCTION_TOOL_SCHEMAS` has exactly one entry, (if read-only) `"<name>" not in plan_mode_disabled_tools()` — see `tests/test_plan_mode.py` — and both routing gates: `classify_tool_intent(<phrasing>).needs_tools` for the phrasings users actually type, plus the domain/`_DOMAIN_TOOL_MAP`/`_DOMAIN_RULES` trio (`tests/test_tool_rag_ithaca_domain.py` also guards `set(_DOMAIN_TOOL_MAP) - set(_DOMAIN_RULES)` being empty for every domain).
+
+**Verify a new tool end-to-end, not by inspection.** Registration, RAG retrieval and the schema list can all look correct while a routing gate silently drops the turn. Drive a real chat-mode request against a scratch instance and assert on the tool event plus `input_tokens` — a full agent prompt is thousands of tokens, the direct path is tens.
 
 ## Auth & Threat Model Internals
 
