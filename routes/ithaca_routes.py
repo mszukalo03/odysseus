@@ -17,9 +17,14 @@ file in an Obsidian vault (via the Obsidian Local REST API). Endpoints:
 * POST /api/ithaca/ssh/open  — admin-only: ssh into an app's host and list
   its deploy path (the action behind the tile's "deployed on" link).
 
-Env vars (see .env.example): OPENWEATHER_API_KEY, OPENWEATHER_LAT,
-OPENWEATHER_LON, OPENWEATHER_UNITS, OBSIDIAN_API_URL, OBSIDIAN_API_TOKEN,
-OBSIDIAN_DIGEST_DIR.
+Also exposed to the AI agent as read-only tools (src/tools/ithaca.py):
+get_ithaca_weather, get_ithaca_software_updates.
+
+Config: OPENWEATHER_API_KEY, OPENWEATHER_LAT, OPENWEATHER_LON,
+OPENWEATHER_UNITS, OBSIDIAN_API_URL, OBSIDIAN_API_TOKEN, OBSIDIAN_DIGEST_DIR
+(see .env.example) — or the same keys settable in Settings > Integrations
+("Ithaca Hub" card), which take priority over the env vars when non-empty
+(see `_setting_or_env`).
 """
 
 import asyncio
@@ -232,19 +237,44 @@ _weather_lock = asyncio.Lock()
 _digest_lock = asyncio.Lock()
 
 
+def _setting_or_env(setting_key: str, env_var: str, default: str = "") -> str:
+    """Resolve a config value: a value saved in Settings > Integrations wins,
+    falling back to the env var, then `default`. Mirrors
+    services/search/providers.py's `_get_provider_key`/`_get_search_instance`
+    pattern used for the other UI-configurable API keys."""
+    try:
+        from src.settings import get_setting
+        val = (get_setting(setting_key) or "").strip()
+        if val:
+            return val
+    except Exception:
+        pass
+    return (os.getenv(env_var) or default).strip()
+
+
+def _weather_settings() -> Dict[str, str]:
+    return {
+        "api_key": _setting_or_env("openweather_api_key", "OPENWEATHER_API_KEY"),
+        "lat": _setting_or_env("openweather_lat", "OPENWEATHER_LAT"),
+        "lon": _setting_or_env("openweather_lon", "OPENWEATHER_LON"),
+        "units": _setting_or_env("openweather_units", "OPENWEATHER_UNITS", "metric"),
+    }
+
+
 def _obsidian_settings() -> Dict[str, str]:
     return {
-        "base": (os.getenv("OBSIDIAN_API_URL") or "").rstrip("/"),
-        "token": os.getenv("OBSIDIAN_API_TOKEN") or "",
-        "digest_dir": (os.getenv("OBSIDIAN_DIGEST_DIR") or "daily-digest").strip("/"),
+        "base": _setting_or_env("obsidian_api_url", "OBSIDIAN_API_URL").rstrip("/"),
+        "token": _setting_or_env("obsidian_api_token", "OBSIDIAN_API_TOKEN"),
+        "digest_dir": _setting_or_env("obsidian_digest_dir", "OBSIDIAN_DIGEST_DIR", "daily-digest").strip("/"),
     }
 
 
 async def _fetch_weather() -> Dict[str, Any]:
-    api_key = os.getenv("OPENWEATHER_API_KEY") or ""
-    lat = os.getenv("OPENWEATHER_LAT") or ""
-    lon = os.getenv("OPENWEATHER_LON") or ""
-    units = os.getenv("OPENWEATHER_UNITS") or "metric"
+    cfg = _weather_settings()
+    api_key = cfg["api_key"]
+    lat = cfg["lat"]
+    lon = cfg["lon"]
+    units = cfg["units"]
     if not api_key:
         raise HTTPException(503, "OPENWEATHER_API_KEY is not configured")
     if not lat or not lon:
@@ -394,11 +424,8 @@ def setup_ithaca_routes() -> APIRouter:
     @router.get("/weather")
     async def get_weather(request: Request, refresh: bool = False):
         _require_read_access(request)
-        key = "|".join((
-            os.getenv("OPENWEATHER_LAT") or "",
-            os.getenv("OPENWEATHER_LON") or "",
-            os.getenv("OPENWEATHER_UNITS") or "metric",
-        ))
+        wcfg = _weather_settings()
+        key = "|".join((wcfg["lat"], wcfg["lon"], wcfg["units"]))
         try:
             return await _cached(_weather_cache, _weather_lock, key,
                                  WEATHER_CACHE_TTL, _fetch_weather, refresh)

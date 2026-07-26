@@ -152,3 +152,63 @@ def test_scope_gate_token_without_scope_rejected():
 def test_ithaca_scope_registered_for_tokens():
     from routes.api_token_routes import ALLOWED_SCOPES
     assert "ithaca:read" in ALLOWED_SCOPES
+
+
+# ─── Settings > Integrations override env vars ──────────────────────────────
+
+
+def test_setting_or_env_prefers_saved_setting(monkeypatch):
+    import src.settings as settings_mod
+    monkeypatch.setattr(settings_mod, "get_setting", lambda key, default=None: "from-settings")
+    monkeypatch.setenv("OPENWEATHER_API_KEY", "from-env")
+    assert ithaca._setting_or_env("openweather_api_key", "OPENWEATHER_API_KEY") == "from-settings"
+
+
+def test_setting_or_env_falls_back_to_env_when_setting_blank(monkeypatch):
+    import src.settings as settings_mod
+    monkeypatch.setattr(settings_mod, "get_setting", lambda key, default=None: "")
+    monkeypatch.setenv("OPENWEATHER_API_KEY", "from-env")
+    assert ithaca._setting_or_env("openweather_api_key", "OPENWEATHER_API_KEY") == "from-env"
+
+
+def test_setting_or_env_uses_default_when_both_unset(monkeypatch):
+    import src.settings as settings_mod
+    monkeypatch.setattr(settings_mod, "get_setting", lambda key, default=None: "")
+    monkeypatch.delenv("OPENWEATHER_UNITS", raising=False)
+    assert ithaca._setting_or_env("openweather_units", "OPENWEATHER_UNITS", "metric") == "metric"
+
+
+def test_weather_settings_reads_all_four_fields(monkeypatch):
+    import src.settings as settings_mod
+    saved = {"openweather_api_key": "K", "openweather_lat": "1.1", "openweather_lon": "2.2", "openweather_units": "imperial"}
+    monkeypatch.setattr(settings_mod, "get_setting", lambda key, default=None: saved.get(key, ""))
+    cfg = ithaca._weather_settings()
+    assert cfg == {"api_key": "K", "lat": "1.1", "lon": "2.2", "units": "imperial"}
+
+
+def test_obsidian_settings_reads_all_three_fields(monkeypatch):
+    import src.settings as settings_mod
+    saved = {"obsidian_api_url": "http://host:27123/", "obsidian_api_token": "T", "obsidian_digest_dir": "/digests/"}
+    monkeypatch.setattr(settings_mod, "get_setting", lambda key, default=None: saved.get(key, ""))
+    cfg = ithaca._obsidian_settings()
+    assert cfg == {"base": "http://host:27123", "token": "T", "digest_dir": "digests"}
+
+
+def test_ithaca_settings_keys_registered_for_admin_settings_save():
+    from src.settings import DEFAULT_SETTINGS
+    for key in ("openweather_api_key", "openweather_lat", "openweather_lon", "openweather_units",
+                "obsidian_api_url", "obsidian_api_token", "obsidian_digest_dir"):
+        assert key in DEFAULT_SETTINGS
+
+
+def test_ithaca_secret_keys_are_masked_by_settings_scrub():
+    from src.settings_scrub import is_secret_key
+    assert is_secret_key("openweather_api_key")
+    assert is_secret_key("obsidian_api_token")
+    # Non-secret config fields must NOT be masked, or the settings UI can't
+    # display/edit them for non-admin GET callers.
+    assert not is_secret_key("openweather_lat")
+    assert not is_secret_key("openweather_lon")
+    assert not is_secret_key("openweather_units")
+    assert not is_secret_key("obsidian_api_url")
+    assert not is_secret_key("obsidian_digest_dir")

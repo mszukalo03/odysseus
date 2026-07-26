@@ -2452,6 +2452,7 @@ function initAll() {
   initShortcuts();
   initAccount();
   initIntegrations();
+  initIthacaSettings();
   initEmailSettings();
   initEmailAccountsSettings();
   initReminderSettings();
@@ -2462,6 +2463,61 @@ function notifyIntegrationsChanged() {
   try {
     window.dispatchEvent(new CustomEvent('odysseus-integrations-changed'));
   } catch (_) {}
+}
+
+/* ── Ithaca hub API keys (Weather + Software Updates tiles) ──
+   Mirrors initSearchSettings()'s pattern: load full settings once (admin
+   only — the card itself is .admin-only and hidden for non-admins), populate
+   the fields, auto-save the whole group on any field's `change` event. */
+async function initIthacaSettings() {
+  var keyInput = el('set-ithacaOwmKey');
+  if (!keyInput) return; // settings modal markup not present (shouldn't happen)
+  var latInput = el('set-ithacaLat');
+  var lonInput = el('set-ithacaLon');
+  var unitsSel = el('set-ithacaUnits');
+  var obsUrlInput = el('set-ithacaObsUrl');
+  var obsTokenInput = el('set-ithacaObsToken');
+  var digestDirInput = el('set-ithacaDigestDir');
+  var msg = el('set-ithacaMsg');
+
+  try {
+    var res = await fetch('/api/auth/settings', { credentials: 'same-origin' });
+    var s = await res.json();
+    keyInput.value = s.openweather_api_key || '';
+    latInput.value = s.openweather_lat || '';
+    lonInput.value = s.openweather_lon || '';
+    unitsSel.value = s.openweather_units || '';
+    obsUrlInput.value = s.obsidian_api_url || '';
+    obsTokenInput.value = s.obsidian_api_token || '';
+    digestDirInput.value = s.obsidian_digest_dir || '';
+  } catch (e) { console.warn('Failed to load Ithaca settings', e); }
+
+  async function saveIthaca() {
+    try {
+      await fetch('/api/auth/settings', { method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          openweather_api_key: keyInput.value.trim(),
+          openweather_lat: latInput.value.trim(),
+          openweather_lon: lonInput.value.trim(),
+          openweather_units: unitsSel.value,
+          obsidian_api_url: obsUrlInput.value.trim(),
+          obsidian_api_token: obsTokenInput.value.trim(),
+          obsidian_digest_dir: digestDirInput.value.trim(),
+        })
+      });
+      if (msg) {
+        msg.textContent = 'Saved'; msg.style.color = 'var(--fg)';
+        setTimeout(function() { msg.textContent = ''; }, 2000);
+      }
+    } catch (e) {
+      if (msg) { msg.textContent = 'Failed to save'; msg.style.color = 'var(--red)'; }
+    }
+  }
+
+  [keyInput, latInput, lonInput, unitsSel, obsUrlInput, obsTokenInput, digestDirInput].forEach(function(input) {
+    input.addEventListener('change', saveIthaca);
+  });
 }
 
 async function initReminderSettings() {

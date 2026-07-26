@@ -1099,6 +1099,34 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "get_ithaca_weather",
+            "description": "Get the live current conditions + upcoming hourly forecast for the user's configured home location — the same data shown on the Ithaca hub's Weather tile. Queried directly from OpenWeatherMap (NOT the n8n digest), cached ~10 minutes. Use for 'what's the weather', 'is it going to rain', 'weather forecast' about the user's own location — prefer this over web_search/web_fetch when this tool is available.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "refresh": {"type": "boolean", "description": "Bypass the cache and re-query OpenWeatherMap now"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_ithaca_software_updates",
+            "description": "List pending software/app updates for the user's self-hosted stack (e.g. Radarr, Sonarr, Prowlarr, Jellyfin), as tracked by the Ithaca hub's Software Updates tile. Reads the latest weekly digest markdown produced by the n8n automation and returns each app's current vs available version, whether an update is available, and a short changelog summary. Use for 'what needs updating', 'any updates for my apps', 'is X up to date'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "refresh": {"type": "boolean", "description": "Bypass the cache and re-read the digest file now"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_email_accounts",
             "description": "List configured email accounts. Use this before checking mail when the user names a mailbox/account such as Gmail, work, or a custom domain, then pass the returned account name/email/id to the other email tools.",
             "parameters": {
