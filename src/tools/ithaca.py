@@ -16,8 +16,8 @@ from src.tools._common import _parse_tool_args
 logger = logging.getLogger(__name__)
 
 
-async def do_get_ithaca_weather(content: str, owner: Optional[str] = None) -> Dict:
-    """Handle get_ithaca_weather: current conditions + hourly forecast for
+async def do_get_home_weather(content: str, owner: Optional[str] = None) -> Dict:
+    """Handle get_home_weather: current conditions + hourly forecast for
     the user's configured home location (Settings > Integrations, or the
     OPENWEATHER_LAT/LON env vars)."""
     from fastapi import HTTPException
@@ -56,12 +56,12 @@ async def do_get_ithaca_weather(content: str, owner: Optional[str] = None) -> Di
                 lines.append(f"- {int(h.get('local_hour', 0)):02d}:00 — {h.get('description', '')}, {_r(h.get('temp'))}{unit_t}{pop}")
         return {"response": "\n".join(lines), "weather": data, "exit_code": 0}
     except Exception as e:
-        logger.error(f"get_ithaca_weather error: {e}")
+        logger.error(f"get_home_weather error: {e}")
         return {"error": str(e), "exit_code": 1}
 
 
-async def do_get_ithaca_software_updates(content: str, owner: Optional[str] = None) -> Dict:
-    """Handle get_ithaca_software_updates: the latest daily-digest's parsed
+async def do_get_homelab_updates(content: str, owner: Optional[str] = None) -> Dict:
+    """Handle get_homelab_updates: the latest daily-digest's parsed
     Software Updates table (per-app current/available version + status)."""
     from fastapi import HTTPException
     from routes.ithaca_routes import _cached, _fetch_digest, _digest_cache, _digest_lock, DIGEST_CACHE_TTL, _obsidian_settings
@@ -104,5 +104,5 @@ async def do_get_ithaca_software_updates(content: str, owner: Optional[str] = No
             lines.append(su["note"])
         return {"response": "\n".join(lines), "rows": rows, "note": su.get("note", ""), "date": date, "exit_code": 0}
     except Exception as e:
-        logger.error(f"get_ithaca_software_updates error: {e}")
+        logger.error(f"get_homelab_updates error: {e}")
         return {"error": str(e), "exit_code": 1}

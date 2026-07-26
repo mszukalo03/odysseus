@@ -1099,8 +1099,8 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
-            "name": "get_ithaca_weather",
-            "description": "Get the live current conditions + upcoming hourly forecast for the user's configured home location — the same data shown on the Ithaca hub's Weather tile. Queried directly from OpenWeatherMap (NOT the n8n digest), cached ~10 minutes. Use for 'what's the weather', 'is it going to rain', 'weather forecast' about the user's own location — prefer this over web_search/web_fetch when this tool is available.",
+            "name": "get_home_weather",
+            "description": "Get live current conditions + upcoming hourly forecast for the user's own home location — whatever city/coordinates they configured in Settings. This is NOT restricted to any specific named place; it works for the user's own location regardless of what city that is. Queried directly from OpenWeatherMap, cached ~10 minutes. Use for 'what's the weather', 'is it going to rain', 'weather forecast' about the user's own location — prefer this over web_search/web_fetch for that. (This mirrors the 'Ithaca hub' dashboard's Weather tile — 'Ithaca' is just that dashboard feature's name, not a location filter.)",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1113,8 +1113,8 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
-            "name": "get_ithaca_software_updates",
-            "description": "List pending software/app updates for the user's self-hosted stack (e.g. Radarr, Sonarr, Prowlarr, Jellyfin), as tracked by the Ithaca hub's Software Updates tile. Reads the latest weekly digest markdown produced by the n8n automation and returns each app's current vs available version, whether an update is available, and a short changelog summary. Use for 'what needs updating', 'any updates for my apps', 'is X up to date'.",
+            "name": "get_homelab_updates",
+            "description": "List pending software/app updates for the user's self-hosted homelab stack (e.g. Radarr, Sonarr, Prowlarr, Jellyfin). Reads the latest weekly digest markdown produced by the user's n8n automation and returns each app's current vs available version, whether an update is available, and a short changelog summary. Use for 'what needs updating', 'any updates for my apps', 'is X up to date'. (This mirrors the 'Ithaca hub' dashboard's Software Updates tile.)",
             "parameters": {
                 "type": "object",
                 "properties": {

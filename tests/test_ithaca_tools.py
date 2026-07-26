@@ -1,5 +1,5 @@
-"""Tests for src/tools/ithaca.py — the agent-facing get_ithaca_weather and
-get_ithaca_software_updates tools, which wrap routes/ithaca_routes.py's
+"""Tests for src/tools/ithaca.py — the agent-facing get_home_weather and
+get_homelab_updates tools, which wrap routes/ithaca_routes.py's
 fetch/cache functions so the AI can answer questions using the same data as
 the Ithaca hub's tiles."""
 
@@ -7,7 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 import routes.ithaca_routes as ithaca_routes
-from src.tools.ithaca import do_get_ithaca_weather, do_get_ithaca_software_updates
+from src.tools.ithaca import do_get_home_weather, do_get_homelab_updates
 
 
 @pytest.fixture(autouse=True)
@@ -57,12 +57,12 @@ FAKE_DIGEST_NO_UPDATES_SECTION = {
 }
 
 
-async def test_get_ithaca_weather_success(monkeypatch):
+async def test_get_home_weather_success(monkeypatch):
     async def fake_fetch():
         return FAKE_WEATHER
     monkeypatch.setattr(ithaca_routes, "_fetch_weather", fake_fetch)
 
-    result = await do_get_ithaca_weather("{}")
+    result = await do_get_home_weather("{}")
     assert result["exit_code"] == 0
     assert "London" in result["response"]
     assert "scattered clouds" in result["response"]
@@ -71,27 +71,27 @@ async def test_get_ithaca_weather_success(monkeypatch):
     assert result["weather"] == FAKE_WEATHER
 
 
-async def test_get_ithaca_weather_empty_content_defaults(monkeypatch):
+async def test_get_home_weather_empty_content_defaults(monkeypatch):
     async def fake_fetch():
         return FAKE_WEATHER
     monkeypatch.setattr(ithaca_routes, "_fetch_weather", fake_fetch)
 
-    result = await do_get_ithaca_weather("")
+    result = await do_get_home_weather("")
     assert result["exit_code"] == 0
 
 
-async def test_get_ithaca_weather_not_configured(monkeypatch):
+async def test_get_home_weather_not_configured(monkeypatch):
     async def fake_fetch():
         raise HTTPException(503, "OPENWEATHER_API_KEY is not configured")
     monkeypatch.setattr(ithaca_routes, "_fetch_weather", fake_fetch)
 
-    result = await do_get_ithaca_weather("{}")
+    result = await do_get_home_weather("{}")
     assert result["exit_code"] == 1
     assert "OPENWEATHER_API_KEY" in result["error"]
     assert "response" not in result
 
 
-async def test_get_ithaca_weather_network_error_is_caught(monkeypatch):
+async def test_get_home_weather_network_error_is_caught(monkeypatch):
     # A raw network failure (timeout/DNS/connection-refused) reaching
     # OpenWeatherMap must produce a clean tool-error dict, not an unhandled
     # exception propagating out of the tool call.
@@ -99,22 +99,22 @@ async def test_get_ithaca_weather_network_error_is_caught(monkeypatch):
         raise ConnectionError("Cannot connect to host api.openweathermap.org")
     monkeypatch.setattr(ithaca_routes, "_fetch_weather", fake_fetch)
 
-    result = await do_get_ithaca_weather("{}")
+    result = await do_get_home_weather("{}")
     assert result["exit_code"] == 1
     assert "api.openweathermap.org" in result["error"]
 
 
-async def test_get_ithaca_software_updates_network_error_is_caught(monkeypatch):
+async def test_get_homelab_updates_network_error_is_caught(monkeypatch):
     async def fake_fetch():
         raise ConnectionError("Cannot connect to Obsidian host")
     monkeypatch.setattr(ithaca_routes, "_fetch_digest", fake_fetch)
 
-    result = await do_get_ithaca_software_updates("{}")
+    result = await do_get_homelab_updates("{}")
     assert result["exit_code"] == 1
     assert "Obsidian" in result["error"]
 
 
-async def test_get_ithaca_weather_refresh_bypasses_cache(monkeypatch):
+async def test_get_home_weather_refresh_bypasses_cache(monkeypatch):
     calls = {"n": 0}
 
     async def fake_fetch():
@@ -122,20 +122,20 @@ async def test_get_ithaca_weather_refresh_bypasses_cache(monkeypatch):
         return FAKE_WEATHER
     monkeypatch.setattr(ithaca_routes, "_fetch_weather", fake_fetch)
 
-    await do_get_ithaca_weather("{}")
-    await do_get_ithaca_weather("{}")
+    await do_get_home_weather("{}")
+    await do_get_home_weather("{}")
     assert calls["n"] == 1  # second call served from cache
 
-    await do_get_ithaca_weather('{"refresh": true}')
+    await do_get_home_weather('{"refresh": true}')
     assert calls["n"] == 2  # refresh bypassed the cache
 
 
-async def test_get_ithaca_software_updates_success(monkeypatch):
+async def test_get_homelab_updates_success(monkeypatch):
     async def fake_fetch():
         return FAKE_DIGEST_WITH_UPDATES
     monkeypatch.setattr(ithaca_routes, "_fetch_digest", fake_fetch)
 
-    result = await do_get_ithaca_software_updates("{}")
+    result = await do_get_homelab_updates("{}")
     assert result["exit_code"] == 0
     assert "1 of 2 apps need an update" in result["response"]
     assert "Radarr" in result["response"] and "update available" in result["response"]
@@ -144,38 +144,38 @@ async def test_get_ithaca_software_updates_success(monkeypatch):
     assert len(result["rows"]) == 2
 
 
-async def test_get_ithaca_software_updates_no_section(monkeypatch):
+async def test_get_homelab_updates_no_section(monkeypatch):
     async def fake_fetch():
         return FAKE_DIGEST_NO_UPDATES_SECTION
     monkeypatch.setattr(ithaca_routes, "_fetch_digest", fake_fetch)
 
-    result = await do_get_ithaca_software_updates("{}")
+    result = await do_get_homelab_updates("{}")
     assert result["exit_code"] == 0
     assert result["rows"] == []
     assert "No Software Updates section" in result["response"]
 
 
-async def test_get_ithaca_software_updates_not_configured(monkeypatch):
+async def test_get_homelab_updates_not_configured(monkeypatch):
     async def fake_fetch():
         raise HTTPException(503, "OBSIDIAN_API_TOKEN is not configured")
     monkeypatch.setattr(ithaca_routes, "_fetch_digest", fake_fetch)
 
-    result = await do_get_ithaca_software_updates("{}")
+    result = await do_get_homelab_updates("{}")
     assert result["exit_code"] == 1
     assert "OBSIDIAN_API_TOKEN" in result["error"]
 
 
 def test_tools_registered_in_dispatcher():
     from src.agent_tools import TOOL_TAGS
-    assert "get_ithaca_weather" in TOOL_TAGS
-    assert "get_ithaca_software_updates" in TOOL_TAGS
+    assert "get_home_weather" in TOOL_TAGS
+    assert "get_homelab_updates" in TOOL_TAGS
 
 
 def test_tools_have_function_schemas():
     from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
     names = [s["function"]["name"] for s in FUNCTION_TOOL_SCHEMAS]
-    assert names.count("get_ithaca_weather") == 1
-    assert names.count("get_ithaca_software_updates") == 1
+    assert names.count("get_home_weather") == 1
+    assert names.count("get_homelab_updates") == 1
 
 
 async def test_execute_tool_block_dispatches_by_name(monkeypatch):
@@ -184,6 +184,6 @@ async def test_execute_tool_block_dispatches_by_name(monkeypatch):
     monkeypatch.setattr(ithaca_routes, "_fetch_weather", fake_fetch)
 
     from src.agent_tools import ToolBlock, execute_tool_block
-    desc, result = await execute_tool_block(ToolBlock("get_ithaca_weather", "{}"))
-    assert desc == "get_ithaca_weather"
+    desc, result = await execute_tool_block(ToolBlock("get_home_weather", "{}"))
+    assert desc == "get_home_weather"
     assert result["exit_code"] == 0

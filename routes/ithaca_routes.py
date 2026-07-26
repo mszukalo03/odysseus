@@ -18,7 +18,7 @@ file in an Obsidian vault (via the Obsidian Local REST API). Endpoints:
   its deploy path (the action behind the tile's "deployed on" link).
 
 Also exposed to the AI agent as read-only tools (src/tools/ithaca.py):
-get_ithaca_weather, get_ithaca_software_updates.
+get_home_weather, get_homelab_updates.
 
 Config: OPENWEATHER_API_KEY, OPENWEATHER_LAT, OPENWEATHER_LON,
 OPENWEATHER_UNITS, OBSIDIAN_API_URL, OBSIDIAN_API_TOKEN, OBSIDIAN_DIGEST_DIR
@@ -432,7 +432,7 @@ def setup_ithaca_routes() -> APIRouter:
         except HTTPException:
             raise
         except httpx.HTTPError as exc:
-            raise HTTPException(502, f"OpenWeatherMap unreachable: {exc.__class__.__name__}")
+            raise HTTPException(502, f"OpenWeatherMap unreachable ({exc.__class__.__name__}): {exc}")
 
     @router.get("/digest")
     async def get_digest(request: Request, refresh: bool = False):
@@ -445,7 +445,7 @@ def setup_ithaca_routes() -> APIRouter:
         except HTTPException:
             raise
         except httpx.HTTPError as exc:
-            raise HTTPException(502, f"Obsidian API unreachable: {exc.__class__.__name__}")
+            raise HTTPException(502, f"Obsidian API unreachable at {cfg['base']} ({exc.__class__.__name__}): {exc}")
 
     @router.get("/config")
     async def get_config(request: Request):

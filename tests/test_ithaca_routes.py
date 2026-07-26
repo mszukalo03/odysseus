@@ -212,3 +212,51 @@ def test_ithaca_secret_keys_are_masked_by_settings_scrub():
     assert not is_secret_key("openweather_units")
     assert not is_secret_key("obsidian_api_url")
     assert not is_secret_key("obsidian_digest_dir")
+
+
+# ─── HTTP route error diagnostics ───────────────────────────────────────────
+
+
+def _get_endpoint(router, path):
+    return next(r.endpoint for r in router.routes if r.path == path)
+
+
+async def test_weather_route_reports_real_network_error(monkeypatch):
+    # A raw connection failure must surface the underlying reason (host,
+    # exception message), not just the exception class name — this is what
+    # the user actually reads when the tile fails to load.
+    import httpx as httpx_mod
+
+    async def fake_fetch():
+        raise httpx_mod.ConnectError("[Errno 111] Connection refused")
+    monkeypatch.setattr(ithaca, "_fetch_weather", fake_fetch)
+
+    router = ithaca.setup_ithaca_routes()
+    endpoint = _get_endpoint(router, "/api/ithaca/weather")
+    req = SimpleNamespace(state=SimpleNamespace(api_token=False), headers={})
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(req)
+    assert exc.value.status_code == 502
+    assert "ConnectError" in exc.value.detail
+    assert "Connection refused" in exc.value.detail
+
+
+async def test_digest_route_reports_real_network_error_and_host(monkeypatch):
+    import httpx as httpx_mod
+
+    async def fake_fetch():
+        raise httpx_mod.ConnectError("[Errno 111] Connection refused")
+    monkeypatch.setattr(ithaca, "_fetch_digest", fake_fetch)
+    monkeypatch.setattr(ithaca, "_obsidian_settings", lambda: {
+        "base": "http://100.96.143.85:27123", "token": "t", "digest_dir": "daily-digest",
+    })
+
+    router = ithaca.setup_ithaca_routes()
+    endpoint = _get_endpoint(router, "/api/ithaca/digest")
+    req = SimpleNamespace(state=SimpleNamespace(api_token=False), headers={})
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(req)
+    assert exc.value.status_code == 502
+    assert "100.96.143.85:27123" in exc.value.detail
+    assert "ConnectError" in exc.value.detail
+    assert "Connection refused" in exc.value.detail

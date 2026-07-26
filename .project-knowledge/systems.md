@@ -40,7 +40,7 @@
 
 ## Adding a New Agent Tool — Registration Checklist
 
-> A tool JUST added to `FUNCTION_TOOL_SCHEMAS` will not actually reach the model in most turns and will be denylisted in Plan Mode — the pipeline has ~7 registration points, discovered while wiring `get_ithaca_weather`/`get_ithaca_software_updates` (2026-07-25, see `src/tools/ithaca.py` for a worked example of a simple read-only tool).
+> A tool JUST added to `FUNCTION_TOOL_SCHEMAS` will not actually reach the model in most turns and will be denylisted in Plan Mode — the pipeline has ~7 registration points, discovered while wiring `get_home_weather`/`get_homelab_updates` (2026-07-25, see `src/tools/ithaca.py` for a worked example of a simple read-only tool).
 
 1. **Schema** — `src/tool_schemas.py`: add the OpenAI-style entry to `FUNCTION_TOOL_SCHEMAS`.
 2. **Implementation** — new or existing `src/tools/<domain>.py`: `async def do_<name>(content, owner=None) -> Dict`. Wrap the WHOLE body in `try: ... except Exception as e: logger.error(...); return {"error": str(e), "exit_code": 1}` (every sibling — `calendar.py`, `notes.py` — does this; a tool that only catches its own expected exception type lets a raw network/DB failure propagate unhandled). Re-export it from `src/tool_implementations.py`.

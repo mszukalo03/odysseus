@@ -123,8 +123,8 @@ PLAN_MODE_READONLY_TOOLS = {
     "resolve_contact",
     "chat_with_model",
     "ask_teacher",
-    "get_ithaca_weather",
-    "get_ithaca_software_updates",
+    "get_home_weather",
+    "get_homelab_updates",
 }
 
 
