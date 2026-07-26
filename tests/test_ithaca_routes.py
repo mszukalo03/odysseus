@@ -311,6 +311,68 @@ def test_frontmatter_does_not_leak_into_preamble_section():
     assert sections["Weather"] == "clear"
 
 
+# ─── Secret redaction ───────────────────────────────────────────────────────
+
+
+def test_redact_known_secret_values_anywhere_in_the_note():
+    token = "38152caf60a9201deed1d7c221e8566f81e3fe736b6d79116a1001a2d5a2106a"
+    md = f"## Notes\nBearer {token}\ncurl -H 'X-Key: {token}' localhost\n"
+    out = ithaca.redact_secrets(md, (token,))
+    assert token not in out
+    assert "[redacted]" in out
+
+
+def test_redact_bearer_and_authorization_without_knowing_the_value():
+    # The credential of some *other* system pasted into the same note: no
+    # configured value to match against, so the shape has to carry it.
+    md = "## Notes\nBearer abcdef0123456789abcdef\nAuthorization: Basic dXNlcjpwYXNz\n"
+    out = ithaca.redact_secrets(md)
+    assert "abcdef0123456789abcdef" not in out
+    assert "dXNlcjpwYXNz" not in out
+    # The label survives so the reader can see something was there.
+    assert "Bearer [redacted]" in out
+    assert "Authorization: [redacted]" in out
+
+
+def test_redact_leaves_release_note_prose_and_short_hashes_alone():
+    # Regression guard: the patterns must not chew through the digest's actual
+    # content. "Basic Auth" prose and a 40-char git SHA are not credentials.
+    sha = "a" * 40
+    md = (
+        "| **Prowlarr** | | | Yes | v2.5.2 | fixes HTTP Basic Auth handling for "
+        f"non-ASCII characters; see {sha} |\n"
+    )
+    out = ithaca.redact_secrets(md, ("",))  # blank configured secret must be ignored
+    assert out == md
+
+
+def test_redact_ignores_too_short_known_secrets():
+    # A 3-char "secret" would otherwise redact fragments of every word.
+    md = "Radarr release notes\n"
+    assert ithaca.redact_secrets(md, ("arr",)) == md
+
+
+async def test_digest_payload_never_carries_the_configured_token(tmp_path, monkeypatch):
+    token = "b" * 64
+    digest_dir = tmp_path / "daily-digest"
+    digest_dir.mkdir()
+    (digest_dir / "2026-07-25-digest.md").write_text(
+        "## Software Updates\n"
+        "| **App** | **Update?** |\n| --- | --- |\n| **Radarr** | Yes |\n\n"
+        f"## Notes\nBearer {token}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(ithaca, "_obsidian_settings", lambda: {
+        "vault_path": str(tmp_path), "base": "", "token": token, "digest_dir": "daily-digest",
+    })
+
+    data = await ithaca._fetch_digest()
+    assert token not in json.dumps(data)
+    assert data["sections"]["Notes"] == "Bearer [redacted]"
+    # ...and the rest of the digest still parses.
+    assert [r["app"] for r in data["software_updates"]["rows"]] == ["Radarr"]
+
+
 # ─── Reading the digest from the vault on disk ───────────────────────────────
 
 REAL_DIGEST = """---

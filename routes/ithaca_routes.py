@@ -48,6 +48,7 @@ from urllib.parse import quote
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from typing import Iterable
 
 from core.atomic_io import atomic_write_json
 from core.constants import DATA_DIR
@@ -82,6 +83,19 @@ _DIGEST_NAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}.*\.md$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _FRONTMATTER_FENCE_RE = re.compile(r"^-{3,}\s*$")
 
+# Secret scrubbing for digest bodies. /api/ithaca/digest hands every heading
+# section back to the client verbatim, and the digest is a human-edited note in
+# a vault that also holds the credentials wired into this automation — a pasted
+# `Bearer <obsidian token>` under "## Notes" was being served to every caller
+# holding ithaca:read. Patterns stay narrow so real release-note prose (which
+# says things like "fixes HTTP Basic Auth handling") is never mangled:
+REDACTED = "[redacted]"
+_BEARER_RE = re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._\-+/=]{16,}")
+_AUTH_HEADER_RE = re.compile(r"(?im)^(\s*authorization\s*:).*$")
+# 48+ hex chars is key-shaped and past a git SHA's 40, so commit hashes in
+# release notes survive.
+_LONG_HEX_RE = re.compile(r"\b[0-9a-fA-F]{48,}\b")
+
 # ─── Auth helpers ───────────────────────────────────────────────────────────
 
 
@@ -102,6 +116,25 @@ def _reject_cross_site(request: Request) -> None:
 
 
 # ─── Digest markdown parsing (pure functions — unit tested) ─────────────────
+
+
+def redact_secrets(text: str, known: Iterable[str] = ()) -> str:
+    """Blank credential-shaped content in digest markdown before it is served.
+
+    `known` holds values this deployment already knows are secrets (the
+    configured Obsidian token / OpenWeatherMap key) — exact-match replacement,
+    so those can never leak regardless of how they were written into the note.
+    The regex tier then catches credentials belonging to *other* systems that
+    happen to sit in the same note.
+    """
+    for secret in known:
+        secret = (secret or "").strip()
+        # Guard against a short/blank setting turning into a global mangling.
+        if len(secret) >= 8:
+            text = text.replace(secret, REDACTED)
+    text = _BEARER_RE.sub(lambda m: f"{m.group(1)} {REDACTED}", text)
+    text = _AUTH_HEADER_RE.sub(lambda m: f"{m.group(1)} {REDACTED}", text)
+    return _LONG_HEX_RE.sub(REDACTED, text)
 
 
 def strip_frontmatter(markdown: str) -> str:
@@ -467,7 +500,18 @@ async def _fetch_digest() -> Dict[str, Any]:
 
 
 def _build_digest(filename: str, text: str, source: str) -> Dict[str, Any]:
-    sections = parse_digest_sections(text)
+    # Scrub before parsing so sections, table cells and the trailing note are
+    # all covered by one pass.
+    cfg = _obsidian_settings()
+    wcfg = _weather_settings()
+    clean = redact_secrets(text, (cfg.get("token", ""), wcfg.get("api_key", "")))
+    if clean != text:
+        logger.warning(
+            "Redacted credential-shaped content from digest %s — a secret is stored "
+            "in plaintext in that note; remove it and rotate the credential.",
+            filename,
+        )
+    sections = parse_digest_sections(clean)
     updates_md = next(
         (body for name, body in sections.items() if name.lower() == "software updates"), None
     )
