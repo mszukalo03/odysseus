@@ -1,6 +1,6 @@
 # Systems
 
-> Part of odysseus/.project-knowledge/ | Last updated: 2026-07-24
+> Part of odysseus/.project-knowledge/ | Last updated: 2026-07-25
 
 | System | Status | Details |
 |--------|--------|---------|
@@ -37,6 +37,21 @@
 | Backup & Restore | ✅ Active | `scripts/odysseus-backup` — see [[history]] |
 
 ---
+
+## Adding a New Agent Tool — Registration Checklist
+
+> A tool JUST added to `FUNCTION_TOOL_SCHEMAS` will not actually reach the model in most turns and will be denylisted in Plan Mode — the pipeline has ~7 registration points, discovered while wiring `get_ithaca_weather`/`get_ithaca_software_updates` (2026-07-25, see `src/tools/ithaca.py` for a worked example of a simple read-only tool).
+
+1. **Schema** — `src/tool_schemas.py`: add the OpenAI-style entry to `FUNCTION_TOOL_SCHEMAS`.
+2. **Implementation** — new or existing `src/tools/<domain>.py`: `async def do_<name>(content, owner=None) -> Dict`. Wrap the WHOLE body in `try: ... except Exception as e: logger.error(...); return {"error": str(e), "exit_code": 1}` (every sibling — `calendar.py`, `notes.py` — does this; a tool that only catches its own expected exception type lets a raw network/DB failure propagate unhandled). Re-export it from `src/tool_implementations.py`.
+3. **Dispatch** — `src/tool_execution.py`: import the `do_*` function and add an `elif tool == "<name>":` branch in `_execute_tool_block_impl` (or register in `TOOL_HANDLERS` in `src/agent_tools/__init__.py` for the newer class-based style).
+4. **Recognized-tool set** — `src/agent_tools/__init__.py`'s `TOOL_TAGS`: without this, the fenced/XML tool-call parsers (`tool_parsing.py`) silently drop the call even if native function-calling delivers it fine.
+5. **RAG selection** — `src/tool_index.py`'s `BUILTIN_TOOL_DESCRIPTIONS` (a richer description than the schema one, embedded for retrieval) — **this is the actual gate that decides whether the tool's schema gets sent to the model at all**; `_relevant_tools` (RAG + keyword hits + `ALWAYS_AVAILABLE`) filters `FUNCTION_TOOL_SCHEMAS` down before every API call (`agent_loop.py` ~3910). Add keyword-hint `frozenset(...): {tool_names}` entries too if there's an obvious trigger phrase.
+6. **Prompt guidance** — `src/agent_loop.py`'s `TOOL_SECTIONS`: a one-liner (`"- \`name\` — description"`) for simple/no-arg tools, or a fenced example block for tools with a non-obvious arg shape. Read from here into `_assemble_prompt()`'s "## Available tools" / "## Additional tools" text.
+7. **Plan Mode allowlist** — `src/tool_security.py`'s `PLAN_MODE_READONLY_TOOLS`: fail-closed by design (every tool in `FUNCTION_TOOL_SCHEMAS` is denylisted in Plan Mode unless explicitly allowlisted here) — a genuinely read-only tool left out is silently unusable in Plan Mode. Only add mutating tools if there's a corresponding `_PLAN_MODE_KNOWN_MUTATORS` reason not to.
+8. **Secrets, if any settings the tool reads are user-configurable API keys**: name the setting `*_api_key`/`*_token`/`*_secret`/`*_password`-suffixed in `src/settings.py`'s `DEFAULT_SETTINGS` — `src/settings_scrub.py:is_secret_key()` and `admin_tools.py`'s `do_manage_settings` `_is_secret()` both auto-mask/protect by name shape, no extra code needed.
+
+Tests worth writing: the tool's own logic (mock the fetch/impl layer), `"<name>" in TOOL_TAGS`, `FUNCTION_TOOL_SCHEMAS` has exactly one entry, and (if read-only) `"<name>" not in plan_mode_disabled_tools()` — see `tests/test_plan_mode.py`.
 
 ## Auth & Threat Model Internals
 
