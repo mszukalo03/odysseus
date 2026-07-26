@@ -495,6 +495,11 @@ _DOMAIN_RULES = {
 ## Integration/API rules
 - To query or control a configured service integration (Home Assistant, Miniflux, Gitea, Linkding, Jellyfin, or any other registered service), use `api_call` with the integration name, HTTP method, path, and optional JSON body.
 - Do not use shell, curl, or `app_api` to reach a user's connected integration when `api_call` is available.""",
+    "ithaca": """\
+## Home weather / homelab update rules
+- For the user's OWN local weather ("is it raining", "how cold is it", "do I need an umbrella", "what's the weather"), call `get_home_weather`. It already knows their configured location — do not ask which city, and prefer it over `web_search`. Use `web_search` only for a DIFFERENT named place ("weather in Tokyo").
+- For pending updates to the user's self-hosted apps ("any software updates", "what needs updating", "is Jellyfin up to date", "is Radarr outdated"), call `get_homelab_updates`. This reads their own weekly digest — you cannot know it from training data, so never answer from memory and never say you lack real-time access.
+- Both are read-only and take no arguments. Answer from the tool result.""",
 }
 
 _DOMAIN_TOOL_MAP = {
@@ -509,6 +514,7 @@ _DOMAIN_TOOL_MAP = {
     "settings": {"manage_settings", "manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens", "app_api"},
     "contacts": {"resolve_contact", "manage_contact"},
     "integrations": {"api_call"},
+    "ithaca": {"get_home_weather", "get_homelab_updates"},
 }
 
 _WORKSPACE_TERMINUS_TOOLS = (
@@ -1366,6 +1372,33 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
     if has(r"\bapi[ _]call\b", r"\bintegrations?\b",
            r"\b(?:home ?assistant|miniflux|gitea|linkding|jellyfin)\b"):
         domains.add("integrations")
+    # Ithaca hub data — the user's own home weather and their homelab software
+    # -update digest. Same failure shape as the api_call bug above: these
+    # questions are short and matched no domain, so `low_signal` came out True
+    # and `_direct_low_signal` answered them with a bare user message — no
+    # system prompt, no tools (metrics showed input_tokens=16, tool_calls=0).
+    # The model then replied "I don't have real-time data access" for a question
+    # its own get_homelab_updates tool answers. Naming the domain both keeps the
+    # turn on the agent path and seeds the two tools deterministically via
+    # _DOMAIN_TOOL_MAP, independent of embedding retrieval.
+    if has(r"\b(?:weather|forecast|raining|snowing|umbrella)\b",
+           r"\bhow\s+(?:hot|cold|warm|chilly|humid|windy)\s+is\s+it\b",
+           r"\bis\s+it\s+(?:raining|snowing|hot|cold|warm|chilly|freezing|sunny|cloudy|windy)\b",
+           r"\btemp(?:erature)?\s+outside\b",
+           r"\bit\s+like\s+outside\b"):
+        domains.add("ithaca")
+    if has(r"\bhome\s?lab\b",
+           r"\b(?:software|app|apps|application|applications|package|packages|firmware)\s+updates?\b",
+           r"\bneeds?\s+updat(?:e|es|ing)\b",
+           r"\bup[\s-]?to[\s-]?date\b",
+           r"\b(?:outdated|out\s+of\s+date)\b",
+           r"\bupdates?\s+(?:are\s+)?(?:available|pending|waiting)\b",
+           # Same guard as action_intents: "any updates on the PR?" is a
+           # status-chase, so require the phrase to stand alone or carry an
+           # update-lookup qualifier.
+           r"\bany\s+(?:new\s+)?updates?\s*(?:[?.!]*$|\b(?:today|available|pending|for\s+(?:me|my)\b))",
+           r"\b(?:radarr|sonarr|prowlarr|jellyseerr|seerr|transmission|flatpak)\b"):
+        domains.add("ithaca")
 
     low_signal = not continuation and not domains
     return {
