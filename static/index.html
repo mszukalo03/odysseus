@@ -2367,6 +2367,11 @@
                 </select>
               </div>
               <div class="settings-row">
+                <label class="settings-label">Vault path</label>
+                <input id="set-ithacaVaultPath" type="text" placeholder="/vault (preferred — reads the digest from disk)" class="settings-select">
+              </div>
+              <div class="admin-toggle-sub" style="margin:-4px 0 8px">Set the vault path to read digests straight off disk — no token needed and it keeps working while Obsidian is closed. The Local REST API below is only used when the vault path is blank, and it only responds while the Obsidian desktop app is open.</div>
+              <div class="settings-row">
                 <label class="settings-label">Obsidian API URL</label>
                 <input id="set-ithacaObsUrl" type="text" placeholder="http://100.x.y.z:27123" class="settings-select">
               </div>

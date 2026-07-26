@@ -9,9 +9,10 @@ file in an Obsidian vault (via the Obsidian Local REST API). Endpoints:
 
 * GET  /api/ithaca/weather   — live OpenWeatherMap current conditions +
   3-hourly forecast, queried directly (NOT from the digest), TTL-cached.
-* GET  /api/ithaca/digest    — latest daily-digest markdown from the Obsidian
-  Local REST API, split into heading sections; the "Software Updates" table
-  is parsed into structured rows and enriched with per-app links.
+* GET  /api/ithaca/digest    — latest daily-digest markdown, split into
+  heading sections; the "Software Updates" table is parsed into structured
+  rows and enriched with per-app links. Read from the vault on disk when
+  OBSIDIAN_VAULT_PATH is set, else over the Obsidian Local REST API.
 * GET  /api/ithaca/config    — per-app link config (git repo URL, ssh host,
   deploy path) used by the Software Updates tile. PUT is admin-only.
 * POST /api/ithaca/ssh/open  — admin-only: ssh into an app's host and list
@@ -21,10 +22,17 @@ Also exposed to the AI agent as read-only tools (src/tools/ithaca.py):
 get_home_weather, get_homelab_updates.
 
 Config: OPENWEATHER_API_KEY, OPENWEATHER_LAT, OPENWEATHER_LON,
-OPENWEATHER_UNITS, OBSIDIAN_API_URL, OBSIDIAN_API_TOKEN, OBSIDIAN_DIGEST_DIR
-(see .env.example) — or the same keys settable in Settings > Integrations
-("Ithaca Hub" card), which take priority over the env vars when non-empty
-(see `_setting_or_env`).
+OPENWEATHER_UNITS, OBSIDIAN_VAULT_PATH, OBSIDIAN_API_URL, OBSIDIAN_API_TOKEN,
+OBSIDIAN_DIGEST_DIR (see .env.example) — or the same keys settable in
+Settings > Integrations ("Ithaca Hub" card), which take priority over the env
+vars when non-empty (see `_setting_or_env`).
+
+Digest source: OBSIDIAN_VAULT_PATH (the vault directory on disk) is preferred
+and is what the tile should normally use. The Local REST API is a *plugin*
+hosted inside the Obsidian desktop process, so it only answers while that app
+is open — pointing the tile at it makes the dashboard fail with connection
+refused / timeouts whenever Obsidian is closed, no matter which host or port
+is used. Reading the synced vault files needs no HTTP, token, or running app.
 """
 
 import asyncio
@@ -72,6 +80,7 @@ DEFAULT_APP_LINKS: Dict[str, Dict[str, str]] = {
 
 _DIGEST_NAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}.*\.md$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+_FRONTMATTER_FENCE_RE = re.compile(r"^-{3,}\s*$")
 
 # ─── Auth helpers ───────────────────────────────────────────────────────────
 
@@ -95,6 +104,25 @@ def _reject_cross_site(request: Request) -> None:
 # ─── Digest markdown parsing (pure functions — unit tested) ─────────────────
 
 
+def strip_frontmatter(markdown: str) -> str:
+    """Drop a leading YAML frontmatter block, if present.
+
+    Digest notes start with an Obsidian property block (`---` / title, date,
+    tags… / `---`). Without this the whole block lands in the ""-keyed
+    preamble section and renders as raw YAML above the tiles.
+    """
+    lines = markdown.splitlines()
+    i = 0
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    if i >= len(lines) or not _FRONTMATTER_FENCE_RE.match(lines[i]):
+        return markdown
+    for j in range(i + 1, len(lines)):
+        if _FRONTMATTER_FENCE_RE.match(lines[j]):
+            return "\n".join(lines[j + 1:])
+    return markdown  # unterminated block — treat as ordinary content
+
+
 def parse_digest_sections(markdown: str) -> Dict[str, str]:
     """Split a digest markdown document into {heading text: body markdown}.
 
@@ -104,6 +132,7 @@ def parse_digest_sections(markdown: str) -> Dict[str, str]:
     A repeated heading name keeps the LAST occurrence — a re-patched section
     supersedes stale content above it.
     """
+    markdown = strip_frontmatter(markdown)
     sections: Dict[str, str] = {}
     current = ""
     buf: List[str] = []
@@ -263,10 +292,17 @@ def _weather_settings() -> Dict[str, str]:
 
 def _obsidian_settings() -> Dict[str, str]:
     return {
+        "vault_path": _setting_or_env("obsidian_vault_path", "OBSIDIAN_VAULT_PATH"),
         "base": _setting_or_env("obsidian_api_url", "OBSIDIAN_API_URL").rstrip("/"),
         "token": _setting_or_env("obsidian_api_token", "OBSIDIAN_API_TOKEN"),
         "digest_dir": _setting_or_env("obsidian_digest_dir", "OBSIDIAN_DIGEST_DIR", "daily-digest").strip("/"),
     }
+
+
+def digest_cache_key(cfg: Dict[str, str]) -> str:
+    """Cache identity of the configured digest source. Shared with
+    src/tools/ithaca.py so the agent tool and the tile hit the same entry."""
+    return f"{cfg.get('vault_path', '')}|{cfg.get('base', '')}|{cfg.get('digest_dir', '')}"
 
 
 async def _fetch_weather() -> Dict[str, Any]:
@@ -330,10 +366,54 @@ async def _fetch_weather() -> Dict[str, Any]:
     }
 
 
-async def _fetch_digest() -> Dict[str, Any]:
-    cfg = _obsidian_settings()
-    if not cfg["base"]:
-        raise HTTPException(503, "OBSIDIAN_API_URL is not configured")
+def _digest_dir_on_disk(cfg: Dict[str, str]) -> str:
+    """Resolve <vault_path>/<digest_dir>, refusing to escape the vault root.
+
+    digest_dir is admin-settable from the Settings UI, so containment is
+    checked rather than assumed — a stray "../.." must not turn the digest
+    reader into an arbitrary-file browser.
+    """
+    root = os.path.realpath(os.path.expanduser(cfg["vault_path"]))
+    target = os.path.realpath(os.path.join(root, cfg["digest_dir"]))
+    if target != root and not target.startswith(root + os.sep):
+        raise HTTPException(400, "OBSIDIAN_DIGEST_DIR resolves outside OBSIDIAN_VAULT_PATH")
+    return target
+
+
+def _read_digest_from_disk(cfg: Dict[str, str]) -> tuple:
+    """Newest digest file in the vault directory, as (filename, markdown).
+
+    Blocking I/O — call via asyncio.to_thread.
+    """
+    dir_path = _digest_dir_on_disk(cfg)
+    if not os.path.isdir(dir_path):
+        raise HTTPException(
+            503,
+            f"Vault digest directory not found: {dir_path} — check OBSIDIAN_VAULT_PATH "
+            "and OBSIDIAN_DIGEST_DIR (in Docker, the vault must be bind-mounted into "
+            "the container)",
+        )
+    try:
+        names = os.listdir(dir_path)
+    except OSError as exc:
+        raise HTTPException(502, f"Cannot read {dir_path}: {exc}")
+    digests = sorted(
+        (n for n in names if _DIGEST_NAME_RE.match(n)),
+        reverse=True,  # date-prefixed names → lexicographic == chronological
+    )
+    if not digests:
+        raise HTTPException(404, f"No digest files (YYYY-MM-DD*.md) found in {dir_path}")
+    filename = digests[0]
+    try:
+        with open(os.path.join(dir_path, filename), "r", encoding="utf-8") as f:
+            return filename, f.read()
+    except OSError as exc:
+        raise HTTPException(502, f"Cannot read {os.path.join(dir_path, filename)}: {exc}")
+
+
+async def _read_digest_from_api(cfg: Dict[str, str]) -> tuple:
+    """Newest digest file over the Obsidian Local REST API, as
+    (filename, markdown). Only works while the Obsidian desktop app is open."""
     if not cfg["token"]:
         raise HTTPException(503, "OBSIDIAN_API_TOKEN is not configured")
     headers = {"Authorization": f"Bearer {cfg['token']}"}
@@ -362,8 +442,32 @@ async def _fetch_digest() -> Dict[str, Any]:
         )
         if doc.status_code != 200:
             raise HTTPException(502, f"Obsidian API file error ({doc.status_code})")
+    return filename, doc.text
 
-    sections = parse_digest_sections(doc.text)
+
+async def _fetch_digest() -> Dict[str, Any]:
+    """Latest digest, parsed and link-enriched. Prefers the vault on disk;
+    falls back to the Local REST API when no vault path is configured."""
+    cfg = _obsidian_settings()
+    if cfg["vault_path"]:
+        filename, text = await asyncio.to_thread(_read_digest_from_disk, cfg)
+        source = "vault"
+    elif cfg["base"]:
+        filename, text = await _read_digest_from_api(cfg)
+        source = "api"
+    else:
+        raise HTTPException(
+            503,
+            "No digest source configured — set OBSIDIAN_VAULT_PATH to the vault "
+            "directory (recommended: reads the synced markdown straight off disk), "
+            "or OBSIDIAN_API_URL + OBSIDIAN_API_TOKEN to use the Obsidian Local REST "
+            "API, which only responds while the Obsidian desktop app is running",
+        )
+    return _build_digest(filename, text, source)
+
+
+def _build_digest(filename: str, text: str, source: str) -> Dict[str, Any]:
+    sections = parse_digest_sections(text)
     updates_md = next(
         (body for name, body in sections.items() if name.lower() == "software updates"), None
     )
@@ -380,6 +484,7 @@ async def _fetch_digest() -> Dict[str, Any]:
     return {
         "filename": filename,
         "date": filename[:10] if _DIGEST_NAME_RE.match(filename) else "",
+        "source": source,
         "sections": sections,
         "software_updates": software_updates,
         "fetched_at": int(time.time()),
@@ -438,14 +543,19 @@ def setup_ithaca_routes() -> APIRouter:
     async def get_digest(request: Request, refresh: bool = False):
         _require_read_access(request)
         cfg = _obsidian_settings()
-        key = f"{cfg['base']}|{cfg['digest_dir']}"
         try:
-            return await _cached(_digest_cache, _digest_lock, key,
+            return await _cached(_digest_cache, _digest_lock, digest_cache_key(cfg),
                                  DIGEST_CACHE_TTL, _fetch_digest, refresh)
         except HTTPException:
             raise
         except httpx.HTTPError as exc:
-            raise HTTPException(502, f"Obsidian API unreachable at {cfg['base']} ({exc.__class__.__name__}): {exc}")
+            raise HTTPException(
+                502,
+                f"Obsidian Local REST API unreachable at {cfg['base']} "
+                f"({exc.__class__.__name__}): {exc} — that API is served by the Obsidian "
+                "desktop app, so it only answers while Obsidian is open. Set "
+                "OBSIDIAN_VAULT_PATH to read the vault from disk instead.",
+            )
 
     @router.get("/config")
     async def get_config(request: Request):

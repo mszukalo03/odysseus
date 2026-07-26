@@ -64,7 +64,7 @@ async def do_get_homelab_updates(content: str, owner: Optional[str] = None) -> D
     """Handle get_homelab_updates: the latest daily-digest's parsed
     Software Updates table (per-app current/available version + status)."""
     from fastapi import HTTPException
-    from routes.ithaca_routes import _cached, _fetch_digest, _digest_cache, _digest_lock, DIGEST_CACHE_TTL, _obsidian_settings
+    from routes.ithaca_routes import _cached, _fetch_digest, _digest_cache, _digest_lock, DIGEST_CACHE_TTL, _obsidian_settings, digest_cache_key
 
     try:
         try:
@@ -74,7 +74,7 @@ async def do_get_homelab_updates(content: str, owner: Optional[str] = None) -> D
         refresh = bool(args.get("refresh"))
 
         cfg = _obsidian_settings()
-        key = f"{cfg['base']}|{cfg['digest_dir']}"
+        key = digest_cache_key(cfg)
         try:
             data = await _cached(_digest_cache, _digest_lock, key, DIGEST_CACHE_TTL, _fetch_digest, refresh)
         except HTTPException as e:

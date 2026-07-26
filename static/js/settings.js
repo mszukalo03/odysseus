@@ -2475,6 +2475,7 @@ async function initIthacaSettings() {
   var latInput = el('set-ithacaLat');
   var lonInput = el('set-ithacaLon');
   var unitsSel = el('set-ithacaUnits');
+  var vaultPathInput = el('set-ithacaVaultPath');
   var obsUrlInput = el('set-ithacaObsUrl');
   var obsTokenInput = el('set-ithacaObsToken');
   var digestDirInput = el('set-ithacaDigestDir');
@@ -2487,6 +2488,7 @@ async function initIthacaSettings() {
     latInput.value = s.openweather_lat || '';
     lonInput.value = s.openweather_lon || '';
     unitsSel.value = s.openweather_units || '';
+    vaultPathInput.value = s.obsidian_vault_path || '';
     obsUrlInput.value = s.obsidian_api_url || '';
     obsTokenInput.value = s.obsidian_api_token || '';
     digestDirInput.value = s.obsidian_digest_dir || '';
@@ -2501,6 +2503,7 @@ async function initIthacaSettings() {
           openweather_lat: latInput.value.trim(),
           openweather_lon: lonInput.value.trim(),
           openweather_units: unitsSel.value,
+          obsidian_vault_path: vaultPathInput.value.trim(),
           obsidian_api_url: obsUrlInput.value.trim(),
           obsidian_api_token: obsTokenInput.value.trim(),
           obsidian_digest_dir: digestDirInput.value.trim(),
@@ -2515,7 +2518,7 @@ async function initIthacaSettings() {
     }
   }
 
-  [keyInput, latInput, lonInput, unitsSel, obsUrlInput, obsTokenInput, digestDirInput].forEach(function(input) {
+  [keyInput, latInput, lonInput, unitsSel, vaultPathInput, obsUrlInput, obsTokenInput, digestDirInput].forEach(function(input) {
     input.addEventListener('change', saveIthaca);
   });
 }

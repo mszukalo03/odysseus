@@ -27,6 +27,15 @@ services:
       # land under /app/.local for the odysseus user. Persist them so a
       # container recreate does not silently remove installed serve engines.
       - ${APP_DATA_DIR:-./data}/local:/app/.local:z
+      # Ithaca hub, Software Updates tile: the Obsidian vault holding the n8n
+      # daily-digest markdown, mounted read-only (the app only ever reads it).
+      # Set OBSIDIAN_VAULT_HOST_PATH to the vault directory on the host; the
+      # mount target is OBSIDIAN_VAULT_PATH itself, so pointing both at the
+      # same absolute path makes the config identical whether Odysseus runs in
+      # this container or straight from ./venv on the host. Inert until set —
+      # with OBSIDIAN_VAULT_PATH empty the app never reads the mount, so the
+      # defaults below just remount the data dir harmlessly.
+      - ${OBSIDIAN_VAULT_HOST_PATH:-./data}:${OBSIDIAN_VAULT_PATH:-/vault}:ro,z
     extra_hosts:
       # Lets the container reach local services on the Docker host, including
       # Ollama at http://host.docker.internal:11434.
@@ -79,6 +88,7 @@ services:
       - OPENWEATHER_LON=${OPENWEATHER_LON:-}
       - OPENWEATHER_UNITS=${OPENWEATHER_UNITS:-metric}
       - OPENWEATHER_API_BASE=${OPENWEATHER_API_BASE:-}
+      - OBSIDIAN_VAULT_PATH=${OBSIDIAN_VAULT_PATH:-}
       - OBSIDIAN_API_URL=${OBSIDIAN_API_URL:-}
       - OBSIDIAN_API_TOKEN=${OBSIDIAN_API_TOKEN:-}
       - OBSIDIAN_DIGEST_DIR=${OBSIDIAN_DIGEST_DIR:-daily-digest}

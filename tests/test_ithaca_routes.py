@@ -186,19 +186,28 @@ def test_weather_settings_reads_all_four_fields(monkeypatch):
     assert cfg == {"api_key": "K", "lat": "1.1", "lon": "2.2", "units": "imperial"}
 
 
-def test_obsidian_settings_reads_all_three_fields(monkeypatch):
+def test_obsidian_settings_reads_all_four_fields(monkeypatch):
     import src.settings as settings_mod
-    saved = {"obsidian_api_url": "http://host:27123/", "obsidian_api_token": "T", "obsidian_digest_dir": "/digests/"}
+    saved = {"obsidian_vault_path": "/vault", "obsidian_api_url": "http://host:27123/",
+             "obsidian_api_token": "T", "obsidian_digest_dir": "/digests/"}
     monkeypatch.setattr(settings_mod, "get_setting", lambda key, default=None: saved.get(key, ""))
     cfg = ithaca._obsidian_settings()
-    assert cfg == {"base": "http://host:27123", "token": "T", "digest_dir": "digests"}
+    assert cfg == {"vault_path": "/vault", "base": "http://host:27123", "token": "T",
+                   "digest_dir": "digests"}
 
 
 def test_ithaca_settings_keys_registered_for_admin_settings_save():
     from src.settings import DEFAULT_SETTINGS
     for key in ("openweather_api_key", "openweather_lat", "openweather_lon", "openweather_units",
-                "obsidian_api_url", "obsidian_api_token", "obsidian_digest_dir"):
+                "obsidian_vault_path", "obsidian_api_url", "obsidian_api_token", "obsidian_digest_dir"):
         assert key in DEFAULT_SETTINGS
+
+
+def test_digest_cache_key_separates_vault_and_api_sources():
+    # Switching source must not serve the other source's cached payload.
+    vault = ithaca.digest_cache_key({"vault_path": "/vault", "base": "", "digest_dir": "d"})
+    api = ithaca.digest_cache_key({"vault_path": "", "base": "http://h:27123", "digest_dir": "d"})
+    assert vault != api
 
 
 def test_ithaca_secret_keys_are_masked_by_settings_scrub():
@@ -212,6 +221,7 @@ def test_ithaca_secret_keys_are_masked_by_settings_scrub():
     assert not is_secret_key("openweather_units")
     assert not is_secret_key("obsidian_api_url")
     assert not is_secret_key("obsidian_digest_dir")
+    assert not is_secret_key("obsidian_vault_path")
 
 
 # ─── HTTP route error diagnostics ───────────────────────────────────────────
@@ -248,7 +258,8 @@ async def test_digest_route_reports_real_network_error_and_host(monkeypatch):
         raise httpx_mod.ConnectError("[Errno 111] Connection refused")
     monkeypatch.setattr(ithaca, "_fetch_digest", fake_fetch)
     monkeypatch.setattr(ithaca, "_obsidian_settings", lambda: {
-        "base": "http://100.96.143.85:27123", "token": "t", "digest_dir": "daily-digest",
+        "vault_path": "", "base": "http://100.96.143.85:27123", "token": "t",
+        "digest_dir": "daily-digest",
     })
 
     router = ithaca.setup_ithaca_routes()
@@ -260,3 +271,146 @@ async def test_digest_route_reports_real_network_error_and_host(monkeypatch):
     assert "100.96.143.85:27123" in exc.value.detail
     assert "ConnectError" in exc.value.detail
     assert "Connection refused" in exc.value.detail
+    # The failure mode that actually bit us: the REST API is hosted inside the
+    # Obsidian desktop app, so a closed app looks like an unreachable host on
+    # every address. Say so, and point at the vault-path alternative.
+    assert "Obsidian is open" in exc.value.detail
+    assert "OBSIDIAN_VAULT_PATH" in exc.value.detail
+
+
+# ─── YAML frontmatter ───────────────────────────────────────────────────────
+
+
+def test_strip_frontmatter_removes_obsidian_property_block():
+    md = (
+        "---\n"
+        "title: Daily Digest - 2026-07-25\n"
+        "tags:\n"
+        "  - homelab\n"
+        "---\n"
+        "\n"
+        "## Weather\n"
+        "clear\n"
+    )
+    assert ithaca.strip_frontmatter(md).strip() == "## Weather\nclear"
+
+
+def test_strip_frontmatter_leaves_plain_and_unterminated_documents():
+    plain = "## Weather\nclear\n"
+    assert ithaca.strip_frontmatter(plain) == plain
+    # A lone "---" is a horizontal rule, not an unterminated property block —
+    # dropping the rest of the file would silently blank every tile.
+    unterminated = "---\ntitle: x\n## Weather\nclear\n"
+    assert ithaca.strip_frontmatter(unterminated) == unterminated
+
+
+def test_frontmatter_does_not_leak_into_preamble_section():
+    md = "---\ntitle: x\ndate: 2026-07-25\n---\n## Weather\nclear\n"
+    sections = ithaca.parse_digest_sections(md)
+    assert "title: x" not in sections.get("", "")
+    assert sections["Weather"] == "clear"
+
+
+# ─── Reading the digest from the vault on disk ───────────────────────────────
+
+REAL_DIGEST = """---
+title: Daily Digest - 2026-07-25
+date: 2026-07-25
+type: daily-digest
+tags:
+  - homelab
+  - digest
+---
+
+## Weather
+**Evening**: overcast clouds, 23–26°C, 64% humidity
+
+## Software Updates
+| **App** | **Hosted On** | **Currently Deployed** | **Update?** | **Version No.** | **Desc** |
+| --- | --- | --- | --- | --- | --- |
+| **Radarr** | radarr.host.example.com | v6.4.x | Yes | Stable v6.4 Release | Trakt pagination fixes; improved cover caching |
+| **Prowlarr** |  |  | Yes | v2.5.2 Stable Release | Fixes missing download client categories |
+| **Jellyfin** |  |  | No | v12.0-rc3 Preview Release | Third release candidate; MP4 subtitle probe fixes |
+
+No Flatpak updates available.
+
+## Notes
+"""
+
+
+def _write_vault(tmp_path, files):
+    digest_dir = tmp_path / "daily-digest"
+    digest_dir.mkdir()
+    for name, body in files.items():
+        (digest_dir / name).write_text(body, encoding="utf-8")
+    return {"vault_path": str(tmp_path), "base": "", "token": "", "digest_dir": "daily-digest"}
+
+
+def test_read_digest_from_disk_picks_newest_by_date_prefix(tmp_path):
+    cfg = _write_vault(tmp_path, {
+        "2026-07-18-digest.md": "## Software Updates\nold\n",
+        "2026-07-25-digest.md": REAL_DIGEST,
+        "template.md": "not a digest\n",
+        "README.txt": "ignored\n",
+    })
+    filename, text = ithaca._read_digest_from_disk(cfg)
+    assert filename == "2026-07-25-digest.md"
+    assert "Radarr" in text
+
+
+def test_read_digest_from_disk_missing_dir_names_the_path(tmp_path):
+    cfg = {"vault_path": str(tmp_path), "base": "", "token": "", "digest_dir": "nope"}
+    with pytest.raises(HTTPException) as exc:
+        ithaca._read_digest_from_disk(cfg)
+    assert exc.value.status_code == 503
+    assert "nope" in exc.value.detail
+
+
+def test_read_digest_from_disk_empty_dir_is_404(tmp_path):
+    cfg = _write_vault(tmp_path, {})
+    with pytest.raises(HTTPException) as exc:
+        ithaca._read_digest_from_disk(cfg)
+    assert exc.value.status_code == 404
+
+
+def test_digest_dir_cannot_escape_the_vault_root(tmp_path):
+    (tmp_path / "vault").mkdir()
+    (tmp_path / "secrets").mkdir()
+    cfg = {"vault_path": str(tmp_path / "vault"), "base": "", "token": "",
+           "digest_dir": "../secrets"}
+    with pytest.raises(HTTPException) as exc:
+        ithaca._digest_dir_on_disk(cfg)
+    assert exc.value.status_code == 400
+
+
+async def test_fetch_digest_prefers_the_vault_and_parses_the_updates_table(tmp_path, monkeypatch):
+    cfg = _write_vault(tmp_path, {"2026-07-25-digest.md": REAL_DIGEST})
+    # An API base is configured too — the vault must still win, so the tile
+    # never depends on the Obsidian desktop app being open.
+    cfg["base"] = "http://127.0.0.1:1/unreachable"
+    monkeypatch.setattr(ithaca, "_obsidian_settings", lambda: cfg)
+
+    data = await ithaca._fetch_digest()
+    assert data["source"] == "vault"
+    assert data["filename"] == "2026-07-25-digest.md"
+    assert data["date"] == "2026-07-25"
+
+    su = data["software_updates"]
+    assert [r["app"] for r in su["rows"]] == ["Radarr", "Prowlarr", "Jellyfin"]
+    assert [r["update_available"] for r in su["rows"]] == [True, True, False]
+    assert su["note"] == "No Flatpak updates available."
+    # Per-app links still get merged in for the vault source.
+    assert su["rows"][0]["repo_url"] == "https://github.com/Radarr/Radarr"
+    # Frontmatter must not surface as a section.
+    assert "title: Daily Digest" not in data["sections"].get("", "")
+
+
+async def test_fetch_digest_with_no_source_configured_explains_both_options(monkeypatch):
+    monkeypatch.setattr(ithaca, "_obsidian_settings", lambda: {
+        "vault_path": "", "base": "", "token": "", "digest_dir": "daily-digest",
+    })
+    with pytest.raises(HTTPException) as exc:
+        await ithaca._fetch_digest()
+    assert exc.value.status_code == 503
+    assert "OBSIDIAN_VAULT_PATH" in exc.value.detail
+    assert "OBSIDIAN_API_URL" in exc.value.detail

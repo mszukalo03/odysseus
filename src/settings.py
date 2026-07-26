@@ -96,6 +96,10 @@ DEFAULT_SETTINGS = {
     "openweather_lat": "",
     "openweather_lon": "",
     "openweather_units": "",
+    # obsidian_vault_path reads the digest markdown straight off disk and is
+    # the preferred source — the Local REST API below only answers while the
+    # Obsidian desktop app is running.
+    "obsidian_vault_path": "",
     "obsidian_api_url": "",
     "obsidian_api_token": "",
     "obsidian_digest_dir": "",
