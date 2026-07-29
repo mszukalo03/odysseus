@@ -1,11 +1,11 @@
 # Roadmap
 
-> Part of odysseus/.project-knowledge/ | Last updated: 2026-07-24
+> Part of odysseus/.project-knowledge/ | Last updated: 2026-07-27
 > Forward-looking only. Check this before starting any task — know what's in flight.
 
 ## Current Goal
 
-Sidebar categorization (AI & Knowledge / Personal / Appearance) landed and is committed (`b205f82`). The Email 3-pane webmail redesign (folder sidebar + persistent list + persistent reading pane, collapsible/resizable) is built, verified live, and committed+pushed (`236ef91`). See Active TODOs below for what's still open (installing the systemd service, the RSS feature-proposal issue). See [[sessions]] and [[history]] for the full write-up.
+Sidebar categorization and the Email 3-pane redesign are committed and pushed (`b205f82`, `236ef91`). Two follow-up polish rounds since: 2026-07-25 (icon-rail collapse, Theme layout overflow, new-mail pulse banner) and 2026-07-26 (folder-badge readability, modal font-family, reader action row down to 4 icon-only buttons with a consolidated Reply dropdown). 2026-07-27/28: agent shell execution is now actually reliable — `sudo` prompts for a password in the UI and feeds it over stdin (with a real-pty fallback for wrapper scripts like `garuda-update` that call sudo internally), shell tools use the real `HOME`, `tool_progress` SSE events reach the browser, `bash`/`python` are unconditionally available instead of depending on keyword matching against a downed ChromaDB, and pty output is stripped of ANSI escape codes. The systemd service is confirmed installed, enabled, and running (`systemctl status odysseus-ui`). See Active TODOs below for what's still open. See [[sessions]] and [[history]] for the full write-up.
 
 ---
 
@@ -85,5 +85,8 @@ Sidebar categorization (AI & Knowledge / Personal / Appearance) landed and is co
 ## Active TODOs
 
 - [ ] Confirm `pip-audit`/Trivy findings aren't silently ignored — both are advisory-only in CI (see [[systems]] Security CI), so nothing blocks on them today. *(added 2026-07-19)*
-- [ ] **User needs to run `./install-service.sh` themselves** to actually install the "always on" systemd service (now executable — see [[history]]) — requires sudo, left for the user to run, not yet confirmed done. *(added 2026-07-24)*
 - [ ] GitHub issue [#5688](https://github.com/odysseus-dev/odysseus/issues/5688) — proposed the RSS backlog batch as a new feature per `CONTRIBUTING.md`'s no-bulk-agent-PR policy (one issue, not multiple PRs). Awaiting maintainer response before opening any PR. *(added 2026-07-24)*
+- [ ] **Decide whether to unify the 3 other email-reader header blocks** (`emailLibrary.js`) with the 2026-07-26 icon-only/consolidated-Reply-dropdown redesign — one is confirmed-dead `_toggleCardPreview`-era code (safe to just delete), the other two are the "open email in a new tab" and "open in a new window" views, which still show the old 6-separate-icon layout. Left alone since the user's feedback was specifically about the 3-pane reading pane. *(added 2026-07-26)*
+- [ ] **ChromaDB is currently unreachable on this install** (`localhost:8100` — `ToolIndex init failed`, retries every 30s). Semantic tool retrieval is therefore off across every domain, leaving only the deterministic `_KEYWORD_HINTS` fallback; that's what silently stripped `bash` from the toolset until it was made unconditional on 2026-07-28 (see [[history]]). RAG/personal-doc search is presumably degraded too. Either start the service (`docker compose up chromadb`) or decide the app should run keyword-only by design. **Note the general lesson from the `bash` saga**: any tool reachable *only* via semantic retrieval silently disappears while this is down, and the failure looks like the agent being broken rather than a service being offline — worth auditing which other tools are in that position, and/or surfacing "semantic retrieval unavailable" somewhere visible instead of only in the server log. *(added 2026-07-27, updated 2026-07-28)*
+- [ ] **Reboot pending** — the 2026-07-27/28 `garuda-update` run completed (70 packages incl. `linux-zen` 7.1.4 → 7.1.5, NVIDIA, glibc/gcc, systemd), but `uname -r` still reports 7.1.4, so the new kernel/driver stack isn't active yet. *(added 2026-07-28)*
+- [ ] **Decide what to do with `restart.sh`** (untracked, in the repo root, not gitignored — user-authored). It kills whatever holds port 24950 and relaunches uvicorn with `nohup`, bypassing systemd, so the service afterwards isn't managed by `systemctl` and a later `systemctl restart` can fight it. Either gitignore it as a local scratch script, commit it as an intentional dev helper, or replace it with `sudo systemctl restart odysseus-ui`. *(added 2026-07-28)*

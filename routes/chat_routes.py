@@ -1735,6 +1735,14 @@ def setup_chat_routes(
                                     yield chunk
                                 elif data.get("type") in (
                                     "tool_start", "tool_output", "agent_step",
+                                    # tool_progress carries the live elapsed/tail
+                                    # of a running bash|python tool AND the sudo
+                                    # password prompt. It was missing from this
+                                    # relay whitelist, so the agent loop emitted
+                                    # both and neither ever reached the browser:
+                                    # the "Running…" card stayed blank and a sudo
+                                    # command just hung until it timed out.
+                                    "tool_progress",
                                     "doc_stream_open", "doc_stream_delta",
                                     "doc_update", "doc_suggestions", "ui_control",
                                     "rounds_exhausted", "budget_exceeded",

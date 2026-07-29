@@ -311,6 +311,60 @@ function _urgencyColor(score) {
   return '';                                                // default (blue / theme)
 }
 
+// Session-only (not persisted) — distinct from the localStorage "last seen"
+// threshold, which only advances when the user actually opens the inbox.
+// This just stops the same arrival from re-announcing itself on every 60s
+// poll while the dot is still showing.
+let _lastAnnouncedMailUid = 0;
+
+function _dismissMailPulseBanner(banner) {
+  if (!banner || banner._dismissed) return;
+  banner._dismissed = true;
+  clearTimeout(banner._timer);
+  banner.classList.remove('mail-pulse-visible');
+  setTimeout(() => banner.remove(), 250);
+}
+
+function _showNewMailPulseBanner(latest, unreadCount) {
+  // Skip while the inbox is already open — its list/reader reflect new mail
+  // live, a banner stacked on top of it would just be noise.
+  if (isLibOpen()) return;
+  document.querySelectorAll('.mail-pulse-banner').forEach(_dismissMailPulseBanner);
+
+  const sender = (latest && (latest.from_name || latest.from_address)) || '';
+  const subject = (latest && latest.subject) || '';
+  const summary = sender
+    ? `${_esc(sender)}${subject ? ` — ${_esc(subject)}` : ''}`
+    : (unreadCount > 1 ? `${unreadCount} new emails` : 'New email');
+
+  const banner = document.createElement('div');
+  banner.className = 'mail-pulse-banner';
+  banner.setAttribute('role', 'status');
+  banner.innerHTML = `
+    <span class="mail-pulse-avatar" style="background:${_senderColor(sender)}">${_esc((sender || '?')[0].toUpperCase())}</span>
+    <span class="mail-pulse-text">
+      <span class="mail-pulse-title">New email</span>
+      <span class="mail-pulse-sub">${summary}</span>
+    </span>
+    <button type="button" class="mail-pulse-close" aria-label="Dismiss">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  `;
+  banner.addEventListener('click', (e) => {
+    if (e.target.closest('.mail-pulse-close')) {
+      e.stopPropagation();
+      _dismissMailPulseBanner(banner);
+      return;
+    }
+    _dismissMailPulseBanner(banner);
+    openEmailLibrary();
+    markInboxAsSeen();
+  });
+  document.body.appendChild(banner);
+  requestAnimationFrame(() => banner.classList.add('mail-pulse-visible'));
+  banner._timer = setTimeout(() => _dismissMailPulseBanner(banner), 8000);
+}
+
 async function _refreshUnreadCount() {
   // Default the dot to hidden — only the verified "new mail above threshold"
   // path below should turn it on. Without this, a fetch error or a backend
@@ -342,6 +396,11 @@ async function _refreshUnreadCount() {
     dot.style.display = hasNewUnread ? '' : 'none';
     if (hasNewUnread && !isLibOpen()) {
       prewarmUnreadEmails({ limit: Math.min(10, Math.max(1, unreadCount)), maxUid }).catch(() => {});
+    }
+
+    if (maxUid > lastSeen && maxUid !== _lastAnnouncedMailUid) {
+      _lastAnnouncedMailUid = maxUid;
+      _showNewMailPulseBanner(data.latest, unreadCount);
     }
 
     // Color the dot by urgency tier. Cache the per-uid map so the per-row

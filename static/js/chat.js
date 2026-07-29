@@ -16,8 +16,9 @@ import spinnerModule from './spinner.js';
 import presetsModule from './presets.js';
 import fileHandlerModule from './fileHandler.js';
 import searchModule from './search.js';
-import documentModule from './document.js?v=20260722emailfastindex1';
-import * as emailInbox from './emailInbox.js?v=20260722emailfastindex1';
+import documentModule from './document.js';
+import * as emailInbox from './emailInbox.js';
+import { showSudoPrompt, resumePendingSudoPrompt } from './sudoPrompt.js';
 import codeRunnerModule from './codeRunner.js';
 import slashCommands, { initSlashCommands, isCommand, handleSlashCommand, handleSetupInput, handleSetupWizard, typewriterInto } from './slashCommands.js?v=20260722emailfastindex1';
 import createResearchSynapse from './researchSynapse.js';
@@ -692,6 +693,9 @@ import { wireArrowUpRecall, getUserMessagesFromChatHistory } from './composerArr
     initSlashCommands({ apiBase, isStreaming: () => !!_getForegroundStreamState() });
     // Initialize email inbox
     emailInbox.init(documentModule);
+    // A sudo command may still be blocked server-side from before a reload —
+    // re-show its prompt instead of leaving it to time out.
+    resumePendingSudoPrompt();
     // Wire the slash-command autocomplete popup on the chat composer. The
     // dispatcher already handles the typed command — this just surfaces the
     // registry as a discoverable menu when the user starts a message with /.
@@ -3083,6 +3087,14 @@ import { wireArrowUpRecall, getUserMessagesFromChatHistory } from './composerArr
                 uiModule.scrollHistory();
 
               } else if (json.type === 'tool_progress') {
+                // A sudo command is blocked waiting for a password. Handle
+                // this BEFORE the guards below — the prompt has to appear
+                // even for background jobs or when there's no tool bubble,
+                // otherwise the command just hangs until it times out.
+                if (json.sudo_prompt && json.request_id) {
+                  showSudoPrompt(json.request_id, json.command || '');
+                  continue;
+                }
                 // Long-running subprocess (bash, python) is still in
                 // flight — refresh the running tool card with the
                 // elapsed-time + tail of its stdout/stderr so the

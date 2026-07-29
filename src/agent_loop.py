@@ -548,6 +548,7 @@ For LONG-running commands (package installs, pip/npm, ffmpeg, model downloads, t
 pip install openai-whisper
 ```
 SANDBOX LIMITS: stdin/stdout are pipes, so there is NO interactive terminal — `input()`, `curses`, `termios`, `pygame`, and `tkinter` will all fail. Don't try to RUN interactive terminal games or GUI apps here — verify syntax (`python -c "import py_compile; py_compile.compile('x.py')"`) and tell the user to run it themselves in their own terminal. For anything the USER should play/use interactively (games, UIs, demos), prefer a single self-contained HTML file with `<canvas>` + inline JS — save it via `create_document` with language="html" and tell the user to hit the Run / Preview button (▶) in the document editor toolbar; it renders inline in a sandboxed iframe so the game is playable right there. Works from any machine that can reach the Odysseus UI — no need to copy files out.
+`sudo` IS supported: the runtime detects it, prompts the user for their password in the UI, and feeds it to the command — so just run the sudo command normally and wait. You are running on the user's real machine as their own user (not a remote/isolated sandbox), so commands genuinely take effect; never tell the user you "can only run in a sandbox" or ask them to paste a command into their own terminal just because it needs root. Still prefer the no-root path when one exists (e.g. `npm install -g` needs no `sudo` when the prefix is already user-owned — check `npm config get prefix`), since that skips the password prompt entirely. If a sudo command fails, READ the error: "a terminal is required to read the password" or "Sorry, try again" means the password was wrong/cancelled — say so and ask the user, do NOT re-run the identical command hoping for a different result.
 NEVER pipe multi-line Python through `python -c "..."` — shell quoting eats real newlines and `\\n` arrives as literal backslash-n, which Python parses as a line-continuation error on line 1. To run multi-line code, either use the dedicated `python` tool block above, or save to a file first with a quoted HEREDOC (`cat > /tmp/x.py << 'EOF' ... EOF`) and then `python /tmp/x.py`.""",
 
     "python": """\
@@ -3355,7 +3356,11 @@ async def stream_agent_loop(
             # tools (intersection with the plan-mode read-only allowlist) so the
             # agent can investigate; write/shell tools stay out until the request
             # actually calls for them (RAG retrieval adds those on a real ask).
-            _relevant_tools = set(ALWAYS_AVAILABLE)
+            # bash/python/manage_bg_jobs are unconditionally in ALWAYS_AVAILABLE
+            # (so a vague follow-up in normal chat like "cool check" can still
+            # reach them without a matching keyword), but that would defeat this
+            # carve-out here, so drop them back out for this one case.
+            _relevant_tools = set(ALWAYS_AVAILABLE) - {"bash", "python", "manage_bg_jobs"}
             from src.tool_security import PLAN_MODE_READONLY_TOOLS
             _relevant_tools |= (_DOMAIN_TOOL_MAP["files"] & PLAN_MODE_READONLY_TOOLS)
             logger.info("[tool-rag] Low-signal but workspace active; including read-only file tools")

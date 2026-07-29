@@ -2365,6 +2365,7 @@ def setup_email_routes():
                 "unread_count": int(fixture_result.get("total") or 0),
                 "max_uid": max([int(e.get("uid") or 0) for e in _fixture_email_rows(owner)] or [0]),
                 "folder": folder,
+                "latest": None,
                 "sync": {"source": "fixture"},
             }
         try:
@@ -2386,14 +2387,28 @@ def setup_email_routes():
                     "SELECT COUNT(*), MAX(updated_at) FROM email_message_index WHERE owner=? AND account_key=? AND folder=?",
                     (owner or "", account_key, folder),
                 ).fetchone()
+                max_uid_val = int((row or [0, 0])[1] or 0)
+                latest = None
+                if max_uid_val:
+                    # Cheap: the local index already has subject/sender cached,
+                    # no extra IMAP round-trip needed — powers the "new mail"
+                    # pulse banner (static/js/emailInbox.js) with real content
+                    # instead of a generic "you have new mail" message.
+                    lrow = conn.execute(
+                        "SELECT subject, from_name, from_address FROM email_message_index WHERE owner=? AND account_key=? AND folder=? AND uid=?",
+                        (owner or "", account_key, folder, str(max_uid_val)),
+                    ).fetchone()
+                    if lrow:
+                        latest = {"subject": lrow[0] or "", "from_name": lrow[1] or "", "from_address": lrow[2] or ""}
             finally:
                 conn.close()
             indexed_total = int((total_row or [0])[0] or 0)
             if indexed_total:
                 return {
                     "unread_count": int((row or [0])[0] or 0),
-                    "max_uid": int((row or [0, 0])[1] or 0),
+                    "max_uid": max_uid_val,
                     "folder": folder,
+                    "latest": latest,
                     "sync": {
                         "source": "index",
                         "indexed": indexed_total,
@@ -2408,15 +2423,23 @@ def setup_email_routes():
         )
         emails = (result or {}).get("emails") or []
         max_uid = 0
+        latest = None
         if emails:
             try:
-                max_uid = max(int(e.get("uid") or 0) for e in emails)
+                latest_email = max(emails, key=lambda e: int(e.get("uid") or 0))
+                max_uid = int(latest_email.get("uid") or 0)
+                latest = {
+                    "subject": latest_email.get("subject") or "",
+                    "from_name": latest_email.get("from_name") or "",
+                    "from_address": latest_email.get("from_address") or "",
+                }
             except Exception:
                 max_uid = 0
         return {
             "unread_count": int((result or {}).get("total") or len(emails) or 0),
             "max_uid": max_uid,
             "folder": folder,
+            "latest": latest,
             "sync": {"source": "imap_fallback"},
         }
 

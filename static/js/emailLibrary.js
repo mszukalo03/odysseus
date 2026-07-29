@@ -2375,9 +2375,9 @@ export function openEmailLibrary(opts = {}) {
           <div class="email-pane-folders">
           <div class="email-accounts-row">
             <div id="email-lib-accounts" style="display:flex;gap:4px;flex:1;min-width:0;"></div>
-            <button class="memory-toolbar-btn email-compose-jiggle" id="email-lib-compose-btn">
+            <button class="memory-toolbar-btn email-compose-jiggle" id="email-lib-compose-btn" title="Compose email">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:3px;"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-              New
+              <span class="email-compose-label">New</span>
             </button>
           </div>
           <div class="section">
@@ -3456,15 +3456,16 @@ function _renderFolderSidebar() {
   const counts = state._libUnreadCounts || {};
   const rowHtml = (f) => {
     const count = counts[f] || 0;
-    return `<div class="list-item${f === state._libFolder ? ' active' : ''}" data-folder="${_esc(f)}">
+    const label = folderDisplayName(f);
+    return `<div class="list-item${f === state._libFolder ? ' active' : ''}" data-folder="${_esc(f)}" title="${_esc(label)}${count > 0 ? ` (${count} unread)` : ''}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.6;">${_folderIconSvg(f)}</svg>
-      <span class="grow">${_esc(folderDisplayName(f))}</span>
+      <span class="grow">${_esc(label)}</span>
       ${count > 0 ? `<span class="email-folder-badge">${count > 999 ? '999+' : count}</span>` : ''}
     </div>`;
   };
   const schedActive = state._libFolder === '__scheduled__';
   host.innerHTML = [...priority, ...others].map(rowHtml).join('') + `
-    <div class="list-item${schedActive ? ' active' : ''}" data-folder="__scheduled__">
+    <div class="list-item${schedActive ? ' active' : ''}" data-folder="__scheduled__" title="Scheduled">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.6;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
       <span class="grow">Scheduled</span>
     </div>`;
@@ -5870,9 +5871,7 @@ function _buildEmailReaderHeaderHtml(em, data) {
         ${data.cc ? `<div class="email-reader-meta-row"><strong>Cc:</strong><span class="recipient-chips">${buildRecipients(data.cc)}</span></div>` : ''}
       </div>` : ''}
       <div class="email-reader-actions-inline">
-        <button class="memory-toolbar-btn reader-icon-btn" data-act="ai-reply" title="${data.cached_ai_reply ? 'AI Reply (cached draft ready)' : 'AI Reply (suggest a draft)'}">${_aiReplyIcon(data)}<span class="reader-btn-label">AI reply</span></button>
-        <button class="memory-toolbar-btn reader-icon-btn" data-act="reply" title="Reply"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg><span class="reader-btn-label">Reply</span></button>
-        ${_hasMultipleRecipients(data) ? `<button class="memory-toolbar-btn reader-icon-btn" data-act="reply-all" title="Reply All"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/></svg><span class="reader-btn-label">Reply all</span></button>` : ''}
+        <button class="memory-toolbar-btn reader-icon-btn reader-reply-btn" data-act="reply" title="Reply options"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg><span class="reader-btn-label">Reply</span></button>
         <button class="memory-toolbar-btn reader-icon-btn" data-act="forward" title="Forward"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg><span class="reader-btn-label">Forward</span></button>
         <button class="memory-toolbar-btn reader-icon-btn" data-act="summarize" title="Summarize">${_summaryIcon(data)}<span class="reader-btn-label">Summary</span></button>
         <div class="email-reader-more-wrap" style="position:relative">
@@ -5973,17 +5972,10 @@ async function _loadReadingPane(em) {
       } catch (err) { console.error(err); }
     });
 
-    pane.querySelector('[data-act="reply"]')?.addEventListener('click', async (ev) => {
+    pane.querySelector('[data-act="reply"]')?.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      _snapEmailModalToLeftSidebar(ev.currentTarget.closest('.modal'));
-      if (state._onEmailClick) await state._onEmailClick({ email: em, emailData: data, mode: 'reply' });
+      _showReplyMenu(em, data, ev.currentTarget);
     });
-    pane.querySelector('[data-act="reply-all"]')?.addEventListener('click', async (ev) => {
-      ev.stopPropagation();
-      _snapEmailModalToLeftSidebar(ev.currentTarget.closest('.modal'));
-      if (state._onEmailClick) await state._onEmailClick({ email: em, emailData: data, mode: 'reply-all' });
-    });
-    pane.querySelector('[data-act="ai-reply"]')?.addEventListener('click', (ev) => _handleAiReplyButton(ev, em, data));
     pane.querySelector('[data-act="forward"]')?.addEventListener('click', async (ev) => {
       ev.stopPropagation();
       if (state._onEmailClick) await state._onEmailClick({ email: em, emailData: data, mode: 'forward' });
@@ -7954,6 +7946,76 @@ function _fitEmailDropdown(dropdown, rect) {
       dropdown.style.overflowY = 'auto';
     }
   });
+}
+
+// Reply/Reply All/Reply with AI used to be 3 separate icon buttons —
+// folded into one dropdown off the single Reply button so the reader's
+// action row doesn't fan out into a 2nd row of cramped tiles. Reuses the
+// exact same .email-card-dropdown/.dropdown-item-compact styling and
+// bindMenuDismiss/_fitEmailDropdown helpers as _showReaderMoreMenu below,
+// not a new dropdown implementation.
+function _showReplyMenu(em, data, anchor) {
+  const existing = document.querySelector('.email-card-dropdown');
+  if (existing && existing._anchor === anchor) {
+    dismissOrRemove(existing);
+    return;
+  }
+  document.querySelectorAll('.email-card-dropdown').forEach(dismissOrRemove);
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'email-card-dropdown';
+  dropdown._anchor = anchor;
+  const rect = anchor.getBoundingClientRect();
+  dropdown.style.cssText = `position:fixed;z-index:${topPortalZ()};min-width:170px;background:var(--panel,var(--bg));border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:4px;font-size:12px;top:${rect.bottom + 4}px;right:${window.innerWidth - rect.right}px;`;
+
+  const _icon = (svg) => `<span class="dropdown-icon">${svg}</span>`;
+  const _replyIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>';
+  const _replyAllIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/></svg>';
+
+  const actions = [
+    {
+      label: 'Reply',
+      icon: _replyIcon,
+      action: async () => {
+        _snapEmailModalToLeftSidebar(anchor.closest('.modal'));
+        if (state._onEmailClick) await state._onEmailClick({ email: em, emailData: data, mode: 'reply' });
+      },
+    },
+    ...(_hasMultipleRecipients(data) ? [{
+      label: 'Reply All',
+      icon: _replyAllIcon,
+      action: async () => {
+        _snapEmailModalToLeftSidebar(anchor.closest('.modal'));
+        if (state._onEmailClick) await state._onEmailClick({ email: em, emailData: data, mode: 'reply-all' });
+      },
+    }] : []),
+    {
+      label: 'Reply with AI',
+      icon: _aiReplyIcon(data),
+      // Reuses the exact standalone-button handler — same cached-draft
+      // shortcut and Fast/Full + context popover it always had, just
+      // anchored to the Reply button instead of its own icon.
+      action: () => _handleAiReplyButton({ stopPropagation: () => {}, currentTarget: anchor }, em, data),
+    },
+  ];
+
+  for (const a of actions) {
+    const item = document.createElement('div');
+    item.className = 'dropdown-item-compact';
+    item.innerHTML = _icon(a.icon) + `<span>${a.label}</span>`;
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      close();
+      a.action();
+    });
+    dropdown.appendChild(item);
+  }
+
+  document.body.appendChild(dropdown);
+  _fitEmailDropdown(dropdown, rect);
+  const close = bindMenuDismiss(dropdown, () => {
+    dropdown.remove();
+  }, (ev) => !dropdown.contains(ev.target) && ev.target !== anchor);
 }
 
 function _showReaderMoreMenu(em, card, reader, anchor) {

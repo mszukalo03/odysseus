@@ -1,6 +1,6 @@
 # Features & Workflows
 
-> Part of odysseus/.project-knowledge/ | Last updated: 2026-07-24
+> Part of odysseus/.project-knowledge/ | Last updated: 2026-07-26
 
 ## Features
 
@@ -11,7 +11,7 @@
 - **Model Comparison** — Blind A/B model comparison with side-by-side output and synthesis.
 - **Documents** — Multi-tab editor with markdown/HTML/CSV, syntax highlighting, AI edits and suggestions.
 - **Memory & Skills** — Persistent memory and evolving skills with vector + keyword retrieval. Import/export.
-- **Email** — IMAP/SMTP inbox with AI triage: urgency detection, auto-tag, auto-summary, auto-reply drafts. Multi-account. Layout redesigned 2026-07-24 into a 3-pane webmail view: a folder sidebar (per-folder unread badges via IMAP `STATUS ... (UNSEEN)`, `GET /api/email/folders`'s new `unread_counts` field) that's collapsible and drag-resizable, a persistent message list, and a persistent reading pane that populates on click without the list disappearing (previously an in-place expanding-card layout). Collapses to a single back-navigable pane on mobile. All prior functionality preserved: compose, reply/reply-all/forward, AI reply, translate, tags, bulk select, attachments, account switching, the Scheduled virtual folder. See [[history]] for the redesign write-up and [[systems]].
+- **Email** — IMAP/SMTP inbox with AI triage: urgency detection, auto-tag, auto-summary, auto-reply drafts. Multi-account. Layout redesigned 2026-07-24 into a 3-pane webmail view: a folder sidebar (per-folder unread badges via IMAP `STATUS ... (UNSEEN)`, `GET /api/email/folders`'s new `unread_counts` field) that's collapsible — collapses to a 40px icon-only rail (icons + active state + unread dots + tooltips stay reachable, matching the main app sidebar's own collapse behavior) rather than hiding entirely — and drag-resizable, a persistent message list, and a persistent reading pane that populates on click without the list disappearing (previously an in-place expanding-card layout). Collapses to a single back-navigable pane on mobile. Reading-pane action row (2026-07-26) is icon-only with tooltips, and Reply/Reply All/Reply with AI are folded into one dropdown off a single Reply button (4 top-level buttons instead of up to 6) — see [[history]]. All prior functionality preserved: compose, reply/reply-all/forward, AI reply, translate, tags, bulk select, attachments, account switching, the Scheduled virtual folder. A pulse banner (top-right, sender + subject, auto-dismiss) now also fires on newly-arrived mail, alongside the existing sidebar breathing-dot indicator — see [[systems]]. See [[history]] for the redesign write-up.
 - **Notes & Tasks** — Google Keep-style notes with reminders, checklists, cron-style scheduled tasks. ntfy/browser/email notification channels.
 - **Calendar** — Local-first calendar with CalDAV sync (Radicale, Nextcloud, Apple, Fastmail). Agent-aware.
 - **Image Generation & Gallery** — AI image generation, gallery with albums, EXIF, tags, search.

@@ -42,6 +42,16 @@ ALWAYS_AVAILABLE = frozenset({
     "ask_user",
     # Write back to the active plan (tick steps done / revise) during execution.
     "update_plan",
+    # Shell/scripting. A vague context-dependent follow-up ("cool check",
+    # "did it work") can need this with zero shell-ish keywords in the
+    # message itself, so no keyword list can reliably catch it -- and when
+    # ChromaDB (semantic retrieval) is down, keyword matching is all that's
+    # left. Rather than keep chasing individual missed phrasings, make these
+    # unconditionally available and let the model decide from context
+    # whether to use them, same as manage_memory/ask_user above.
+    "bash",
+    "python",
+    "manage_bg_jobs",
 })
 
 # Tools that the Personal Assistant always has access to during scheduled
@@ -362,6 +372,26 @@ class ToolIndex:
                    "check on that job", "job output", "kill the job",
                    "kill the background", "stop the background", "running job"}):
             {"manage_bg_jobs"},
+        # Shell / command execution. Nothing here previously mapped to `bash`
+        # at all, so the shell tool was reachable ONLY through semantic
+        # retrieval — and whenever ChromaDB was unreachable the keyword
+        # fallback silently produced a toolset with no shell in it. The model
+        # then truthfully told the user it had "no shell tool available",
+        # which reads as the agent being broken. Keep this list concrete
+        # (command names, "run this command", "sudo") rather than bare verbs
+        # like "run", which would fire on "run a search"/"run research".
+        frozenset({"sudo", "shell", "terminal", "command line", "bash",
+                   "run this command", "run the command", "run that command",
+                   "execute this", "execute the", "run a command",
+                   "install", "uninstall", "npm ", "pnpm ", "yarn ", "pip ",
+                   "apt ", "apt-get", "brew ", "systemctl", "chmod", "chown",
+                   "git ", "docker ", "curl ", "script", "cli",
+                   "what's my ip", "disk space", "df -h", "ps aux",
+                   "pacman", "yay ", "paru ", "dnf ", "zypper",
+                   "garuda-update", "garuda update", "system update",
+                   "update packages", "update my packages", "check for updates",
+                   "software update", "update system"}):
+            {"bash", "python", "manage_bg_jobs"},
         frozenset({"note", "todo", "reminder", "remind", "checklist", "remember to"}):
             {"manage_notes"},
         # Chat/session management. "rename" alone maps to documents below, so a
