@@ -40,7 +40,7 @@ Native installs, GPU notes, Windows/macOS instructions, HTTPS, and configuration
 
 ## Features
 
-- **Chat + Agents** — 19+ providers out of the box (Anthropic, OpenAI, DeepSeek, Kimi/Moonshot, OpenRouter, Ollama Cloud, Groq, Mistral, Together AI, Fireworks, Gemini, xAI Grok, Z.AI, NVIDIA, OpenCode Zen/Go, and more), plus subscription bridges for GitHub Copilot and ChatGPT. Tool-using agent with MCP, files, shell, skills, and memory.
+- **Chat + Agent** — 19+ providers out of the box (Anthropic, OpenAI, DeepSeek, Kimi/Moonshot, OpenRouter, Ollama Cloud, Groq, Mistral, Together AI, Fireworks, Gemini, xAI Grok, Z.AI, NVIDIA, OpenCode Zen/Go, and more), plus subscription bridges for GitHub Copilot and ChatGPT. Tool-using agent with MCP, files, shell, skills, and memory.
 - **Cookbook** — hardware-aware model recommendations, downloads, and vLLM/llama.cpp serving, with llama.cpp auto-detection.
 - **Deep Research** — multi-step web research with source reading, category-aware formatting, and report generation.
 - **RSS Feed Reader** — 3-pane feed reader with nested groups, AI summaries, full-content extraction, OPML import/export, and YouTube channel support.
