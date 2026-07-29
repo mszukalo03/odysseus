@@ -42554,12 +42554,18 @@ body.neon-glow #sidebar {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-auto-rows: minmax(0, 1fr);
+  /* Fine-grained row tracks so populated tiles (spanned via grid-row) get
+     real room for their content while empty placeholder slots collapse to
+     a slim strip instead of claiming an equal 1/3 share of the screen. */
+  grid-auto-rows: 64px;
+  grid-auto-flow: row dense;
   gap: 12px;
   padding: 14px;
   overflow-y: auto;
   min-height: 0;
 }
+.ithaca-tile[data-slot="A"] { grid-column: span 2; grid-row: span 6; }
+.ithaca-tile[data-slot="B"] { grid-row: span 6; }
 
 .ithaca-tile {
   display: flex;
@@ -42602,20 +42608,34 @@ body.neon-glow #sidebar {
   justify-content: center;
 }
 .ithaca-tile-empty-label {
-  font-size: 0.75rem;
+  font-size: 0.68rem;
   opacity: 0.3;
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
 
-/* Tile A — weather */
+/* Tile A — weather; --wx-tint is set inline per current condition (see
+   _renderWeather) so the whole card reads like a real weather app instead
+   of flat monochrome text. */
+.ithaca-tile[data-slot="A"] {
+  --wx-tint: var(--accent-primary, #6ca0f6);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--wx-tint) 16%, var(--panel)) 0%, var(--panel) 60%);
+}
 .ithaca-weather-now {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 4px 2px 10px;
 }
-.ithaca-weather-now-icon { display: inline-flex; opacity: 0.85; }
+.ithaca-weather-now-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
 .ithaca-weather-now-temp { font-size: 1.9rem; font-weight: 600; line-height: 1; }
 .ithaca-weather-now-meta {
   display: flex;
@@ -42753,13 +42773,16 @@ a.ithaca-app-link:hover { border-bottom-color: currentColor; }
   white-space: pre;
 }
 
-/* Responsive: 3×3 → 2-col → 1-col; tiles get a natural min height once the
-   grid can scroll. The screen spans the full viewport on phones (no rail). */
+/* Responsive: 3×3 → 2-col → 1-col. The weather/updates tiles keep their
+   generous row-span (real content); empty placeholder slots stay a slim
+   fixed strip at every width instead of ballooning to match them. */
 @media (max-width: 1100px) {
-  .ithaca-grid { grid-template-columns: repeat(2, 1fr); grid-auto-rows: minmax(230px, auto); }
+  .ithaca-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 768px) {
   .ithaca-screen { left: 0; z-index: 175; }
-  .ithaca-grid { grid-template-columns: 1fr; grid-auto-rows: minmax(200px, auto); padding: 10px; }
-  .ithaca-tile-empty { min-height: 90px; }
+  .ithaca-grid { grid-template-columns: 1fr; grid-auto-rows: 56px; padding: 10px; gap: 10px; }
+  .ithaca-tile[data-slot="A"] { grid-column: span 1; grid-row: span 5; }
+  .ithaca-tile[data-slot="B"] { grid-column: span 1; grid-row: span 7; }
+  .ithaca-tile-empty { min-height: 0; }
 }

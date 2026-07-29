@@ -56,7 +56,14 @@ const _W_ICONS = {
   mist: '<path d="M4 9h16M6 13h13M4.5 17h14M8 21h9"/>',
 };
 
-function _weatherIconSvg(owmIcon, size = 22) {
+// Condition color per icon group — the palette the tile's gradients and
+// icon tints both draw from, so "sunny" reads warm everywhere it appears.
+const _W_COLORS = {
+  sun: '#f5a623', moon: '#8b93e8', partly: '#5b9bd5', cloud: '#8a94a6',
+  rain: '#4a90d9', thunder: '#a259ff', snow: '#5fd0e8', mist: '#9aa5b1',
+};
+
+function _condInfo(owmIcon) {
   const code = String(owmIcon || '');
   const night = code.endsWith('n');
   const byPrefix = {
@@ -64,7 +71,12 @@ function _weatherIconSvg(owmIcon, size = 22) {
     '09': 'rain', '10': 'rain', '11': 'thunder', '13': 'snow', '50': 'mist',
   };
   const name = byPrefix[code.slice(0, 2)] || 'cloud';
-  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${_W_ICONS[name]}</svg>`;
+  return { name, night, color: _W_COLORS[name] };
+}
+
+function _weatherIconSvg(owmIcon, size = 22) {
+  const { name, color } = _condInfo(owmIcon);
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${_W_ICONS[name]}</svg>`;
 }
 
 // ─── Tile A: live weather ──────────────────────────────────────────────────
@@ -110,10 +122,13 @@ function _renderWeather(data) {
   }).join('');
   const loc = _el('ithaca-weather-loc');
   if (loc) loc.textContent = data.location || '';
+  const cond = _condInfo(cur.icon);
+  const tile = body.closest('.ithaca-tile');
+  if (tile) tile.style.setProperty('--wx-tint', cond.color);
   body.innerHTML = `
     <div class="ithaca-weather-now">
-      <span class="ithaca-weather-now-icon">${_weatherIconSvg(cur.icon, 40)}</span>
-      <span class="ithaca-weather-now-temp">${round(cur.temp)}${unitT}</span>
+      <span class="ithaca-weather-now-icon" style="background: color-mix(in srgb, ${cond.color} 22%, transparent); color: ${cond.color}">${_weatherIconSvg(cur.icon, 34)}</span>
+      <span class="ithaca-weather-now-temp" style="color: ${cond.color}">${round(cur.temp)}${unitT}</span>
       <div class="ithaca-weather-now-meta">
         <span class="ithaca-weather-desc">${_esc(cur.description)}</span>
         <span>Feels ${round(cur.feels_like)}° · ${cur.humidity ?? '—'}% RH · ${cur.wind_speed ?? '—'} ${unitW}</span>
@@ -184,8 +199,12 @@ function _renderUpdates(data) {
       : '<span class="ithaca-badge">Current</span>';
     const version = String(row.version || '').trim();
     const deployed = String(row.deployed || '').trim();
-    const versionBits = [deployed && `on ${deployed}`, version && version !== '—' ? version : '']
-      .filter(Boolean).join(' · ');
+    // "Version No." already reads as a "current → new" transition when an
+    // update is available (see the workflow's table shape), so showing it
+    // next to "Currently Deployed" duplicated the same version twice
+    // ("on v6.3.1 · v6.3.1 → v6.4.0"). Prefer the transition string; only
+    // fall back to the deployed version when there's nothing newer to show.
+    const versionBits = version && version !== '—' ? version : (deployed ? `Currently ${deployed}` : '');
     const desc = String(row.desc || '').trim();
     return `<div class="ithaca-update-row">
       <div class="ithaca-update-row-top">
