@@ -91,7 +91,7 @@ DEFAULT_SETTINGS = {
     "firecrawl_api_key": "",
     "exa_api_key": "",
     # Ithaca hub tiles (Weather + Software Updates) — override the
-    # OPENWEATHER_*/OBSIDIAN_* env vars when set. See routes/ithaca_routes.py.
+    # OPENWEATHER_*/OBSIDIAN_* env vars when set. See extensions/ithaca/backend.py.
     "openweather_api_key": "",
     "openweather_lat": "",
     "openweather_lon": "",

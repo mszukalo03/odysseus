@@ -1,12 +1,12 @@
 """Tests for src/tools/ithaca.py — the agent-facing get_home_weather and
-get_homelab_updates tools, which wrap routes/ithaca_routes.py's
+get_homelab_updates tools, which wrap extensions/ithaca/backend.py's
 fetch/cache functions so the AI can answer questions using the same data as
 the Ithaca hub's tiles."""
 
 import pytest
 from fastapi import HTTPException
 
-import routes.ithaca_routes as ithaca_routes
+import extensions.ithaca.backend as ithaca_routes
 from src.tools.ithaca import do_get_home_weather, do_get_homelab_updates
 
 

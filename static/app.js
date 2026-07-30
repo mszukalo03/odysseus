@@ -26,7 +26,7 @@ import tasksModule from './js/tasks.js?v=20260723tasksbulkfeedback1';
 import calendarModule from './js/calendar.js';
 import notesModule from './js/notes.js';
 import feedReaderModule from './js/feedReader.js';
-import ithacaModule from './js/ithaca.js';
+import extensionHost from './js/extensionHost.js';
 import adminModule from './js/admin.js?v=20260716openrouter3';
 import settingsModule from './js/settings.js?v=20260722emailfastindex1';
 // Eagerly bind unified minimize/restore behavior across all tool modals.
@@ -1240,7 +1240,6 @@ function initializeEventListeners() {
       setTimeout(_goFullscreen, 50);
       setTimeout(_goFullscreen, 200);
     },
-    '/ithaca':   () => ithacaModule && ithacaModule.openScreen({ fromRoute: true }),
     '/feeds':    () => document.getElementById('tool-rss-btn')?.click(),
     '/memory':   () => document.getElementById('tool-memory-btn')?.click(),
     '/gallery':  () => document.getElementById('tool-gallery-btn')?.click(),
@@ -1255,14 +1254,8 @@ function initializeEventListeners() {
   // opener so it runs from sessionModule.loadSessions().finally() below.
   if (_opener) window._odysseusRouteOpener = _opener;
 
-  // Ithaca hub — fullscreen dashboard screen (toggles so the sidebar/rail
-  // button doubles as the way back to the chat).
-  const toolIthacaBtn = el('tool-ithaca-btn');
-  if (toolIthacaBtn) {
-    toolIthacaBtn.addEventListener('click', () => {
-      if (ithacaModule) ithacaModule.toggleScreen();
-    });
-  }
+  // Ithaca hub's sidebar button click + deep-link routing are now wired by
+  // extensionHost.js/workspaceManager.js — see src/extension_host.py.
 
   // Archive browser tool button
   const toolLibraryBtn = el('tool-library-btn');
@@ -3775,6 +3768,11 @@ function startOdysseusApp() {
 
   // Initialize all event listeners
   try { initializeEventListeners(); } catch(e) { console.error('Event init error:', e); }
+
+  // Extensions (Ithaca hub, etc.) — discovers enabled extensions, loads
+  // their frontend module, and resolves a deep-linked /ithaca-style route.
+  // See src/extension_host.py and extensions/README.md.
+  try { extensionHost.init(); } catch (e) { console.error('Extension host init error:', e); }
 
   // Reveal the toolbar now that all toggle/overflow state is resolved
   // (hidden via inline style="visibility:hidden" in HTML to prevent FOUC)

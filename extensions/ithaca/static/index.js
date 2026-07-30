@@ -1,18 +1,18 @@
-// static/js/ithaca.js — Ithaca hub: a fullscreen, navigable dashboard screen
-// (not a floating tool modal). Frontend for the n8n daily-digest workflow:
-// a static 3×3 tile grid where tile A shows live OpenWeatherMap data and
-// tile B renders the digest's Software Updates table. Remaining tiles are
-// reserved slots for future digest headings / user-defined tiles.
+// extensions/ithaca/static/index.js — Ithaca hub workspace descriptor.
+// Frontend for the n8n daily-digest workflow: a static 3×3 tile grid where
+// tile A shows live OpenWeatherMap data and tile B renders the digest's
+// Software Updates table. Remaining tiles are reserved slots for future
+// digest headings / user-defined tiles.
 //
-// Navigation: the screen overlays the chat area but keeps the icon rail
-// visible (same pattern as the /email and /notes fullscreen routes). It
-// participates in browser history — opening pushes /ithaca, Back returns
-// to the chat — and closing restores whatever sidebar state the user had.
+// Registered with workspaceManager.js (see static/js/workspaceManager.js) —
+// history, sidebar-collapse, title, active-nav-state and Escape arbitration
+// are all owned by the host now; this module only builds DOM into the
+// container it's given and starts/stops its own refresh timer.
+
+import Workspace from '/static/js/workspaceManager.js';
 
 const API_BASE = window.location.origin;
 
-let _open = false;
-let _screenEl = null;
 let _weatherTimer = null;
 let _digestLoaded = false;
 
@@ -275,13 +275,9 @@ function _closeSshModal() {
   _el('ithaca-ssh-overlay')?.remove();
 }
 
-// ─── Screen lifecycle ──────────────────────────────────────────────────────
+// ─── Workspace descriptor ───────────────────────────────────────────────────
 
-function _buildScreen() {
-  if (_screenEl) return _screenEl;
-  const screen = document.createElement('div');
-  screen.className = 'ithaca-screen';
-  screen.id = 'ithaca-screen';
+function mount(container) {
   const tiles = TILES.map((t) => {
     if (t.key === 'weather') {
       return `<div class="ithaca-tile" data-slot="A">
@@ -313,6 +309,10 @@ function _buildScreen() {
       <div class="ithaca-tile-empty-label">Tile ${t.slot}</div>
     </div>`;
   }).join('');
+
+  const screen = document.createElement('div');
+  screen.className = 'ithaca-screen ithaca-screen-open';
+  screen.id = 'ithaca-screen';
   screen.innerHTML = `
     <div class="ithaca-header">
       <button class="ithaca-back-btn" id="ithaca-back-btn" title="Back to chat">
@@ -327,97 +327,40 @@ function _buildScreen() {
       <span style="flex:1"></span>
     </div>
     <div class="ithaca-grid">${tiles}</div>`;
-  document.body.appendChild(screen);
-  _el('ithaca-back-btn')?.addEventListener('click', () => closeScreen());
-  _el('ithaca-weather-refresh')?.addEventListener('click', () => _loadWeather(true));
-  _el('ithaca-updates-refresh')?.addEventListener('click', () => _loadDigest(true));
-  _screenEl = screen;
-  return screen;
+  container.appendChild(screen);
+
+  screen.querySelector('#ithaca-back-btn')?.addEventListener('click', () => Workspace.close('ithaca'));
+  screen.querySelector('#ithaca-weather-refresh')?.addEventListener('click', () => _loadWeather(true));
+  screen.querySelector('#ithaca-updates-refresh')?.addEventListener('click', () => _loadDigest(true));
 }
 
-// Collapse the wide sidebar → icon rail so the hub gets the full canvas but
-// navigation stays one click away (mirrors app.js's /email route opener; the
-// paired restore helper is exposed on window by app.js).
-function _collapseSidebarToRail() {
-  const sb = document.getElementById('sidebar');
-  const rail = document.getElementById('icon-rail');
-  if (!sb || !rail) return;
-  if (!sb.classList.contains('hidden')) {
-    document.body.dataset.routeCollapsedSidebar = '1';
-  }
-  sb.classList.add('hidden');
-  rail.classList.remove('rail-hidden');
-  try { window.syncRailSide && window.syncRailSide(); } catch (_) {}
-}
-
-function openScreen({ fromRoute = false } = {}) {
-  if (_open) return;
-  _open = true;
-  _collapseSidebarToRail();
-  const screen = _buildScreen();
-  screen.classList.add('ithaca-screen-open');
-  _el('tool-ithaca-btn')?.classList.add('active');
-  _el('rail-ithaca')?.classList.add('active');
-  // History: a real navigable page. Deep-link loads are already on /ithaca;
-  // in-app opens push it so browser Back returns to the chat.
-  if (!fromRoute && window.location.pathname !== '/ithaca') {
-    try { history.pushState({ odysseusIthaca: true }, '', '/ithaca'); } catch (_) {}
-  }
-  document.title = 'Ithaca — Odysseus';
+function activate() {
   _loadWeather();
   _loadDigest();
   if (_weatherTimer) clearInterval(_weatherTimer);
   _weatherTimer = setInterval(() => _loadWeather(), WEATHER_REFRESH_MS);
 }
 
-function closeScreen({ fromHistory = false } = {}) {
-  if (!_open) return;
-  _open = false;
+function deactivate() {
   _closeSshModal();
   if (_weatherTimer) { clearInterval(_weatherTimer); _weatherTimer = null; }
-  _screenEl?.classList.remove('ithaca-screen-open');
-  _el('tool-ithaca-btn')?.classList.remove('active');
-  _el('rail-ithaca')?.classList.remove('active');
-  if (!fromHistory && window.location.pathname === '/ithaca') {
-    try { history.replaceState(null, '', '/'); } catch (_) {}
-  }
-  document.title = 'Odysseus';
-  try { window._restoreSidebarIfRouteCollapsed && window._restoreSidebarIfRouteCollapsed(); } catch (_) {}
 }
 
-function toggleScreen() {
-  if (_open) closeScreen(); else openScreen();
+function onEscape() {
+  if (_el('ithaca-ssh-overlay')) { _closeSshModal(); return true; }
+  return false;
 }
 
-// Browser Back/Forward keeps the screen in sync with the URL.
-window.addEventListener('popstate', () => {
-  if (window.location.pathname === '/ithaca') {
-    if (!_open) openScreen({ fromRoute: true });
-  } else if (_open) {
-    closeScreen({ fromHistory: true });
-  }
-});
+const ithacaWorkspace = {
+  id: 'ithaca',
+  route: '/ithaca',
+  title: 'Ithaca',
+  surface: 'both',
+  collapseSidebar: true,
+  mount,
+  activate,
+  deactivate,
+  onEscape,
+};
 
-// Escape closes the hub — but only when nothing is stacked above it (the
-// ssh modal here, or any floating tool modal the user opened on top).
-document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape' || !_open) return;
-  if (_el('ithaca-ssh-overlay')) { _closeSshModal(); e.stopPropagation(); return; }
-  const floating = document.querySelector('.modal:not(.hidden), .rss-pane-backdrop, .notes-pane');
-  if (floating) return; // let the global Escape arbiter handle the top layer
-  closeScreen();
-});
-
-// Returning to the chat via the rail/sidebar chat affordances closes the hub
-// — these all land the user on the chat screen, which sits underneath.
-document.addEventListener('click', (e) => {
-  if (!_open) return;
-  const backToChat = e.target.closest(
-    '#rail-new-session, #rail-chats, #sidebar-new-chat-btn, #sidebar-brand-btn, #chats-section-title'
-  );
-  if (backToChat) closeScreen();
-}, true);
-
-const ithacaModule = { openScreen, closeScreen, toggleScreen, isOpen: () => _open };
-export default ithacaModule;
-export { openScreen, closeScreen, toggleScreen };
+export default ithacaWorkspace;
