@@ -10,9 +10,11 @@ security posture (installing runs arbitrary Python with full server
 privileges — there is no sandboxing or review).
 """
 
+from io import BytesIO
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from core.middleware import require_admin
 from src import extension_host
@@ -30,6 +32,19 @@ def setup_extension_routes(registered_extensions: List[Extension]) -> APIRouter:
     async def list_all_extensions(request: Request):
         require_admin(request)
         return extension_host.admin_payload()
+
+    @router.get("/{ext_id}/package.zip")
+    async def package_extension(ext_id: str, request: Request):
+        require_admin(request)
+        try:
+            data = extension_host.build_package_zip(ext_id)
+        except FileNotFoundError:
+            raise HTTPException(404, f"Unknown extension: {ext_id}")
+        return StreamingResponse(
+            BytesIO(data),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{ext_id}.zip"'},
+        )
 
     @router.put("/{ext_id}")
     async def set_extension_enabled(ext_id: str, body: Dict[str, Any], request: Request):

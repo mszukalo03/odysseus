@@ -42,6 +42,8 @@ import tempfile
 import uuid
 import zipfile
 from dataclasses import dataclass
+from io import BytesIO
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -164,6 +166,9 @@ def set_enabled(ext_id: str, enabled: bool) -> None:
     save_settings(settings)
 
 
+_registered_routers: Dict[str, APIRouter] = {}
+
+
 def register_all(app) -> List[Extension]:
     """Import + include_router() every enabled extension's backend. Returns
     the extensions that were actually registered (enabled + import succeeded)."""
@@ -179,6 +184,7 @@ def register_all(app) -> List[Extension]:
                 setup_fn = getattr(module, ext.backend_setup_fn)
                 router: APIRouter = setup_fn()
                 app.include_router(router)
+                _registered_routers[ext.id] = router
             except Exception:
                 logger.exception("Extension %r failed to register — skipping", ext.id)
                 continue
@@ -188,6 +194,15 @@ def register_all(app) -> List[Extension]:
         registered.append(ext)
         logger.info("Extension %r registered", ext.id)
     return registered
+
+
+def get_router(ext_id: str) -> Optional[APIRouter]:
+    """The APIRouter instance register_all() built and mounted for ext_id,
+    for code that needs the literal object (e.g. routes/codex_routes.py
+    reaches into the feeds router's .routes to borrow endpoint functions).
+    Only populated after register_all() has run; None if the extension is
+    disabled, has no backend, or hasn't been registered yet."""
+    return _registered_routers.get(ext_id)
 
 
 def _extension_static(directory: str):
@@ -443,6 +458,43 @@ def uninstall(ext_id: str) -> None:
             save_settings(settings)
     except Exception:
         logger.exception("Failed to clear settings for uninstalled extension %r", ext_id)
+
+
+# ─── Packaging (for re-hosting: an admin download, or scripts/package_extension.py) ───
+
+_PACKAGE_EXCLUDE_DIRS = {"__pycache__", ".git"}
+_PACKAGE_EXCLUDE_FILES = {".DS_Store"}
+_PACKAGE_EXCLUDE_SUFFIXES = (".pyc", ".pyo")
+
+
+def build_package_zip(ext_id: str) -> bytes:
+    """Zip an extension's directory (in-repo or installed) for re-hosting —
+    e.g. upload the result to a GitHub release, or serve it from another
+    static host, then paste that URL into another instance's "Install from
+    URL". Layout is flat (extension.json at the zip root, no wrapping
+    top-level folder) — the opposite of a GitHub "Download ZIP", but
+    install_from_url()'s _effective_root() already flattens either shape on
+    the way in, so both round-trip correctly.
+
+    Raises FileNotFoundError if ext_id isn't discovered (in-repo or
+    installed), matching uninstall()'s error convention.
+    """
+    ext = next((e for e in discover() if e.id == ext_id), None)
+    if ext is None:
+        raise FileNotFoundError(f"Unknown extension: {ext_id}")
+    root = Path(ext.dir)
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(root.rglob("*")):
+            if path.is_dir():
+                continue
+            rel_parts = path.relative_to(root).parts
+            if _PACKAGE_EXCLUDE_DIRS.intersection(rel_parts):
+                continue
+            if path.name in _PACKAGE_EXCLUDE_FILES or path.suffix in _PACKAGE_EXCLUDE_SUFFIXES:
+                continue
+            zf.write(path, path.relative_to(root))
+    return buf.getvalue()
 
 
 def autoinstall_from_env() -> None:

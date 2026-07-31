@@ -1,7 +1,7 @@
 // static/js/workspaceManager.js
 //
 // Single host for "workspace" features — full-canvas screens with a real URL
-// (Ithaca today; RSS/doc-editor are migration candidates — see
+// (Ithaca and RSS today; doc-editor is a migration candidate — see
 // extensions/README.md). Replaces the pattern each such feature used to
 // hand-roll for itself: history.pushState/popstate, sidebar-collapse,
 // title updates, active-nav-button toggling, and an Escape handler that has
@@ -10,7 +10,7 @@
 // A feature registers a descriptor and never touches document.body, history,
 // or sidebar classes directly — that's what makes a feature portable between
 // a full workspace and a floating window (see popOut/popIn), and what will
-// let RSS/doc-editor migrate off the popup system one at a time later.
+// let doc-editor migrate off the popup system too.
 //
 //   Workspace.register({
 //     id: 'ithaca',
@@ -142,7 +142,15 @@ export function open(id, { fromRoute = false, replace = false } = {}) {
   }
 }
 
-export function close(id = _activeId, { silent = false, fromHistory = false } = {}) {
+/**
+ * `push`: use history.pushState instead of the default replaceState when
+ * clearing the URL back to '/'. Used by the auto-close-on-other-tool-click
+ * delegate below so the browser Back button still returns to the workspace
+ * that got auto-closed (real "step back through pages" navigation) — an
+ * explicit close via the workspace's own back/close button keeps the default
+ * replaceState behavior (today's tested behavior, unchanged).
+ */
+export function close(id = _activeId, { silent = false, fromHistory = false, push = false } = {}) {
   if (!id || _activeId !== id) return;
   const desc = _registry.get(id);
   const container = _mounted.get(id);
@@ -157,7 +165,10 @@ export function close(id = _activeId, { silent = false, fromHistory = false } = 
   if (_unregisterEscape) { _unregisterEscape(); _unregisterEscape = null; }
 
   if (!silent && desc?.route && !fromHistory && window.location.pathname === desc.route) {
-    try { history.replaceState(null, '', '/'); } catch (_) {}
+    try {
+      if (push) history.pushState(null, '', '/');
+      else history.replaceState(null, '', '/');
+    } catch (_) {}
   }
   if (!silent) document.title = 'Odysseus';
   _restoreSidebar();
@@ -227,7 +238,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || !_activeId) return;
   const desc = _registry.get(_activeId);
   if (desc?.onEscape && desc.onEscape()) { e.stopPropagation(); return; }
-  const floating = document.querySelector('.modal:not(.hidden):not(.workspace-float), .rss-pane-backdrop, .notes-pane');
+  const floating = document.querySelector('.modal:not(.hidden):not(.workspace-float), .notes-pane');
   if (floating) return;
   close(_activeId);
 });
@@ -242,6 +253,21 @@ document.addEventListener('click', (e) => {
     '#rail-new-session, #rail-chats, #sidebar-new-chat-btn, #sidebar-brand-btn, #chats-section-title'
   );
   if (backToChat) close(_activeId);
+}, true);
+
+// Opening any other sidebar/rail tool closes the active workspace — the same
+// idea as "back to chat" above, generalized so every workspace gets it for
+// free instead of hand-rolling it per feature (this used to be RSS-specific
+// code in app.js). `push: true` so the browser Back button still returns to
+// the workspace that just got auto-closed, matching real multi-page
+// navigation — see close()'s `push` option.
+document.addEventListener('click', (e) => {
+  if (!_activeId) return;
+  const control = e.target.closest('.section-header-flex, .list-item, .icon-rail-btn');
+  if (!control) return;
+  if (control.id === `tool-${_activeId}-btn` || control.id === `rail-${_activeId}`) return;
+  if (control.closest('.workspace-surface, .workspace-host')) return;
+  setTimeout(() => close(_activeId, { push: true }), 0);
 }, true);
 
 // Resolve a deep-link on initial load once the DOM (and registrants) are ready.

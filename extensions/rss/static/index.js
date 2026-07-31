@@ -1,10 +1,17 @@
-import uiModule from './ui.js';
-import * as Modals from './modalManager.js';
-import { makeWindowDraggable } from './windowDrag.js';
-import { snapModalToZone } from './tileManager.js';
-import { clearDockSide } from './modalSnap.js';
-import dragSortModule from './dragSort.js';
-import { _sanitizeHtml } from './emailLibrary/utils.js';
+// extensions/rss/static/index.js — RSS Feeds workspace descriptor.
+// Converted from the old floating static/js/feedReader.js: the outer
+// floating/draggable pane chrome (Modals.register, drag/dock/fullscreen,
+// backdrop) is gone — workspaceManager.js now owns history, title,
+// active-nav-state, Escape arbitration, sidebar-collapse, and (optionally)
+// popping this out into a floating modalManager window. Everything below
+// that — feed/group list, article list, reader, add-feed/OPML/video modals —
+// is unchanged, just mounted into the container the host gives us instead of
+// a self-managed floating pane.
+
+import Workspace from '/static/js/workspaceManager.js';
+import uiModule from '/static/js/ui.js';
+import dragSortModule from '/static/js/dragSort.js';
+import { _sanitizeHtml } from '/static/js/emailLibrary/utils.js';
 
 const API_BASE = window.location.origin;
 
@@ -19,7 +26,7 @@ function _escapeHtml(s) {
   })[c]);
 }
 
-let _open = false;
+let _active = false;
 let _feeds = [];
 let _groups = [];
 let _articles = [];
@@ -55,76 +62,11 @@ function _api(path, opts = {}) {
 
 function _el(id) { return document.getElementById(id); }
 
-function _clearRssSnapStyles(pane) {
-  if (!pane) return;
-  const hadLeft = pane.classList.contains('modal-left-docked');
-  const hadRight = pane.classList.contains('modal-right-docked');
-  pane.classList.remove('rss-fullscreen', 'modal-left-docked', 'modal-right-docked');
-  if (hadLeft) clearDockSide('left', pane);
-  if (hadRight) clearDockSide('right', pane);
-  ['position', 'left', 'top', 'right', 'bottom', 'width', 'max-width', 'height',
-    'max-height', 'margin', 'transform', 'border-radius']
-    .forEach(prop => pane.style.removeProperty(prop));
-  delete pane.dataset._tilePreSnap;
-  delete pane.dataset._tileZone;
-  delete pane._preDockSnapshot;
-  delete pane._dockSide;
-  delete pane._dockSuspended;
-}
-
-function _wireRssWindow(pane) {
-  if (!pane || pane.dataset.windowDragWired === '1') return;
-  const header = pane.querySelector('.rss-pane-header');
-  if (!header) return;
-  pane.dataset.windowDragWired = '1';
-  makeWindowDraggable(pane, {
-    content: pane,
-    header,
-    fsClass: 'rss-fullscreen',
-    skipSelector: 'button, input, select, textarea, label',
-    enableDock: true,
-    enableLeftDock: true,
-    onEnterFullscreen: () => {
-      pane.classList.add('rss-fullscreen');
-      snapModalToZone(pane, {
-        name: 'fullscreen',
-        rect: { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight },
-      });
-    },
-    onExitFullscreen: (cx, cy) => {
-      _clearRssSnapStyles(pane);
-      if (typeof cx === 'number' && typeof cy === 'number') {
-        const w = Math.min(880, window.innerWidth * 0.92);
-        const h = Math.min(window.innerHeight * 0.85, 820);
-        pane.style.position = 'fixed';
-        pane.style.left = Math.max(8, cx - w / 2) + 'px';
-        pane.style.top = Math.max(8, cy - 30) + 'px';
-        pane.style.width = w + 'px';
-        pane.style.height = h + 'px';
-        pane.style.transform = 'none';
-        pane.style.margin = '0';
-      }
-    },
-  });
-}
-
-function _openPanel() {
-  if (_open) return;
-  _open = true;
-  const btn = _el('tool-rss-btn');
-  if (btn) btn.classList.add('active');
-
-  const backdrop = document.createElement('div');
-  backdrop.className = 'rss-pane-backdrop';
-  backdrop.id = 'rss-pane-backdrop';
-  backdrop.addEventListener('click', (e) => {
-    if (e.target === backdrop) closePanel();
-  });
-
-  const pane = document.createElement('div');
-  pane.id = 'rss-pane';
-  pane.className = 'rss-pane';
-  pane.innerHTML = `
+function mount(container) {
+  const root = document.createElement('div');
+  root.className = 'rss-workspace rss-workspace-open';
+  root.id = 'rss-workspace';
+  root.innerHTML = `
     <div class="rss-pane-header">
       <h4 class="rss-pane-title">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2.5px;margin-right:6px">
@@ -207,31 +149,18 @@ function _openPanel() {
       </div>
     </div>
   `;
-
-  backdrop.appendChild(pane);
-  document.body.appendChild(backdrop);
-  _wireRssWindow(pane);
-  _wireEvents(pane);
-  _loadFeeds();
-
-  if (!Modals.isRegistered('rss-pane')) {
-    Modals.register('rss-pane', {
-      label: 'Feeds',
-      icon: '<path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/>',
-      closeFn: closePanel,
-      restoreFn: () => _openPanel(),
-    });
-  }
+  container.appendChild(root);
+  _wireEvents(root);
 }
 
-function _wireEvents(pane) {
+function _wireEvents(root) {
   _el('rss-add-feed-btn')?.addEventListener('click', _showAddFeedModal);
   _el('rss-refresh-all-btn')?.addEventListener('click', _refreshAll);
   _el('rss-opml-btn')?.addEventListener('click', _showOpmlModal);
   _el('rss-add-group-btn')?.addEventListener('click', () => _promptCreateGroup(null));
   _el('rss-close-btn')?.addEventListener('click', (e) => {
     e.preventDefault();
-    closePanel();
+    Workspace.close('rss');
   });
   _el('rss-reader-back')?.addEventListener('click', _closeReader);
   _el('rss-reader-prev')?.addEventListener('click', _prevArticle);
@@ -264,9 +193,9 @@ function _wireEvents(pane) {
     _loadArticles(true).finally(() => { _articlesLoadingMore = false; });
   }, { passive: true });
 
-  pane.querySelectorAll('.rss-filter-btn').forEach(btn => {
+  root.querySelectorAll('.rss-filter-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      pane.querySelectorAll('.rss-filter-btn').forEach(b => b.classList.remove('active'));
+      root.querySelectorAll('.rss-filter-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _filter = btn.dataset.filter;
       _pageOffset = 0;
@@ -298,8 +227,7 @@ function _wireEvents(pane) {
     }
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') _closeVideoModal();
-    if (!_open) return;
+    if (!_active) return;
     const tag = (e.target?.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -322,17 +250,22 @@ function _wireEvents(pane) {
   });
 }
 
-function closePanel() {
-  _open = false;
-  _el('tool-rss-btn')?.classList.remove('active');
-  const backdrop = _el('rss-pane-backdrop');
-  if (backdrop) backdrop.remove();
-  try { Modals.unregister('rss-pane'); } catch {}
+function activate() {
+  _active = true;
+  _loadFeeds();
 }
 
-function togglePanel() {
-  if (_open) { closePanel(); return; }
-  _openPanel();
+function deactivate() {
+  _active = false;
+  _closeVideoModal();
+}
+
+function onEscape() {
+  if (_el('rss-video-modal') && _el('rss-video-modal').style.display !== 'none' && _el('rss-video-modal').style.display !== '') {
+    _closeVideoModal();
+    return true;
+  }
+  return false;
 }
 
 async function _loadFeeds() {
@@ -1298,8 +1231,6 @@ function _showOpmlModal() {
   });
 }
 
-
-
 function _getYoutubeVideoId(url) {
   if (!url) return null;
   const m = (url || '').match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]+)/);
@@ -1351,7 +1282,16 @@ function _closeVideoModal() {
   }
 }
 
-const feedReaderModule = { openPanel: _openPanel, closePanel, togglePanel, isOpen: () => _open };
-export default feedReaderModule;
-export { _openPanel as openPanel, closePanel, togglePanel };
-window.feedReaderModule = feedReaderModule;
+const rssWorkspace = {
+  id: 'rss',
+  route: '/feeds',
+  title: 'Feeds',
+  surface: 'both',
+  collapseSidebar: true,
+  mount,
+  activate,
+  deactivate,
+  onEscape,
+};
+
+export default rssWorkspace;

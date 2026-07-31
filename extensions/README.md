@@ -68,6 +68,47 @@ there, so in-repo extensions can never be removed this way (404). Takes
 effect on next restart — the running process still has the old module
 imported and its router mounted until then.
 
+## DB models: stay in core, not extension-owned
+
+There's no per-extension database/migration system, and none is planned as
+part of this pass. An extension needing tables (RSS's `FeedGroup`/`Feed`/
+`Article`/`FeedSyncAccount`) defines them in `core/database.py` on the shared
+`Base`/engine, with migrations in the same file's migration runner, exactly
+like any other `routes/*.py` module would — the extension's backend just
+imports them (`from core.database import SessionLocal, Feed`). This means an
+extension isn't fully "pluggable" in the DB sense: uninstalling one (e.g.
+`rss` from `<DATA_DIR>/extensions`) leaves its tables/columns behind rather
+than cleaning them up — an accepted gap, consistent with the no-hot-reload
+posture below.
+
+If an extension's backend router needs to be handed to other core code by
+reference (RSS's is borrowed by `routes/codex_routes.py` for its
+`/api/codex/feeds*` passthrough — see `_find_endpoint` there), retrieve the
+already-registered instance via `extension_host.get_router(ext_id)` *after*
+`register_all()` has run. Never call the extension's `setup()` a second time
+to get "another" router — that double-registers every route on the app.
+
+## Packaging an extension for re-hosting
+
+Two ways to turn an extension's directory into a distributable zip, both
+built on one shared `src.extension_host.build_package_zip(ext_id)`:
+
+- **`GET /api/extensions/<id>/package.zip`** (admin-only) — a running
+  instance packages any discovered extension (in-repo or installed) on the
+  fly. This is the easy path for "host a location I can paste as a URL":
+  download the zip, upload it wherever you already host static files (a
+  GitHub release, a gist, your own web server), then paste that URL into
+  another instance's Settings → Extensions → Install from URL (or
+  `ODYSSEUS_EXTENSIONS_AUTOINSTALL`).
+- **`scripts/package_extension.py <id> [output_path]`** — the same builder,
+  usable without a running instance (CI, or packaging before a manual
+  upload).
+
+The zip is **flat** — `extension.json` at the root, no wrapping top-level
+folder — the opposite of a GitHub "Download ZIP", but `install_from_url()`'s
+`_effective_root()` flattens either shape on the way in, so both round-trip
+correctly. Excludes `__pycache__`, `.git`, `*.pyc`/`*.pyo`, and `.DS_Store`.
+
 ## Manifest (`extension.json`)
 
 ```json
@@ -104,7 +145,13 @@ imported and its router mounted until then.
   that file to add a scope.
 - `nav`: rendered by `extensionHost.js` by wiring click handlers onto
   `#tool-<nav.id>-btn` (the sidebar button). **The sidebar/rail markup itself
-  is not generated dynamically yet** — see "Known gaps" below.
+  is not generated dynamically yet** — see "Known gaps" below. `nav.id` only
+  has to equal the sidebar button's id suffix — it does **not** have to match
+  the extension's own `id` or its `nav.route`. RSS is the first case where
+  they diverge: extension id `rss`, `nav.id: "rss"` (matching the pre-existing
+  `#tool-rss-btn`), but `nav.route: "/feeds"` (preserving the old bookmarked
+  URL). Get `nav.id` wrong and the sidebar button silently does nothing — no
+  error, just a dead click.
 - `frontend.entry`: an ES module served at `/ext/<id>/<path>`, dynamically
   `import()`'d. Default-exports a workspace descriptor (see below). Optional
   `frontend.css` field for a stylesheet, injected as a `<link>`.
@@ -178,8 +225,8 @@ window (`popOut`/`popIn`):
 | Feature | Status | Notes |
 |---|---|---|
 | Ithaca | ✅ extension + workspace | First mover; backend at `extensions/ithaca/backend.py`, frontend at `extensions/ithaca/static/index.js`. Stays in-repo for development but is excluded from packaged Docker/PyInstaller builds by default — see "Discovery roots" above. |
-| RSS reader | Not migrated | `static/js/feedReader.js` (1357 lines) has a draggable window, 3 nested ad-hoc modals, and its backend router is borrowed by `routes/codex_routes.py` (`app.py` passes `feed_router=feed_router`) — that coupling needs resolving before the router can move into an extension. Its DB models (`FeedGroup`/`Feed`/`Article`/`FeedSyncAccount` in `core/database.py`) and migrations would move with it. |
-| Doc editor | Not migrated | `static/js/document.js`'s `doc-panel` registration is already a clean `Modals.register` shape — probably the easiest second conversion once RSS or another feature proves the recipe out. |
+| RSS reader | ✅ extension + workspace | Backend at `extensions/rss/backend.py` (`setup_feed_routes`), services at `extensions/rss/services/`, frontend at `extensions/rss/static/index.js`. `routes/codex_routes.py` still borrows its router (for the `/api/codex/feeds*` passthrough) via `extension_host.get_router("rss")`, retrieved after `register_all()` runs — see "DB models" below for why the models didn't move too. |
+| Doc editor | Not migrated | `static/js/document.js`'s `doc-panel` registration is already a clean `Modals.register` shape — probably the easiest next conversion. |
 
 ## Known gaps (deliberate, not oversights)
 
@@ -227,3 +274,15 @@ window (`popOut`/`popIn`):
   `ODYSSEUS_EXTENSIONS_AUTOINSTALL` at once) isn't guarded against — a
   reasonable gap given this is a single-operator admin action, not a
   multi-tenant concern.
+
+## Every workspace auto-closes when another tool opens
+
+`workspaceManager.js` closes the active workspace whenever a click lands on
+`.section-header-flex, .list-item, .icon-rail-btn` elsewhere in the sidebar
+or rail (excluding the workspace's own nav button and anything inside its own
+mounted DOM). This was originally RSS-specific logic in `static/app.js`,
+generalized here so it applies to every workspace (Ithaca included) instead
+of being hand-rolled per feature. The auto-close uses `close(id, { push:
+true })` — a `pushState` to `/`, not the default `replaceState` — so the
+browser Back button still returns to whatever got auto-closed, matching real
+multi-page navigation instead of skipping past it.

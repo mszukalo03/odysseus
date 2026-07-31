@@ -41516,6 +41516,24 @@ body.neon-glow #sidebar {
 
 /* ─── RSS Feed Reader ───────────────────────────── */
 
+/* RSS is now a workspace (extensions/rss/static/index.js), not a floating
+   popup — .rss-workspace is the full-canvas host, mirroring .ithaca-screen.
+   Everything below it (.rss-pane-header, .rss-body, .rss-sidebar, ...) is
+   unchanged internal layout, reused as-is regardless of the outer wrapper. */
+.rss-workspace {
+  display: none;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px));
+  z-index: 90; /* above the chat surface, below floating tool modals */
+  background: var(--bg, var(--panel));
+  flex-direction: column;
+  overflow: hidden;
+}
+.rss-workspace-open { display: flex; }
+
 .rss-pane-backdrop {
   position: fixed;
   inset: 0;

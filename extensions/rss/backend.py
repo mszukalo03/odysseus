@@ -284,7 +284,7 @@ def setup_feed_routes():
             feed_url = (data.get("feed_url") or "").strip()
             if not feed_url:
                 return {"ok": False, "error": "feed_url required"}
-            from services.feed.youtube import resolve_youtube_feed
+            from extensions.rss.services.youtube import resolve_youtube_feed
             resolved = resolve_youtube_feed(feed_url)
             is_youtube = False
             if resolved:
@@ -356,7 +356,7 @@ def setup_feed_routes():
         url = (data.get("url") or "").strip()
         if not url:
             return {"ok": False, "error": "url required"}
-        from services.feed.discovery import discover_feeds
+        from extensions.rss.services.discovery import discover_feeds
         feeds = discover_feeds(url)
         return {"feeds": feeds}
 
@@ -366,7 +366,7 @@ def setup_feed_routes():
     def refresh_feed(feed_id: str, request: Request):
         owner = _scope_owner(request, FEEDS_WRITE_SCOPES)
         from core.database import SessionLocal, Feed, Article
-        from services.feed.fetcher import fetch_feed
+        from extensions.rss.services.fetcher import fetch_feed
         db = SessionLocal()
         try:
             row = db.query(Feed).filter(Feed.id == feed_id).first()
@@ -641,7 +641,7 @@ def setup_feed_routes():
                 row.content = transcript
                 db.commit()
                 return {"ok": True, "content": transcript}
-            from services.feed.full_content import extract_content
+            from extensions.rss.services.full_content import extract_content
             result = extract_content(row.url)
             if result is None:
                 return {"ok": False, "error": "Could not extract content"}
@@ -659,8 +659,8 @@ def setup_feed_routes():
         opml_text = data.get("opml", "")
         if not opml_text:
             return {"ok": False, "error": "OPML content required"}
-        from services.feed.opml import parse_opml
-        from services.feed.youtube import resolve_youtube_feed
+        from extensions.rss.services.opml import parse_opml
+        from extensions.rss.services.youtube import resolve_youtube_feed
         from core.database import SessionLocal, Feed, FeedGroup
         from sqlalchemy import or_
         feeds = parse_opml(opml_text)
@@ -738,7 +738,7 @@ def setup_feed_routes():
     def export_opml(request: Request):
         owner = _scope_owner(request, FEEDS_READ_SCOPES)
         from core.database import SessionLocal, Feed
-        from services.feed.opml import generate_opml
+        from extensions.rss.services.opml import generate_opml
         db = SessionLocal()
         try:
             q = db.query(Feed)
@@ -755,7 +755,7 @@ def setup_feed_routes():
 
 def _refresh_single(feed_id: str, owner: Optional[str]):
     from core.database import SessionLocal, Feed, Article
-    from services.feed.fetcher import fetch_feed
+    from extensions.rss.services.fetcher import fetch_feed
     db = SessionLocal()
     try:
         row = db.query(Feed).filter(Feed.id == feed_id).first()

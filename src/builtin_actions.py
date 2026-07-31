@@ -625,7 +625,7 @@ async def action_refresh_due_feeds(owner: str, **kwargs) -> Tuple[str, bool]:
         import asyncio
         from datetime import timezone, timedelta
         from core.database import SessionLocal, Feed
-        from routes.feed_routes import _refresh_single
+        from extensions.rss.backend import _refresh_single
 
         db = SessionLocal()
         try:

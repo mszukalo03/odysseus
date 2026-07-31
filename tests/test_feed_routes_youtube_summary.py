@@ -1,4 +1,4 @@
-from routes.feed_routes import _youtube_transcript_text
+from extensions.rss.backend import _youtube_transcript_text
 
 
 def test_non_youtube_url_returns_none_without_transcript_call(monkeypatch):
