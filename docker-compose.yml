@@ -1,6 +1,13 @@
 services:
   odysseus:
-    build: .
+    build:
+      context: .
+      args:
+        # Lets `docker compose up -d --build` pick these up from your shell/.env
+        # instead of needing a separate `docker compose build --build-arg ...`
+        # step. Both default to the Dockerfile's own default (false) when unset.
+        INSTALL_OPTIONAL: ${INSTALL_OPTIONAL:-false}
+        ODYSSEUS_BUNDLE_EXTENSIONS: ${ODYSSEUS_BUNDLE_EXTENSIONS:-false}
     ports:
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-7000}:7000"
     volumes:

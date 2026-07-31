@@ -31,10 +31,12 @@
 git clone https://github.com/odysseus-dev/odysseus.git
 cd odysseus
 cp .env.example .env
-docker compose up -d --build
+ODYSSEUS_BUNDLE_EXTENSIONS=true docker compose up -d --build
 ```
 
 Open `http://localhost:7000` when the containers are healthy. The first admin password is printed in `docker compose logs odysseus`.
+
+`ODYSSEUS_BUNDLE_EXTENSIONS=true` includes the RSS reader and Ithaca dashboard shown above — omit it for a minimal image with neither; see [docs/extensions.md](docs/extensions.md) for what that flag does and how to install/remove extensions afterward.
 
 Native installs, GPU notes, Windows/macOS instructions, HTTPS, and configuration live in the [setup guide](docs/setup.md).
 
@@ -44,6 +46,7 @@ Native installs, GPU notes, Windows/macOS instructions, HTTPS, and configuration
 - **Cookbook** — hardware-aware model recommendations, downloads, and vLLM/llama.cpp serving, with llama.cpp auto-detection.
 - **Deep Research** — multi-step web research with source reading, category-aware formatting, and report generation.
 - **RSS Feed Reader** — 3-pane feed reader with nested groups, AI summaries, full-content extraction, OPML import/export, and YouTube channel support.
+- **Extensions** — optional features (RSS, a home-hub dashboard) that ship separately from the base app, installable from a URL or a local build flag — see [docs/extensions.md](docs/extensions.md).
 - **Compare** — blind side-by-side model testing and synthesis.
 - **Documents** — writing-first editor with AI edits, suggestions, Markdown, HTML, CSV, and syntax highlighting.
 - **Email** — IMAP/SMTP inbox with triage, tags, summaries, reminders, and reply drafts.

@@ -23,9 +23,20 @@ pull request guidelines.
 git clone https://github.com/odysseus-dev/odysseus.git
 cd odysseus
 cp .env.example .env       # optional, but recommended for explicit defaults
-docker compose up -d --build
+ODYSSEUS_BUNDLE_EXTENSIONS=true docker compose up -d --build
 ```
-To include optional extras in the image (PDF viewer, Office extraction; includes AGPL PyMuPDF), build with `docker compose build --build-arg INSTALL_OPTIONAL=true` before `up`.
+`ODYSSEUS_BUNDLE_EXTENSIONS=true` bakes the in-repo extensions (RSS reader,
+Ithaca dashboard) into the image so they're enabled from first boot. Omit it
+for a minimal image with neither — extensions can still be installed
+afterward from Settings without a rebuild. See [Extensions](extensions.md)
+for the full picture (enabling/disabling, installing from a URL, packaging
+your own).
+
+To include optional extras in the image (PDF viewer, Office extraction; includes AGPL PyMuPDF), set `INSTALL_OPTIONAL=true` the same way:
+```bash
+INSTALL_OPTIONAL=true docker compose up -d --build
+```
+Both flags combine fine (`INSTALL_OPTIONAL=true ODYSSEUS_BUNDLE_EXTENSIONS=true docker compose up -d --build`).
 
 Open `http://localhost:7000` when the containers are healthy. Docker Compose
 binds the web UI to `127.0.0.1` by default. If the port is taken, set
