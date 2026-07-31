@@ -3099,13 +3099,126 @@ function initLogsView() {
 }
 
 /* ═══════════════════════════════════════════
+   EXTENSIONS TAB
+   ═══════════════════════════════════════════ */
+async function loadExtensions() {
+  const list = el('adm-extensionList');
+  if (!list) return;
+  try {
+    const res = await fetch('/api/extensions/admin', { credentials: 'same-origin' });
+    if (res.status === 401 || res.status === 403) { list.innerHTML = '<div class="admin-empty">Access denied</div>'; return; }
+    const extensions = await res.json();
+    if (!extensions.length) { list.innerHTML = '<div class="admin-empty">No extensions installed</div>'; return; }
+    list.innerHTML = extensions.map(e => `
+      <div class="admin-user-row" data-adm-ext-row="${esc(e.id)}">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <div class="admin-user-info">
+            <div>
+              <span class="admin-user-name">${esc(e.name)}</span>
+              <span class="admin-badge" style="margin-left:6px;">${e.source === 'in-repo' ? 'IN-REPO' : 'INSTALLED'}</span>
+              <div style="font-size:10px;opacity:0.5;">${esc(e.id)}${e.version ? ' · v' + esc(e.version) : ''}</div>
+              ${e.description ? `<div style="font-size:11px;opacity:0.6;margin-top:2px;">${esc(e.description)}</div>` : ''}
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+            <label class="admin-switch" title="${e.enabled ? 'Disable' : 'Enable'} (restart required to apply)">
+              <input type="checkbox" data-adm-ext-toggle="${esc(e.id)}" ${e.enabled ? 'checked' : ''}><span class="admin-slider"></span>
+            </label>
+            ${e.source === 'installed' ? `<button class="admin-btn-delete" data-adm-ext-uninstall="${esc(e.id)}" style="font-size:11px;">Uninstall</button>` : ''}
+          </div>
+        </div>
+      </div>`).join('');
+
+    list.querySelectorAll('[data-adm-ext-toggle]').forEach(input => {
+      input.addEventListener('change', async () => {
+        const id = input.dataset.admExtToggle;
+        input.disabled = true;
+        try {
+          const res = await fetch(`/api/extensions/${encodeURIComponent(id)}`, {
+            method: 'PUT',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: input.checked }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            uiModule.showError(data.detail || 'Failed to update extension');
+            input.checked = !input.checked;
+          }
+        } catch (err) {
+          uiModule.showError('Failed to update extension');
+          input.checked = !input.checked;
+        } finally {
+          input.disabled = false;
+        }
+      });
+    });
+
+    list.querySelectorAll('[data-adm-ext-uninstall]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.admExtUninstall;
+        if (!await uiModule.styledConfirm(`Uninstall "${id}"? This removes its files immediately — restart Odysseus to fully unload it.`, { confirmText: 'Uninstall', danger: true })) return;
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/extensions/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin' });
+          if (res.ok) loadExtensions();
+          else {
+            const data = await res.json().catch(() => ({}));
+            uiModule.showError(data.detail || 'Failed to uninstall extension');
+          }
+        } catch (err) {
+          uiModule.showError('Failed to uninstall extension');
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+  } catch (err) {
+    list.innerHTML = '<div class="admin-empty">Failed to load extensions</div>';
+  }
+}
+
+function initExtensionInstallForm() {
+  const btn = el('adm-extInstallBtn');
+  const urlInput = el('adm-extInstallUrl');
+  const msg = el('adm-extInstallMsg');
+  if (!btn || !urlInput) return;
+  btn.addEventListener('click', async () => {
+    const url = urlInput.value.trim();
+    if (!url) { if (msg) { msg.textContent = 'Enter a URL first'; msg.style.color = 'var(--red)'; } return; }
+    btn.disabled = true;
+    if (msg) { msg.textContent = 'Installing…'; msg.style.color = ''; }
+    try {
+      const res = await fetch('/api/extensions/install', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (msg) { msg.textContent = data.detail || 'Install failed'; msg.style.color = 'var(--red)'; }
+        return;
+      }
+      if (msg) { msg.textContent = `Installed "${data.id}" — restart Odysseus to apply.`; msg.style.color = 'var(--fg)'; }
+      urlInput.value = '';
+      loadExtensions();
+    } catch (err) {
+      if (msg) { msg.textContent = 'Install failed'; msg.style.color = 'var(--red)'; }
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════
    INIT & REFRESH
    ═══════════════════════════════════════════ */
 function initAll() {
   modalEl = el('settings-modal');
   const inits = [
     initSignupToggle, initShareDefaultsToggle, initAddUser, initEndpointForm, initMcpForm,
-    initCalDAV, initBackup, initDangerZone, initTokenForm, initLogsView,
+    initCalDAV, initBackup, initDangerZone, initTokenForm, initLogsView, initExtensionInstallForm,
     () => settingsModule.initIntegrations()
   ];
   for (const fn of inits) {
@@ -3122,6 +3235,7 @@ function refreshAll() {
   loadMcpServers();
   loadTokens();
   loadLogs(false);
+  loadExtensions();
 }
 
 /* ═══════════════════════════════════════════

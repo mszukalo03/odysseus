@@ -51,7 +51,7 @@ import asyncio
 import logging
 import secrets
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Dict
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
@@ -852,9 +852,15 @@ app.include_router(feed_router)
 
 # Extensions — custom features kept out of the merge-sensitive core (e.g.
 # Ithaca hub). Discovered from extensions/*/extension.json; see
-# src/extension_host.py and extensions/README.md.
+# src/extension_host.py and extensions/README.md. autoinstall runs first so
+# anything named in ODYSSEUS_EXTENSIONS_AUTOINSTALL is on disk before
+# register_all() scans for what to mount.
 from src import extension_host
+extension_host.autoinstall_from_env()
 registered_extensions = extension_host.register_all(app)
+
+from routes.extension_routes import setup_extension_routes
+app.include_router(setup_extension_routes(registered_extensions))
 
 # Codex integration — HTTP surface for the Codex plugin/MCP bridge. Reuses
 # api_token scopes (todos:read|write, email:read|draft|send) so external
@@ -939,20 +945,6 @@ async def serve_feeds(request: Request):
 # frontend entry mounts itself based on window.location.pathname.
 for _ext_route in extension_host.nav_routes(registered_extensions):
     app.add_api_route(_ext_route, serve_index, methods=["GET"])
-
-@app.get("/api/extensions")
-async def list_extensions():
-    return extension_host.manifest_payload(registered_extensions)
-
-@app.put("/api/extensions/{ext_id}")
-async def set_extension_enabled(ext_id: str, body: Dict[str, Any], request: Request):
-    from core.middleware import require_admin
-    require_admin(request)
-    known_ids = {e.id for e in extension_host.discover()}
-    if ext_id not in known_ids:
-        raise HTTPException(404, f"Unknown extension: {ext_id}")
-    extension_host.set_enabled(ext_id, bool(body.get("enabled")))
-    return {"ok": True, "id": ext_id, "enabled": bool(body.get("enabled")), "reload_required": True}
 
 @app.get("/backgrounds")
 async def serve_backgrounds(request: Request):

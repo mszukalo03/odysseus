@@ -9,6 +9,65 @@ Backend host: [`src/extension_host.py`](../src/extension_host.py).
 Frontend host: [`static/js/extensionHost.js`](../static/js/extensionHost.js) +
 [`static/js/workspaceManager.js`](../static/js/workspaceManager.js).
 
+## Discovery roots
+
+Extensions are discovered from **two** places, merged together:
+
+- **`extensions/`** (this directory, `<BASE_DIR>/extensions`) — in-repo, git-tracked,
+  developer-authored extensions. Ithaca lives here. Present in a dev checkout;
+  **excluded from packaged Docker/PyInstaller builds by default** — a fresh
+  container or Windows install starts with zero extensions. Opt in with the
+  `ODYSSEUS_BUNDLE_EXTENSIONS=true` build flag (`--build-arg` for Docker, an
+  env var read by `Odysseus.spec` for the frozen build).
+- **`<DATA_DIR>/extensions`** — admin-installed, via Settings → Extensions or
+  `ODYSSEUS_EXTENSIONS_AUTOINSTALL` at boot (see below). Lives under `DATA_DIR`
+  so it survives container recreates through the existing `data/` volume
+  mount, and survives frozen-build app updates the same way `~/.odysseus/data`
+  already does.
+
+**On an id collision, the in-repo copy always wins** — installing something
+with the same id as an in-repo extension is rejected outright, so bundling
+Ithaca back in via `ODYSSEUS_BUNDLE_EXTENSIONS` is never ambiguous.
+
+## Installing extensions
+
+**Settings → Extensions** (admin-only): paste a git repository URL or a
+direct `.zip` URL (e.g. a GitHub "Download ZIP" link) and click Install. The
+extension's `id` is read from its own `extension.json` after downloading —
+you don't specify it upfront. A GitHub-style zip with one nested top-level
+folder is flattened automatically. Requires a restart to take effect (no hot
+module reload); the UI says so.
+
+**`ODYSSEUS_EXTENSIONS_AUTOINSTALL=id=url,id2=url2`** (boot-time env var):
+install-if-missing at startup, before extensions are registered — the same
+mechanism works for Docker, bare-metal, and the frozen launcher. Unlike the
+Settings flow, the `id` here is a hint used to skip a network call on
+subsequent boots once installed; the manifest's own `id` still wins if it
+differs (a mismatch is logged loudly so you can fix the env var). A failed
+entry (bad URL, unreachable host, git clone failure) is logged and skipped —
+it never blocks the app from starting.
+
+Both paths are git-clone (public repos only — `GIT_TERMINAL_PROMPT=0` makes
+an auth-required repo fail fast instead of hanging, there is no
+private-repo/credential support) or a size-capped `.zip` download
+(`EXTENSION_INSTALL_MAX_BYTES` in `src/constants.py`, 50MB default), with a
+zip-slip guard validating every archive member stays inside the extraction
+directory before writing.
+
+**Installing an extension runs its code with full server privileges the
+moment it's enabled — there is no sandboxing or review.** Every install only
+ever happens because an admin (or whoever controls the deploy's env vars)
+explicitly pointed at that URL.
+
+## Uninstalling extensions
+
+**Settings → Extensions** → Uninstall (admin-only), or `DELETE
+/api/extensions/<id>`. Only ever removes something under
+`<DATA_DIR>/extensions` — an in-repo id (e.g. `ithaca`) simply isn't found
+there, so in-repo extensions can never be removed this way (404). Takes
+effect on next restart — the running process still has the old module
+imported and its router mounted until then.
+
 ## Manifest (`extension.json`)
 
 ```json
@@ -57,6 +116,12 @@ Enablement, checked in this order:
    `PUT /api/extensions/<id>` (admin-only; response has `reload_required: true`,
    there is no hot enable/disable)
 3. manifest `enabled_by_default`
+
+`GET /api/extensions` is the enabled-only, frontend-facing view (unauthenticated,
+same boot-time snapshot the SPA shell reads). `GET /api/extensions/admin`
+(admin-only) is the full management view — every discovered extension,
+enabled or not, in-repo or installed, scanned fresh on each request so it
+reflects installs/uninstalls done without a restart.
 
 A malformed `extension.json`, or a backend module that throws on import/setup,
 is logged and skipped — it never takes the app down.
@@ -112,7 +177,7 @@ window (`popOut`/`popIn`):
 
 | Feature | Status | Notes |
 |---|---|---|
-| Ithaca | ✅ extension + workspace | First mover; backend at `extensions/ithaca/backend.py`, frontend at `extensions/ithaca/static/index.js` |
+| Ithaca | ✅ extension + workspace | First mover; backend at `extensions/ithaca/backend.py`, frontend at `extensions/ithaca/static/index.js`. Stays in-repo for development but is excluded from packaged Docker/PyInstaller builds by default — see "Discovery roots" above. |
 | RSS reader | Not migrated | `static/js/feedReader.js` (1357 lines) has a draggable window, 3 nested ad-hoc modals, and its backend router is borrowed by `routes/codex_routes.py` (`app.py` passes `feed_router=feed_router`) — that coupling needs resolving before the router can move into an extension. Its DB models (`FeedGroup`/`Feed`/`Article`/`FeedSyncAccount` in `core/database.py`) and migrations would move with it. |
 | Doc editor | Not migrated | `static/js/document.js`'s `doc-panel` registration is already a clean `Modals.register` shape — probably the easiest second conversion once RSS or another feature proves the recipe out. |
 
@@ -124,13 +189,17 @@ window (`popOut`/`popIn`):
   markup in `static/index.html`. Building real dynamic nav injection (icons,
   ordering, mobile rail rules) is follow-up work, worth doing once a second
   extension actually needs it.
-- **Settings cards aren't manifest-driven yet.** Ithaca's settings card is
-  still static markup in `static/index.html` + `static/js/settings.js`
-  (`initIthacaSettings`), because `settings.js`'s `initAll()` runs
-  synchronously and an async-fetched card can lose that race. The
-  `settings_card` manifest field and `extensionHost.js`'s injector exist but
-  aren't used by Ithaca — a future extension needing a settings card should
-  either accept that race (rare fields, low stakes) or fix the timing first.
+- **Per-extension settings cards aren't manifest-driven yet.** Ithaca's
+  settings card is still static markup in `static/index.html` +
+  `static/js/settings.js` (`initIthacaSettings`), because `settings.js`'s
+  `initAll()` runs synchronously and an async-fetched card can lose that
+  race. The `settings_card` manifest field and `extensionHost.js`'s injector
+  exist but aren't used by Ithaca — a future extension needing a settings
+  card should either accept that race (rare fields, low stakes) or fix the
+  timing first. (This is unrelated to the Settings → Extensions *management*
+  tab itself, which is a normal lazy-loaded admin tab — `admin.js`'s
+  `initAll()`/`refreshAll()` pattern, same as `users`/`tools`/`system` — and
+  doesn't have this race.)
 - **Per-route favicon/title** (the inline bootstrap script at the top of
   `static/index.html`) is not manifest-driven — it runs before any JS module
   loads, so it can't consult `/api/extensions`. A new extension wanting a
@@ -144,3 +213,17 @@ window (`popOut`/`popIn`):
   `src/tool_execution.py`, `src/tool_index.py`, `src/tool_schemas.py`) which
   has no extension hook of its own yet. Moving it means either building one
   or accepting the current fan-out for agent tools specifically.
+- **No hot-reload.** Install, uninstall, and enable/disable all require a
+  full process restart to take effect — FastAPI has no way to un-mount a
+  router, and Python doesn't cleanly un-import a module. `reload_required:
+  true` in every mutating API response, and the Settings UI copy, are honest
+  about this; there's no in-app restart button.
+- **No private-repo support.** Git installs set `GIT_TERMINAL_PROMPT=0` so an
+  auth-required clone fails fast instead of hanging — there's no credential
+  storage or injection. Point at a public repo, or a `.zip` URL that doesn't
+  require auth.
+- **No locking across concurrent installs.** Two admins installing at the
+  same moment (or the same id via both Settings and
+  `ODYSSEUS_EXTENSIONS_AUTOINSTALL` at once) isn't guarded against — a
+  reasonable gap given this is a single-operator admin action, not a
+  multi-tenant concern.

@@ -84,6 +84,10 @@ services:
       - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - SERPER_API_KEY=${SERPER_API_KEY:-}
+      # Install-if-missing extensions at boot — id=url,id2=url2 (see
+      # src/extension_host.py). Installed extensions persist under
+      # ./data/extensions via the volume mount below.
+      - ODYSSEUS_EXTENSIONS_AUTOINSTALL=${ODYSSEUS_EXTENSIONS_AUTOINSTALL:-}
       # Ithaca hub tiles — live weather + n8n daily-digest (Obsidian) sources
       - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
       - OPENWEATHER_LAT=${OPENWEATHER_LAT:-}
