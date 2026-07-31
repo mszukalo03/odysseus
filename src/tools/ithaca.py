@@ -4,7 +4,7 @@ Read-only agent access to the Ithaca hub's live tiles: local weather
 (queried directly from OpenWeatherMap) and the software-updates digest
 (parsed from the n8n-generated markdown in the Obsidian vault). Both wrap
 the same fetch/parse/cache functions the HTTP routes use
-(routes/ithaca_routes.py is the single source of truth for that logic) so
+(extensions/ithaca/backend.py is the single source of truth for that logic) so
 the agent and the UI tile always see identical, identically-cached data.
 """
 
@@ -21,7 +21,7 @@ async def do_get_home_weather(content: str, owner: Optional[str] = None) -> Dict
     the user's configured home location (Settings > Integrations, or the
     OPENWEATHER_LAT/LON env vars)."""
     from fastapi import HTTPException
-    from routes.ithaca_routes import _cached, _fetch_weather, _weather_cache, _weather_lock, WEATHER_CACHE_TTL, _weather_settings
+    from extensions.ithaca.backend import _cached, _fetch_weather, _weather_cache, _weather_lock, WEATHER_CACHE_TTL, _weather_settings
 
     try:
         try:
@@ -64,7 +64,7 @@ async def do_get_homelab_updates(content: str, owner: Optional[str] = None) -> D
     """Handle get_homelab_updates: the latest daily-digest's parsed
     Software Updates table (per-app current/available version + status)."""
     from fastapi import HTTPException
-    from routes.ithaca_routes import _cached, _fetch_digest, _digest_cache, _digest_lock, DIGEST_CACHE_TTL, _obsidian_settings, digest_cache_key
+    from extensions.ithaca.backend import _cached, _fetch_digest, _digest_cache, _digest_lock, DIGEST_CACHE_TTL, _obsidian_settings, digest_cache_key
 
     try:
         try:

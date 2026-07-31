@@ -1,0 +1,19 @@
+{
+  "id": "rss",
+  "name": "RSS Feeds",
+  "version": "1.0.0",
+  "description": "Feed reader — groups, articles, OPML import/export, AI summaries",
+  "enabled_by_default": true,
+  "backend": { "module": "extensions.rss.backend", "setup": "setup_feed_routes" },
+  "scopes": [],
+  "nav": {
+    "id": "rss",
+    "label": "Feeds",
+    "route": "/feeds",
+    "section": "tools",
+    "order": 30,
+    "surface": "both",
+    "admin_only": false
+  },
+  "frontend": { "entry": "static/index.js" }
+}

@@ -1,5 +1,5 @@
 """
-ithaca_routes.py
+extensions/ithaca/backend.py
 
 Ithaca hub — backend for the dashboard/homepage tile screen.
 
@@ -567,7 +567,7 @@ class SshOpenRequest(BaseModel):
     app: str
 
 
-def setup_ithaca_routes() -> APIRouter:
+def setup() -> APIRouter:
     router = APIRouter(prefix="/api/ithaca", tags=["ithaca"])
 
     @router.get("/weather")

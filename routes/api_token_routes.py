@@ -12,7 +12,7 @@ from src.auth_helpers import get_current_user
 
 MAX_NAME_LEN = 100
 DEFAULT_SCOPES = "chat"
-ALLOWED_SCOPES = {
+CORE_SCOPES = {
     "chat",
     "todos:read",
     "todos:write",
@@ -29,8 +29,18 @@ ALLOWED_SCOPES = {
     "cookbook:launch",
     "feeds:read",
     "feeds:write",
-    "ithaca:read",
 }
+
+
+def _allowed_scopes() -> set[str]:
+    """Core scopes plus every enabled extension's declared scopes (e.g.
+    Ithaca's "ithaca:read") — extensions register scopes in their manifest
+    instead of hardcoding them here (see src/extension_host.py)."""
+    from src import extension_host
+    enabled = [e for e in extension_host.discover() if extension_host.is_enabled(e)]
+    return CORE_SCOPES | set(extension_host.all_scopes(enabled))
+
+
 TOKEN_PROFILES = {
     "chat": ["chat"],
     "codex_todos": ["todos:read", "todos:write"],
@@ -53,9 +63,10 @@ def _normalize_scopes(scopes: str | list[str] | None = None, profile: str | None
     else:
         requested = [DEFAULT_SCOPES]
 
+    allowed_scopes = _allowed_scopes()
     normalized = []
     for scope in requested:
-        if scope not in ALLOWED_SCOPES:
+        if scope not in allowed_scopes:
             raise HTTPException(400, f"Unknown token scope: {scope}")
         if scope not in normalized:
             normalized.append(scope)
@@ -113,7 +124,7 @@ def setup_api_token_routes() -> APIRouter:
         require_admin(request)
         return {
             "profiles": TOKEN_PROFILES,
-            "allowed_scopes": sorted(ALLOWED_SCOPES),
+            "allowed_scopes": sorted(_allowed_scopes()),
         }
 
     @router.post("/tokens")

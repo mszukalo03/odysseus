@@ -78,6 +78,12 @@ MAX_DIFF_LINES = 400            # cap for edit_file unified-diff display
 WEB_FETCH_SOFT_MAX_BYTES = 2_000_000    # default download budget (2 MB)
 WEB_FETCH_HARD_MAX_BYTES = 20_000_000   # absolute ceiling, even with override (20 MB)
 
+# Admin-triggered extension installs (see src/extension_host.py) download a
+# whole extension bundle (code + static assets), not a single web-fetch
+# result, so this gets its own, larger budget instead of reusing
+# WEB_FETCH_HARD_MAX_BYTES.
+EXTENSION_INSTALL_MAX_BYTES = 50_000_000  # 50 MB cap on a .zip extension install
+
 # API Configuration
 MAX_CONTEXT_MESSAGES = 90
 REQUEST_TIMEOUT = 20

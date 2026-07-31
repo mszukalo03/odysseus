@@ -1,11 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+
+# In-repo extensions (e.g. extensions/ithaca/) are excluded from the frozen
+# build by default, matching the Docker image's default — a fresh install
+# starts with zero extensions, added later via Settings > Extensions or
+# ODYSSEUS_EXTENSIONS_AUTOINSTALL (see src/extension_host.py). Opt in with
+# ODYSSEUS_BUNDLE_EXTENSIONS=true pyinstaller Odysseus.spec.
+_extensions_datas = [('extensions', 'extensions')] if os.environ.get("ODYSSEUS_BUNDLE_EXTENSIONS") == "true" else []
 
 a = Analysis(
     ['launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[('static', 'static'), ('scripts', 'scripts'), ('mcp_servers', 'mcp_servers'), ('services/hwfit/data', 'services/hwfit/data'), ('config', 'config'), ('.env.example', '.env.example')],
+    datas=[('static', 'static'), ('scripts', 'scripts'), ('mcp_servers', 'mcp_servers'), ('services/hwfit/data', 'services/hwfit/data'), ('config', 'config'), ('.env.example', '.env.example')] + _extensions_datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

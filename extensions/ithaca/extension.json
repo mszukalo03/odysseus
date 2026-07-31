@@ -1,0 +1,19 @@
+{
+  "id": "ithaca",
+  "name": "Ithaca",
+  "version": "1.0.0",
+  "description": "Home hub dashboard — live weather + n8n homelab digest",
+  "enabled_by_default": true,
+  "backend": { "module": "extensions.ithaca.backend", "setup": "setup" },
+  "scopes": ["ithaca:read"],
+  "nav": {
+    "id": "ithaca",
+    "label": "Ithaca",
+    "route": "/ithaca",
+    "section": "tools",
+    "order": 20,
+    "surface": "both",
+    "admin_only": false
+  },
+  "frontend": { "entry": "static/index.js" }
+}

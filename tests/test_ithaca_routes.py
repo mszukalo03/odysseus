@@ -1,5 +1,5 @@
-"""Tests for routes/ithaca_routes.py — digest markdown parsing, per-app link
-config merging, and the bearer-token scope gate for the Ithaca hub."""
+"""Tests for extensions/ithaca/backend.py — digest markdown parsing, per-app
+link config merging, and the bearer-token scope gate for the Ithaca hub."""
 
 import json
 from types import SimpleNamespace
@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-import routes.ithaca_routes as ithaca
+import extensions.ithaca.backend as ithaca
 
 
 # ─── parse_digest_sections ──────────────────────────────────────────────────
@@ -150,8 +150,8 @@ def test_scope_gate_token_without_scope_rejected():
 
 
 def test_ithaca_scope_registered_for_tokens():
-    from routes.api_token_routes import ALLOWED_SCOPES
-    assert "ithaca:read" in ALLOWED_SCOPES
+    from routes.api_token_routes import _allowed_scopes
+    assert "ithaca:read" in _allowed_scopes()
 
 
 # ─── Settings > Integrations override env vars ──────────────────────────────
@@ -241,7 +241,7 @@ async def test_weather_route_reports_real_network_error(monkeypatch):
         raise httpx_mod.ConnectError("[Errno 111] Connection refused")
     monkeypatch.setattr(ithaca, "_fetch_weather", fake_fetch)
 
-    router = ithaca.setup_ithaca_routes()
+    router = ithaca.setup()
     endpoint = _get_endpoint(router, "/api/ithaca/weather")
     req = SimpleNamespace(state=SimpleNamespace(api_token=False), headers={})
     with pytest.raises(HTTPException) as exc:
@@ -262,7 +262,7 @@ async def test_digest_route_reports_real_network_error_and_host(monkeypatch):
         "digest_dir": "daily-digest",
     })
 
-    router = ithaca.setup_ithaca_routes()
+    router = ithaca.setup()
     endpoint = _get_endpoint(router, "/api/ithaca/digest")
     req = SimpleNamespace(state=SimpleNamespace(api_token=False), headers={})
     with pytest.raises(HTTPException) as exc:

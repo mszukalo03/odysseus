@@ -95,6 +95,23 @@ RUN pip install --no-cache-dir --no-deps /tmp/odysseus-wheels/*.whl \
 # Copy app code
 COPY . .
 
+# In-repo extensions (e.g. extensions/ithaca/) ship in the git tree for dev
+# convenience but are excluded from the packaged image by default — a fresh
+# container should start with zero extensions, added later via Settings >
+# Extensions or ODYSSEUS_EXTENSIONS_AUTOINSTALL (see src/extension_host.py).
+# Opt in to baking one in with --build-arg ODYSSEUS_BUNDLE_EXTENSIONS=true.
+ARG ODYSSEUS_BUNDLE_EXTENSIONS=false
+RUN if [ "$ODYSSEUS_BUNDLE_EXTENSIONS" != "true" ]; then \
+      find extensions -mindepth 1 -maxdepth 1 \
+        ! -name "README.md" ! -name "__init__.py" -exec rm -rf {} + ; \
+    fi
+
+# Lets ODYSSEUS_EXTENSIONS_AUTOINSTALL=id=url,id2=url2 be baked in at build
+# time (--build-arg) while staying overridable per-container at `docker run`
+# / compose `environment:` — standard ARG-then-ENV layering.
+ARG ODYSSEUS_EXTENSIONS_AUTOINSTALL=""
+ENV ODYSSEUS_EXTENSIONS_AUTOINSTALL=${ODYSSEUS_EXTENSIONS_AUTOINSTALL}
+
 # Create data directory (mount a volume here for persistence)
 RUN mkdir -p data logs services/cache/search
 
