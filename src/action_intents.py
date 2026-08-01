@@ -136,7 +136,8 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("shell", "system/file check request", r"\b(check|see)\s+(if|whether|what)\s+.{1,40}\b(running|process|service|port|file|exists?)\b"),
 
         # ── Ithaca hub data: the user's own home weather (get_home_weather) and
-        # the homelab software-update digest (get_homelab_updates).
+        # their custom dashboard tiles (query_ithaca_tile) — each backed by a
+        # live database query the user set up (e.g. self-hosted app versions).
         #
         # Both are LOCAL data a plain chat turn cannot know, and chat mode sends
         # no tools at all (chat_routes' `chat_mode == "chat"` branch passes
@@ -145,7 +146,8 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         # data instead of calling the tool. The web patterns above only caught
         # weather phrasings that name the word "weather" next to a qualifier, so
         # "is it raining" / "how cold is it" fell through, and nothing matched
-        # the update questions at all.
+        # the tile-data questions at all. Patterns stay generic (no hardcoded
+        # app names) since tiles are user-defined and can cover anything.
         #
         # Deliberately LAST in this tuple: classify_tool_intent returns the
         # first match, so anything already claimed by a calendar/email/workspace/
@@ -162,17 +164,17 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("weather", "weather gear question", r"\bdo\s+i\s+need\s+(?:an?\s+|my\s+)?(?:umbrella|raincoat|rain\s+jacket|jacket|coat|sweater|sunscreen|boots)\b"),
         ("weather", "bare weather question", r"^\s*(?:the\s+)?(?:weather|forecast)\s*[?.!]*\s*$"),
 
-        ("homelab", "software update lookup request", r"\b(?:software|app|apps|application|applications|package|packages|firmware)\s+updates?\b"),
-        ("homelab", "homelab status question", r"\bhome\s?lab\b"),
-        ("homelab", "needs-updating question", r"\bneeds?\s+updat(?:e|es|ing)\b"),
-        ("homelab", "up-to-date question", r"\bup[\s-]?to[\s-]?date\b"),
-        ("homelab", "outdated question", r"\b(?:outdated|out\s+of\s+date)\b"),
-        ("homelab", "updates available question", r"\bupdates?\s+(?:are\s+)?(?:available|pending|waiting)\b"),
-        ("homelab", "have-any-updates question", r"\bdo\s+i\s+have\s+any\s+updates?\b"),
-        # "any updates on the PR?" is a status-chase, not a homelab question, so
-        # require the phrase to stand alone or carry an update-lookup qualifier.
-        ("homelab", "any updates question", r"\bany\s+(?:new\s+)?updates?\s*(?:[?.!]*$|\b(?:today|available|pending|for\s+(?:me|my)\b))"),
-        ("homelab", "tracked app question", r"\b(?:radarr|sonarr|prowlarr|jellyfin|jellyseerr|seerr|transmission|flatpak)\b"),
+        ("ithaca_tile", "software update lookup request", r"\b(?:software|app|apps|application|applications|package|packages|firmware)\s+updates?\b"),
+        ("ithaca_tile", "homelab status question", r"\bhome\s?lab\b"),
+        ("ithaca_tile", "needs-updating question", r"\bneeds?\s+updat(?:e|es|ing)\b"),
+        ("ithaca_tile", "up-to-date question", r"\bup[\s-]?to[\s-]?date\b"),
+        ("ithaca_tile", "outdated question", r"\b(?:outdated|out\s+of\s+date)\b"),
+        ("ithaca_tile", "updates available question", r"\bupdates?\s+(?:are\s+)?(?:available|pending|waiting)\b"),
+        ("ithaca_tile", "have-any-updates question", r"\bdo\s+i\s+have\s+any\s+updates?\b"),
+        # "any updates on the PR?" is a status-chase, not an ithaca_tile question,
+        # so require the phrase to stand alone or carry an update-lookup qualifier.
+        ("ithaca_tile", "any updates question", r"\bany\s+(?:new\s+)?updates?\s*(?:[?.!]*$|\b(?:today|available|pending|for\s+(?:me|my)\b))"),
+        ("ithaca_tile", "dashboard tile question", r"\b(?:dashboard|ithaca)\s+tile\b|\bflagged\s+for\s+review\b|\bwhat\s+version\s+of\b"),
     )
 )
 

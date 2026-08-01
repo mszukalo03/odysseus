@@ -124,7 +124,7 @@ PLAN_MODE_READONLY_TOOLS = {
     "chat_with_model",
     "ask_teacher",
     "get_home_weather",
-    "get_homelab_updates",
+    "query_ithaca_tile",
 }
 
 

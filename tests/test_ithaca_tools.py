@@ -1,24 +1,21 @@
 """Tests for src/tools/ithaca.py — the agent-facing get_home_weather and
-get_homelab_updates tools, which wrap extensions/ithaca/backend.py's
-fetch/cache functions so the AI can answer questions using the same data as
-the Ithaca hub's tiles."""
+query_ithaca_tile tools. get_home_weather wraps extensions/ithaca/weather.py
+so the AI sees the same cached data as the Weather tile. query_ithaca_tile
+wraps extensions/ithaca/tiles.py so the AI can list/run any user-defined
+tile — it never accepts arbitrary SQL, only a tile id to run."""
 
 import pytest
 from fastapi import HTTPException
 
-import extensions.ithaca.backend as ithaca_routes
-from src.tools.ithaca import do_get_home_weather, do_get_homelab_updates
+import extensions.ithaca.weather as weather
+from src.tools.ithaca import do_get_home_weather, do_query_ithaca_tile
 
 
 @pytest.fixture(autouse=True)
-def _reset_caches():
-    # Tool tests share process-level caches with the route tests; reset
-    # before/after so a warm entry from one test doesn't leak into another.
-    ithaca_routes._weather_cache.update({"key": None, "expires": 0.0, "data": None})
-    ithaca_routes._digest_cache.update({"key": None, "expires": 0.0, "data": None})
+def _reset_weather_cache():
+    weather._cache.update({"key": None, "expires": 0.0, "data": None})
     yield
-    ithaca_routes._weather_cache.update({"key": None, "expires": 0.0, "data": None})
-    ithaca_routes._digest_cache.update({"key": None, "expires": 0.0, "data": None})
+    weather._cache.update({"key": None, "expires": 0.0, "data": None})
 
 
 FAKE_WEATHER = {
@@ -32,35 +29,11 @@ FAKE_WEATHER = {
     "fetched_at": 123,
 }
 
-FAKE_DIGEST_WITH_UPDATES = {
-    "filename": "2026-07-25-digest.md",
-    "date": "2026-07-25",
-    "sections": {"Software Updates": "..."},
-    "software_updates": {
-        "rows": [
-            {"app": "Radarr", "hosted_on": "latitude", "deployed": "v6.3.1", "version": "v6.4.0",
-             "update": "Yes", "update_available": True, "desc": "Fixed Trakt imports"},
-            {"app": "Jellyfin", "hosted_on": "nuc", "deployed": "v11.9", "version": "—",
-             "update": "No", "update_available": False, "desc": "RC only"},
-        ],
-        "note": "No Flatpak updates available.",
-    },
-    "fetched_at": 456,
-}
-
-FAKE_DIGEST_NO_UPDATES_SECTION = {
-    "filename": "2026-07-25-digest.md",
-    "date": "2026-07-25",
-    "sections": {"Weather": "..."},
-    "software_updates": None,
-    "fetched_at": 456,
-}
-
 
 async def test_get_home_weather_success(monkeypatch):
     async def fake_fetch():
         return FAKE_WEATHER
-    monkeypatch.setattr(ithaca_routes, "_fetch_weather", fake_fetch)
+    monkeypatch.setattr(weather, "_fetch_weather", fake_fetch)
 
     result = await do_get_home_weather("{}")
     assert result["exit_code"] == 0
@@ -74,7 +47,7 @@ async def test_get_home_weather_success(monkeypatch):
 async def test_get_home_weather_empty_content_defaults(monkeypatch):
     async def fake_fetch():
         return FAKE_WEATHER
-    monkeypatch.setattr(ithaca_routes, "_fetch_weather", fake_fetch)
+    monkeypatch.setattr(weather, "_fetch_weather", fake_fetch)
 
     result = await do_get_home_weather("")
     assert result["exit_code"] == 0
@@ -83,7 +56,7 @@ async def test_get_home_weather_empty_content_defaults(monkeypatch):
 async def test_get_home_weather_not_configured(monkeypatch):
     async def fake_fetch():
         raise HTTPException(503, "OPENWEATHER_API_KEY is not configured")
-    monkeypatch.setattr(ithaca_routes, "_fetch_weather", fake_fetch)
+    monkeypatch.setattr(weather, "_fetch_weather", fake_fetch)
 
     result = await do_get_home_weather("{}")
     assert result["exit_code"] == 1
@@ -97,21 +70,11 @@ async def test_get_home_weather_network_error_is_caught(monkeypatch):
     # exception propagating out of the tool call.
     async def fake_fetch():
         raise ConnectionError("Cannot connect to host api.openweathermap.org")
-    monkeypatch.setattr(ithaca_routes, "_fetch_weather", fake_fetch)
+    monkeypatch.setattr(weather, "_fetch_weather", fake_fetch)
 
     result = await do_get_home_weather("{}")
     assert result["exit_code"] == 1
     assert "api.openweathermap.org" in result["error"]
-
-
-async def test_get_homelab_updates_network_error_is_caught(monkeypatch):
-    async def fake_fetch():
-        raise ConnectionError("Cannot connect to Obsidian host")
-    monkeypatch.setattr(ithaca_routes, "_fetch_digest", fake_fetch)
-
-    result = await do_get_homelab_updates("{}")
-    assert result["exit_code"] == 1
-    assert "Obsidian" in result["error"]
 
 
 async def test_get_home_weather_refresh_bypasses_cache(monkeypatch):
@@ -120,7 +83,7 @@ async def test_get_home_weather_refresh_bypasses_cache(monkeypatch):
     async def fake_fetch():
         calls["n"] += 1
         return FAKE_WEATHER
-    monkeypatch.setattr(ithaca_routes, "_fetch_weather", fake_fetch)
+    monkeypatch.setattr(weather, "_fetch_weather", fake_fetch)
 
     await do_get_home_weather("{}")
     await do_get_home_weather("{}")
@@ -130,58 +93,102 @@ async def test_get_home_weather_refresh_bypasses_cache(monkeypatch):
     assert calls["n"] == 2  # refresh bypassed the cache
 
 
-async def test_get_homelab_updates_success(monkeypatch):
-    async def fake_fetch():
-        return FAKE_DIGEST_WITH_UPDATES
-    monkeypatch.setattr(ithaca_routes, "_fetch_digest", fake_fetch)
+# ─── query_ithaca_tile ──────────────────────────────────────────────────────
 
-    result = await do_get_homelab_updates("{}")
+
+async def test_query_ithaca_tile_lists_when_no_tile_id(monkeypatch):
+    import extensions.ithaca.tiles as tiles_mod
+    monkeypatch.setattr(tiles_mod, "list_tile_configs", lambda: [
+        {"id": "flagged_apps", "title": "Flagged Apps", "notes": "review queue"},
+    ])
+
+    result = await do_query_ithaca_tile("{}")
     assert result["exit_code"] == 0
-    assert "1 of 2 apps need an update" in result["response"]
-    assert "Radarr" in result["response"] and "update available" in result["response"]
-    assert "v6.3.1 → v6.4.0" in result["response"]
-    assert "No Flatpak updates available." in result["response"]
-    assert len(result["rows"]) == 2
+    assert "flagged_apps" in result["response"]
+    assert "Flagged Apps" in result["response"]
+    assert result["tiles"][0]["id"] == "flagged_apps"
 
 
-async def test_get_homelab_updates_no_section(monkeypatch):
-    async def fake_fetch():
-        return FAKE_DIGEST_NO_UPDATES_SECTION
-    monkeypatch.setattr(ithaca_routes, "_fetch_digest", fake_fetch)
+async def test_query_ithaca_tile_lists_empty_state(monkeypatch):
+    import extensions.ithaca.tiles as tiles_mod
+    monkeypatch.setattr(tiles_mod, "list_tile_configs", lambda: [])
 
-    result = await do_get_homelab_updates("{}")
+    result = await do_query_ithaca_tile("{}")
     assert result["exit_code"] == 0
-    assert result["rows"] == []
-    assert "No Software Updates section" in result["response"]
+    assert result["tiles"] == []
+    assert "No custom Ithaca tiles" in result["response"]
 
 
-async def test_get_homelab_updates_not_configured(monkeypatch):
-    async def fake_fetch():
-        raise HTTPException(503, "OBSIDIAN_API_TOKEN is not configured")
-    monkeypatch.setattr(ithaca_routes, "_fetch_digest", fake_fetch)
+async def test_query_ithaca_tile_runs_table_tile(monkeypatch):
+    import extensions.ithaca.tiles as tiles_mod
 
-    result = await do_get_homelab_updates("{}")
+    async def fake_run_tile(tile_id, force=False):
+        return {"type": "table", "columns": ["app_name", "host"], "rows": [
+            {"app_name": "Radarr", "host": "latitude"},
+        ]}
+    monkeypatch.setattr(tiles_mod, "run_tile", fake_run_tile)
+
+    result = await do_query_ithaca_tile('{"tile_id": "flagged_apps"}')
+    assert result["exit_code"] == 0
+    assert "Radarr" in result["response"]
+    assert "latitude" in result["response"]
+
+
+async def test_query_ithaca_tile_runs_chart_tile(monkeypatch):
+    import extensions.ithaca.tiles as tiles_mod
+
+    async def fake_run_tile(tile_id, force=False):
+        return {"type": "bar", "points": [{"label": "auto_update", "value": 2.0}]}
+    monkeypatch.setattr(tiles_mod, "run_tile", fake_run_tile)
+
+    result = await do_query_ithaca_tile('{"tile_id": "breakdown"}')
+    assert result["exit_code"] == 0
+    assert "auto_update" in result["response"]
+    assert "2.0" in result["response"]
+
+
+async def test_query_ithaca_tile_unknown_id(monkeypatch):
+    import extensions.ithaca.tiles as tiles_mod
+
+    async def fake_run_tile(tile_id, force=False):
+        raise ValueError(f"No tile config with id '{tile_id}'")
+    monkeypatch.setattr(tiles_mod, "run_tile", fake_run_tile)
+
+    result = await do_query_ithaca_tile('{"tile_id": "nope"}')
     assert result["exit_code"] == 1
-    assert "OBSIDIAN_API_TOKEN" in result["error"]
+    assert "nope" in result["error"]
+
+
+async def test_query_ithaca_tile_query_failure(monkeypatch):
+    import extensions.ithaca.tiles as tiles_mod
+    from core.external_db import ExternalDbError
+
+    async def fake_run_tile(tile_id, force=False):
+        raise ExternalDbError("connection refused")
+    monkeypatch.setattr(tiles_mod, "run_tile", fake_run_tile)
+
+    result = await do_query_ithaca_tile('{"tile_id": "flagged_apps"}')
+    assert result["exit_code"] == 1
+    assert "connection refused" in result["error"]
 
 
 def test_tools_registered_in_dispatcher():
     from src.agent_tools import TOOL_TAGS
     assert "get_home_weather" in TOOL_TAGS
-    assert "get_homelab_updates" in TOOL_TAGS
+    assert "query_ithaca_tile" in TOOL_TAGS
 
 
 def test_tools_have_function_schemas():
     from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
     names = [s["function"]["name"] for s in FUNCTION_TOOL_SCHEMAS]
     assert names.count("get_home_weather") == 1
-    assert names.count("get_homelab_updates") == 1
+    assert names.count("query_ithaca_tile") == 1
 
 
 async def test_execute_tool_block_dispatches_by_name(monkeypatch):
     async def fake_fetch():
         return FAKE_WEATHER
-    monkeypatch.setattr(ithaca_routes, "_fetch_weather", fake_fetch)
+    monkeypatch.setattr(weather, "_fetch_weather", fake_fetch)
 
     from src.agent_tools import ToolBlock, execute_tool_block
     desc, result = await execute_tool_block(ToolBlock("get_home_weather", "{}"))

@@ -116,8 +116,17 @@ Canonically `/api/codex/*` (shared by **all** agent integrations — "codex" nam
 | `POST /api/feeds/opml/import` | Session | Import feeds from OPML |
 | `POST /api/feeds/groups/{group_id}/summarize` | Session | AI-generated digest of a group's articles |
 | `GET /api/companion/ping/info/models/pair` | Session | Companion app endpoints |
-| `GET /api/ithaca/weather` | Session / `ithaca:read` | Live OpenWeatherMap current + 3-hourly forecast (server-side proxy, 10-min TTL cache; env: OPENWEATHER_API_KEY/LAT/LON/UNITS) |
-| `GET /api/ithaca/digest` | Session / `ithaca:read` | Latest daily-digest md, split by headings; Software Updates table parsed to rows + enriched with per-app links (5-min TTL cache). Source: the vault on disk when `OBSIDIAN_VAULT_PATH` is set (preferred — the Local REST API only answers while the Obsidian desktop app is open), else the Obsidian Local REST API; the `source` field reports which |
-| `GET /api/ithaca/config` | Session / `ithaca:read` | Per-app link config (repo_url, ssh_host, path) — data/ithaca.json merged over defaults |
-| `PUT /api/ithaca/config` | Admin | Update data/ithaca.json (atomic write; drops digest cache) |
-| `POST /api/ithaca/ssh/open` | Admin | ssh into an app's configured host and `ls -la` its deploy path (host/path from server config only; BatchMode, 20s timeout) |
+| `GET /api/ithaca/weather` | Session / `ithaca:read` | Live OpenWeatherMap current + 3-hourly forecast (server-side proxy, 10-min TTL cache; env: OPENWEATHER_API_KEY/LAT/LON/UNITS) — the one persistent built-in tile |
+| `GET /api/ithaca/tiles` | Session / `ithaca:read` | List user-defined tile configs |
+| `GET /api/ithaca/tiles/{id}/data` | Session / `ithaca:read` | Run a saved tile's query (TTL-cached, `?refresh=1` bypass) |
+| `POST /api/ithaca/tiles` | Admin | Create/update a tile config |
+| `DELETE /api/ithaca/tiles/{id}` | Admin | Delete a tile config + its layout entry |
+| `POST /api/ithaca/tiles/preview` | Admin | Run an unsaved draft config for the tile-builder UI |
+| `POST /api/ithaca/tiles/ai-propose` | Admin | Single-shot LLM tile proposal from a connection + context doc + NL instruction |
+| `GET /api/ithaca/tiles/{id}/package.json` | Admin | Download a portable tile package (config + non-secret connection hint, never credentials) |
+| `POST /api/ithaca/tiles/import` | Admin | Import a package, requiring an explicit local connection_binding |
+| `GET /api/ithaca/layout` | Session / `ithaca:read` | Grid placement (col/row/w/h) for every tile, built-in or user-defined |
+| `PUT /api/ithaca/layout/{id}` | Admin | Persist a drag/resize |
+| `GET/POST/PUT/DELETE /api/db-connections[/{id}]` | Admin | CRUD for read-only Postgres connections (core/external_db.py) used as tile data sources |
+| `POST /api/db-connections/{id}/test` | Admin | Test a connection |
+| `GET /api/db-connections/{id}/introspect` | Admin | List tables/columns visible to the connection's role |

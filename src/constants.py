@@ -84,6 +84,12 @@ WEB_FETCH_HARD_MAX_BYTES = 20_000_000   # absolute ceiling, even with override (
 # WEB_FETCH_HARD_MAX_BYTES.
 EXTENSION_INSTALL_MAX_BYTES = 50_000_000  # 50 MB cap on a .zip extension install
 
+# Ithaca tile configs (extensions/ithaca/tile_packaging.py) are a small plain
+# JSON document (a query + viz config, never credentials) — a much smaller
+# budget than a whole extension bundle is enough and catches a pasted/uploaded
+# import blob that's obviously not a tile package.
+TILE_IMPORT_MAX_BYTES = 256_000  # 256 KB cap on a tile package import
+
 # API Configuration
 MAX_CONTEXT_MESSAGES = 90
 REQUEST_TIMEOUT = 20

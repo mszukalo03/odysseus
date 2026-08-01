@@ -85,7 +85,7 @@ def test_router_reports_non_calendar_categories():
     assert classify_tool_intent("research cost effective local models").category == "research"
 
 
-# ─── Ithaca hub tools (get_home_weather / get_homelab_updates) ───────────────
+# ─── Ithaca hub tools (get_home_weather / query_ithaca_tile) ─────────────────
 #
 # Chat mode passes tools=None, so an unmatched intent here means the model
 # answers from its training data instead of calling the tool. Regression guard
@@ -144,20 +144,21 @@ def test_homelab_update_questions_promote_to_agent():
         "any app updates",
         "homelab updates",
         "do i have any updates",
-        "whats new in radarr",
+        "what version of radarr is running",
         "is sonarr outdated",
         "any updates available",
         "check my software updates",
+        "which apps are flagged for review",
     ]
     for prompt in prompts:
         intent = classify_tool_intent(prompt)
         assert intent.needs_tools, prompt
-        assert intent.category == "homelab", prompt
+        assert intent.category == "ithaca_tile", prompt
 
 
 def test_ithaca_patterns_do_not_steal_coding_or_status_turns():
     # Placed last in _ROUTING_PATTERNS precisely so these keep their old
-    # behavior. A coding turn mis-tagged as homelab would lose bash/python/
+    # behavior. A coding turn mis-tagged as ithaca_tile would lose bash/python/
     # read_file/write_file, which auto-escalation withholds for every category
     # except shell/workspace.
     for prompt in ("update the readme in my repo", "fix the failing tests in the codebase"):

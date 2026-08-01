@@ -2346,7 +2346,7 @@
 
           <div class="admin-card admin-only" id="ithaca-settings-card">
             <h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:0.6"><path d="M3 9.5 12 4l9 5.5"/><line x1="5" y1="12" x2="19" y2="12"/><line x1="7" y1="12" x2="7" y2="18"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="17" y1="12" x2="17" y2="18"/><line x1="4" y1="20.5" x2="20" y2="20.5"/></svg>Ithaca Hub</h2>
-            <div class="admin-toggle-sub" style="margin-bottom:8px">API keys for the Ithaca dashboard's tiles — Weather (OpenWeatherMap) and Software Updates (Obsidian Local REST API, written by your n8n digest workflow). Also settable via the OPENWEATHER_*/OBSIDIAN_* variables in your .env file; a value saved here takes priority over .env.</div>
+            <div class="admin-toggle-sub" style="margin-bottom:8px">API key for the Ithaca dashboard's Weather tile (OpenWeatherMap). Also settable via the OPENWEATHER_* variables in your .env file; a value saved here takes priority over .env.</div>
             <div class="settings-col">
               <div class="settings-row">
                 <label class="settings-label">OpenWeatherMap key</label>
@@ -2370,27 +2370,17 @@
                   <option value="imperial">Imperial (°F)</option>
                 </select>
               </div>
-              <div class="settings-row">
-                <label class="settings-label">Vault path</label>
-                <input id="set-ithacaVaultPath" type="text" placeholder="/vault (preferred — reads the digest from disk)" class="settings-select">
-              </div>
-              <div class="admin-toggle-sub" style="margin:-4px 0 8px">Set the vault path to read digests straight off disk — no token needed and it keeps working while Obsidian is closed. The Local REST API below is only used when the vault path is blank, and it only responds while the Obsidian desktop app is open.</div>
-              <div class="settings-row">
-                <label class="settings-label">Obsidian API URL</label>
-                <input id="set-ithacaObsUrl" type="text" placeholder="http://100.x.y.z:27123" class="settings-select">
-              </div>
-              <div class="settings-row">
-                <label class="settings-label">Obsidian API token</label>
-                <div style="position:relative;flex:1;display:flex;align-items:center;">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);opacity:0.55;pointer-events:none;"><path d="M21 2l-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/><path d="M15.5 7.5l3 3"/></svg>
-                  <input id="set-ithacaObsToken" type="password" placeholder="Bearer token (.env default if blank)" class="settings-select" style="flex:1;padding-left:28px;" autocomplete="off">
-                </div>
-              </div>
-              <div class="settings-row">
-                <label class="settings-label">Digest folder</label>
-                <input id="set-ithacaDigestDir" type="text" placeholder="daily-digest" class="settings-select">
-              </div>
               <div id="set-ithacaMsg" style="font-size:11px;color:color-mix(in srgb, var(--fg) 45%, transparent);"></div>
+            </div>
+          </div>
+
+          <div class="admin-card admin-only" id="db-connections-settings-card">
+            <h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:0.6"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>Database Connections</h2>
+            <div class="admin-toggle-sub" style="margin-bottom:8px">Read-only Postgres connections used as data sources for Ithaca dashboard tiles. Use a dedicated read-only DB role — queries here are enforced read-only, but least-privilege credentials are the real safety boundary.</div>
+            <div id="set-dbconn-list"></div>
+            <div id="set-dbconn-form" style="display:none;margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:6px;"></div>
+            <div style="text-align:right;padding:8px 0;">
+              <button type="button" class="admin-btn-add" id="set-dbconn-add-btn">Add Connection</button>
             </div>
           </div>
         </div>

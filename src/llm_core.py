@@ -617,6 +617,7 @@ def _build_ollama_payload(
     stream: bool = False,
     tools: Optional[List[Dict]] = None,
     num_ctx: Optional[int] = None,
+    think: Optional[bool] = None,
 ) -> Dict:
     """Build the JSON payload for Ollama's /api/chat endpoint.
 
@@ -628,12 +629,23 @@ def _build_ollama_payload(
     the value is trusted (not the ``DEFAULT_CONTEXT`` fallback), so we
     don't guess for unknown models but do tell Ollama the real window
     when we know it — even if it's smaller than 2048.
+
+    ``think`` maps to Ollama's native ``think`` request field (distinct
+    from the OpenAI-compat ``/v1`` shim's handling of the same toggle —
+    that path is suppressed separately via ``_is_ollama_openai_compat_url``
+    in the callers). Without it, a "thinking" model (qwen3, deepseek-r1,
+    etc.) reasons into a separate ``message.thinking`` field this client
+    doesn't read, and can burn an entire ``max_tokens`` budget on reasoning
+    alone with `content` staying empty — pass ``False`` for callers that
+    need a fast, deterministic, structured answer (not a chat reply).
     """
     payload: Dict = {
         "model": model,
         "messages": _ollama_normalize_messages(messages),
         "stream": stream,
     }
+    if think is not None:
+        payload["think"] = think
     options: Dict = {}
     if temperature is not None:
         options["temperature"] = temperature
@@ -2058,9 +2070,18 @@ async def llm_call_async(
         h = {"Content-Type": "application/json"}
         if headers:
             h.update(headers)
+        # llm_call_async is for one-shot, non-conversational utility calls
+        # (auto-titling, style extraction, structured-JSON generation) —
+        # the same reasoning that already suppresses thinking for the /v1
+        # compat path below applies here too: a caller of this specific
+        # function wants a fast direct answer, not a chat reply preceded by
+        # a wall of reasoning it never reads. Mirrors _is_ollama_openai_compat_url's
+        # handling for the OpenAI-compat surface, just via Ollama's native
+        # `think` field instead of an OpenAI-shaped payload key.
         payload = _build_ollama_payload(
             model, messages_copy, temperature, max_tokens,
             stream=False, num_ctx=get_context_length(url, model),
+            think=False if _supports_thinking(model) else None,
         )
     else:
         target_url = _normalize_openai_chat_url(url)

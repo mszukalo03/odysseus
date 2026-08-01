@@ -42756,17 +42756,67 @@ body.neon-glow #sidebar {
   min-height: 0;
 }
 .ithaca-tile[data-slot="A"] { grid-column: span 2; grid-row: span 6; }
-.ithaca-tile[data-slot="B"] { grid-row: span 6; }
+/* User-defined tiles (extensions/ithaca/tiles.py) auto-flow into the grid
+   past Weather via `grid-auto-flow: row dense` above — no fixed slot needed. */
+.ithaca-tile-dynamic { grid-row: span 4; }
+
+.ithaca-tile-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.ithaca-tile-table th, .ithaca-tile-table td {
+  text-align: left;
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ithaca-tile-table th { opacity: 0.6; font-weight: 600; }
+.ithaca-tile-list { margin: 0; padding-left: 18px; font-size: 0.8rem; }
+.ithaca-tile-list li { padding: 2px 0; }
+.ithaca-tile-stat { font-size: 2rem; font-weight: 600; padding: 8px 2px; }
+.ithaca-tile-canvas { max-width: 100%; max-height: 100%; }
+
+.ithaca-tilebuilder-modal { width: min(560px, 92vw); }
+.ithaca-tilebuilder-modal .ithaca-tilebuilder-body { padding: 10px 12px; overflow-y: auto; }
+.ithaca-tilebuilder-modal textarea.settings-input { resize: vertical; font-family: inherit; }
 
 .ithaca-tile {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  position: relative; /* anchors .ithaca-tile-resize-handle */
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
+}
+.ithaca-tile-dragging, .ithaca-tile-resizing {
+  opacity: 0.85;
+  z-index: 5;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.4);
+  transition: none; /* no lag while actively tracking the pointer */
+}
+.ithaca-tile-header.ithaca-tile-draggable { cursor: grab; }
+.ithaca-tile-header.ithaca-tile-draggable:active { cursor: grabbing; }
+.ithaca-tile-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  opacity: 0.35;
+}
+.ithaca-tile-resize-handle:hover { opacity: 0.85; }
+.ithaca-tile-resize-handle::before {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
 }
 .ithaca-tile-header {
   display: flex;
@@ -42790,19 +42840,6 @@ body.neon-glow #sidebar {
   opacity: 0.55;
   padding: 6px 2px;
   line-height: 1.45;
-}
-
-.ithaca-tile-empty {
-  border-style: dashed;
-  background: transparent;
-  align-items: center;
-  justify-content: center;
-}
-.ithaca-tile-empty-label {
-  font-size: 0.68rem;
-  opacity: 0.3;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
 }
 
 /* Tile A — weather; --wx-tint is set inline per current condition (see
@@ -42860,70 +42897,8 @@ body.neon-glow #sidebar {
 .ithaca-hour-temp { font-size: 0.78rem; font-weight: 600; }
 .ithaca-hour-pop { font-size: 0.62rem; color: var(--accent-primary, #6ca0f6); }
 
-/* Tile B — software updates */
-.ithaca-updates-list { display: flex; flex-direction: column; }
-.ithaca-update-row {
-  padding: 8px 2px;
-  border-bottom: 1px solid var(--border);
-}
-.ithaca-update-row:last-child { border-bottom: none; }
-.ithaca-update-row-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.ithaca-app-link {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: inherit;
-  text-decoration: none;
-  border-bottom: 1px dotted transparent;
-}
-a.ithaca-app-link:hover { border-bottom-color: currentColor; }
-.ithaca-badge {
-  font-size: 0.62rem;
-  padding: 1.5px 7px;
-  border-radius: 99px;
-  border: 1px solid var(--border);
-  opacity: 0.6;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  flex-shrink: 0;
-}
-.ithaca-badge-update {
-  opacity: 1;
-  color: var(--accent-primary, #6ca0f6);
-  border-color: currentColor;
-}
-.ithaca-host-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 0.72rem;
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  opacity: 0.8;
-  cursor: pointer;
-  flex-shrink: 0;
-  font-family: var(--mono-font, monospace);
-}
-.ithaca-host-link:hover { opacity: 1; background: var(--input-bg, rgba(128, 128, 128, 0.12)); }
-.ithaca-host-plain {
-  font-size: 0.72rem;
-  opacity: 0.5;
-  font-family: var(--mono-font, monospace);
-  flex-shrink: 0;
-}
-.ithaca-update-version { font-size: 0.7rem; opacity: 0.6; margin-top: 3px; }
-.ithaca-update-desc { font-size: 0.74rem; opacity: 0.8; margin-top: 3px; line-height: 1.45; }
-.ithaca-updates-note { font-size: 0.72rem; opacity: 0.55; padding-top: 8px; }
-
-/* SSH-open modal (deployed-on link) */
-.ithaca-ssh-overlay {
+/* Generic modal shell — used by tileBuilder.js for Add Tile / Import Tile */
+.ithaca-modal-overlay {
   position: fixed;
   inset: 0;
   z-index: 240; /* above the hub and floating tools */
@@ -42932,7 +42907,7 @@ a.ithaca-app-link:hover { border-bottom-color: currentColor; }
   align-items: center;
   justify-content: center;
 }
-.ithaca-ssh-modal {
+.ithaca-modal {
   width: min(640px, 92vw);
   max-height: 76vh;
   display: flex;
@@ -42943,7 +42918,7 @@ a.ithaca-app-link:hover { border-bottom-color: currentColor; }
   overflow: hidden;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
 }
-.ithaca-ssh-header {
+.ithaca-modal-header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -42953,20 +42928,9 @@ a.ithaca-app-link:hover { border-bottom-color: currentColor; }
   font-weight: 600;
   font-family: var(--mono-font, monospace);
 }
-.ithaca-ssh-output {
-  margin: 0;
-  padding: 12px;
-  overflow: auto;
-  font-size: 0.72rem;
-  line-height: 1.5;
-  background: var(--code-bg, transparent);
-  color: var(--code-fg, inherit);
-  white-space: pre;
-}
 
-/* Responsive: 3×3 → 2-col → 1-col. The weather/updates tiles keep their
-   generous row-span (real content); empty placeholder slots stay a slim
-   fixed strip at every width instead of ballooning to match them. */
+/* Responsive: 3×3 → 2-col → 1-col. The weather tile keeps its generous
+   row-span (real content); other tiles stay whatever size they were given. */
 @media (max-width: 1100px) {
   .ithaca-grid { grid-template-columns: repeat(2, 1fr); }
 }
@@ -42974,9 +42938,8 @@ a.ithaca-app-link:hover { border-bottom-color: currentColor; }
   .ithaca-screen { left: 0; z-index: 175; }
   .ithaca-grid { grid-template-columns: 1fr; grid-auto-rows: 56px; padding: 10px; gap: 10px; }
   .ithaca-tile[data-slot="A"] { grid-column: span 1; grid-row: span 5; }
-  .ithaca-tile[data-slot="B"] { grid-column: span 1; grid-row: span 7; }
-  .ithaca-tile-empty { min-height: 0; }
-=======
+}
+
 /* ─── Sudo password prompt ────────────────────────────────────────
  *  Shown when an agent shell command needs root. The agent's bash
  *  subprocess has no TTY, so sudo can't prompt itself — the backend

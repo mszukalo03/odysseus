@@ -254,7 +254,7 @@ window (`popOut`/`popIn`):
 - **The scope-picker UI label/icon** in `static/js/settings.js` (~line 5421)
   is still a static list — cosmetic metadata, not wired to `scopes` in the
   manifest.
-- **`src/tools/ithaca.py`** (the `get_home_weather`/`get_homelab_updates`
+- **`src/tools/ithaca.py`** (the `get_home_weather`/`query_ithaca_tile`
   agent tools) stays in core, not in `extensions/ithaca/` — it's wired into
   the agent tool registry (`src/agent_tools/__init__.py`,
   `src/tool_execution.py`, `src/tool_index.py`, `src/tool_schemas.py`) which

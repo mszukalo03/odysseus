@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://odysseus.local/schemas/ithaca-tile.json",
+  "title": "Ithaca Tile Config",
+  "description": "Self-contained, portable dashboard tile config. connection_ref is a name resolved locally against this instance's DB connections at query time — credentials never travel with the tile.",
+  "type": "object",
+  "required": ["schema_version", "id", "title", "data_source"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9_-]+$" },
+    "title": { "type": "string" },
+    "slot": { "type": ["string", "null"] },
+    "data_source": {
+      "type": "object",
+      "required": ["type", "connection_ref", "query"],
+      "properties": {
+        "type": { "type": "string", "const": "postgres" },
+        "connection_ref": { "type": "string" },
+        "query": { "type": "string" }
+      }
+    },
+    "viz": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["table", "stat", "bar", "line", "pie", "list"] },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["field"],
+            "properties": {
+              "field": { "type": "string" },
+              "label": { "type": "string" }
+            }
+          }
+        },
+        "label_field": { "type": ["string", "null"] },
+        "value_field": { "type": ["string", "null"] }
+      }
+    },
+    "refresh_interval_seconds": { "type": "integer", "minimum": 60 },
+    "created_by": { "type": "string" },
+    "notes": { "type": "string" }
+  }
+}

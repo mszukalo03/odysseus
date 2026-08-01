@@ -480,6 +480,35 @@ class ProviderAuthSession(TimestampMixin, Base):
     last_refresh = Column(DateTime, nullable=True)
     auth_mode = Column(String, nullable=True)
 
+class ExternalDbConnection(TimestampMixin, Base):
+    """Admin-configured connection to an external (non-app-owned) Postgres
+    database — e.g. a homelab automation's own DB — used by Ithaca dashboard
+    tiles as a read-only data source. Deliberately kept separate from this
+    app's own engine/session (`engine`/`SessionLocal` above): it's a genuinely
+    different database, queried via core/external_db.py with a per-row
+    short-lived engine, never through the app's ORM session.
+
+    `password` uses EncryptedText (see above) — same at-rest protection as
+    ModelEndpoint.api_key / EmailAccount.imap_password.
+    """
+    __tablename__ = "external_db_connections"
+
+    id = Column(String, primary_key=True, index=True)   # slug, e.g. "homelab_main_db"
+    label = Column(String, nullable=False)
+    kind = Column(String, nullable=False, default="postgres")
+    host = Column(String, nullable=False)
+    port = Column(Integer, nullable=False, default=5432)
+    database = Column(String, nullable=False)
+    username = Column(String, nullable=False)
+    password = Column(EncryptedText, nullable=True)
+    sslmode = Column(String, nullable=False, default="prefer")
+    # Advisory today (queries are always enforced read-only at the session
+    # level by core/external_db.py regardless of this flag) — kept as an
+    # explicit record of intent and a future off-switch if a write-capable
+    # mode is ever added.
+    read_only = Column(Boolean, nullable=False, default=True)
+
+
 class McpServer(TimestampMixin, Base):
     """Admin-configured MCP (Model Context Protocol) tool servers."""
     __tablename__ = "mcp_servers"

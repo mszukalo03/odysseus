@@ -2453,6 +2453,7 @@ function initAll() {
   initAccount();
   initIntegrations();
   initIthacaSettings();
+  initDbConnectionsSettings();
   initEmailSettings();
   initEmailAccountsSettings();
   initReminderSettings();
@@ -2465,7 +2466,7 @@ function notifyIntegrationsChanged() {
   } catch (_) {}
 }
 
-/* ── Ithaca hub API keys (Weather + Software Updates tiles) ──
+/* ── Ithaca hub's Weather tile API key ──
    Mirrors initSearchSettings()'s pattern: load full settings once (admin
    only — the card itself is .admin-only and hidden for non-admins), populate
    the fields, auto-save the whole group on any field's `change` event. */
@@ -2475,10 +2476,6 @@ async function initIthacaSettings() {
   var latInput = el('set-ithacaLat');
   var lonInput = el('set-ithacaLon');
   var unitsSel = el('set-ithacaUnits');
-  var vaultPathInput = el('set-ithacaVaultPath');
-  var obsUrlInput = el('set-ithacaObsUrl');
-  var obsTokenInput = el('set-ithacaObsToken');
-  var digestDirInput = el('set-ithacaDigestDir');
   var msg = el('set-ithacaMsg');
 
   try {
@@ -2488,10 +2485,6 @@ async function initIthacaSettings() {
     latInput.value = s.openweather_lat || '';
     lonInput.value = s.openweather_lon || '';
     unitsSel.value = s.openweather_units || '';
-    vaultPathInput.value = s.obsidian_vault_path || '';
-    obsUrlInput.value = s.obsidian_api_url || '';
-    obsTokenInput.value = s.obsidian_api_token || '';
-    digestDirInput.value = s.obsidian_digest_dir || '';
   } catch (e) { console.warn('Failed to load Ithaca settings', e); }
 
   async function saveIthaca() {
@@ -2503,10 +2496,6 @@ async function initIthacaSettings() {
           openweather_lat: latInput.value.trim(),
           openweather_lon: lonInput.value.trim(),
           openweather_units: unitsSel.value,
-          obsidian_vault_path: vaultPathInput.value.trim(),
-          obsidian_api_url: obsUrlInput.value.trim(),
-          obsidian_api_token: obsTokenInput.value.trim(),
-          obsidian_digest_dir: digestDirInput.value.trim(),
         })
       });
       if (msg) {
@@ -2518,7 +2507,7 @@ async function initIthacaSettings() {
     }
   }
 
-  [keyInput, latInput, lonInput, unitsSel, vaultPathInput, obsUrlInput, obsTokenInput, digestDirInput].forEach(function(input) {
+  [keyInput, latInput, lonInput, unitsSel].forEach(function(input) {
     input.addEventListener('change', saveIthaca);
   });
 }
@@ -2989,6 +2978,127 @@ async function initReminderSettings() {
       }
     });
   }
+}
+
+/* ── External Postgres connections (Ithaca tile data sources) ──
+   Mirrors initEmailAccountsSettings()'s list+form pattern, trimmed down to
+   the handful of fields a connection actually needs. */
+async function initDbConnectionsSettings() {
+  const listEl = el('set-dbconn-list');
+  const formEl = el('set-dbconn-form');
+  const addBtn = el('set-dbconn-add-btn');
+  if (!listEl || !formEl || !addBtn) return;
+
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  async function fetchConnections() {
+    const r = await fetch('/api/db-connections', { credentials: 'same-origin' });
+    if (!r.ok) return [];
+    const d = await r.json();
+    return d.connections || [];
+  }
+
+  function renderRow(c) {
+    return `<div class="dbconn-row" data-conn-id="${esc(c.id)}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;">${esc(c.label)}</div>
+        <div style="font-size:11px;opacity:0.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.username)}@${esc(c.host)}:${esc(c.port)}/${esc(c.database)}</div>
+      </div>
+      <span class="dbconn-test-dot" title="Test connection" style="width:8px;height:8px;border-radius:50%;background:var(--border);cursor:pointer;flex-shrink:0;"></span>
+      <button class="admin-btn-sm dbconn-edit-btn" style="font-size:10px">Edit</button>
+      <button class="admin-btn-sm dbconn-del-btn" style="font-size:10px;opacity:0.6">Delete</button>
+    </div>`;
+  }
+
+  async function renderList() {
+    const conns = await fetchConnections();
+    if (!conns.length) {
+      listEl.innerHTML = '<div style="padding:12px;opacity:0.5;font-size:12px;text-align:center">No database connections configured</div>';
+      return;
+    }
+    listEl.innerHTML = conns.map(renderRow).join('');
+    listEl.querySelectorAll('.dbconn-row').forEach(row => {
+      const id = row.dataset.connId;
+      row.querySelector('.dbconn-test-dot')?.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const dot = e.currentTarget;
+        dot.style.background = 'var(--border)';
+        const r = await fetch(`/api/db-connections/${id}/test`, { method: 'POST', credentials: 'same-origin' });
+        const d = await r.json().catch(() => ({ ok: false }));
+        dot.style.background = d.ok ? 'var(--green, #50fa7b)' : 'var(--red)';
+        dot.title = d.ok ? 'Connected' : (d.error || 'Connection failed');
+      });
+      row.querySelector('.dbconn-edit-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showForm(conns.find(c => c.id === id));
+      });
+      row.querySelector('.dbconn-del-btn')?.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const label = conns.find(c => c.id === id)?.label;
+        if (!await window.styledConfirm(`Delete connection "${label}"? Any tiles using it will stop loading.`, { confirmText: 'Delete', danger: true })) return;
+        await fetch(`/api/db-connections/${id}`, { method: 'DELETE', credentials: 'same-origin' });
+        renderList();
+      });
+    });
+  }
+
+  function showForm(existing) {
+    const c = existing || {};
+    const isEdit = !!existing;
+    formEl.style.display = '';
+    formEl.innerHTML = `
+      <h3 style="font-size:12px;margin:0 0 8px">${isEdit ? 'Edit Connection' : 'New Connection'}</h3>
+      <div class="settings-col">
+        <div class="settings-row"><label class="settings-label">Label</label><input id="dcf-label" class="settings-input" placeholder="homelab_main_db" value="${esc(c.label || '')}"></div>
+        <div class="settings-row"><label class="settings-label">Host</label><input id="dcf-host" class="settings-input" value="${esc(c.host || '')}"></div>
+        <div class="settings-row"><label class="settings-label">Port</label><input id="dcf-port" class="settings-input" type="number" value="${esc(c.port || 5432)}" style="max-width:100px"></div>
+        <div class="settings-row"><label class="settings-label">Database</label><input id="dcf-database" class="settings-input" value="${esc(c.database || '')}"></div>
+        <div class="settings-row"><label class="settings-label">Username</label><input id="dcf-username" class="settings-input" value="${esc(c.username || '')}"></div>
+        <div class="settings-row"><label class="settings-label">Password</label><input id="dcf-password" class="settings-input" type="password" placeholder="${isEdit && c.has_password ? '(unchanged)' : ''}"></div>
+        <div class="settings-row"><label class="settings-label">SSL mode</label><select id="dcf-sslmode" class="settings-select" style="width:160px;">
+          <option value="prefer">prefer</option><option value="require">require</option><option value="disable">disable</option>
+        </select></div>
+        <div class="settings-row" style="margin-top:10px;align-items:center;">
+          <button class="admin-btn-add" id="dcf-save">${isEdit ? 'Save' : 'Create'}</button>
+          <span id="dcf-msg" style="font-size:11px;flex:1;margin-left:8px;"></span>
+          <button class="admin-btn-add" id="dcf-cancel" style="opacity:0.7;margin-left:auto;">Cancel</button>
+        </div>
+      </div>`;
+    el('dcf-sslmode').value = c.sslmode || 'prefer';
+    el('dcf-cancel').addEventListener('click', () => { formEl.style.display = 'none'; formEl.innerHTML = ''; });
+    el('dcf-save').addEventListener('click', async () => {
+      const msg = el('dcf-msg');
+      const body = {
+        label: el('dcf-label').value.trim(),
+        host: el('dcf-host').value.trim(),
+        port: parseInt(el('dcf-port').value, 10) || 5432,
+        database: el('dcf-database').value.trim(),
+        username: el('dcf-username').value.trim(),
+        password: el('dcf-password').value,
+        sslmode: el('dcf-sslmode').value,
+      };
+      try {
+        const url = isEdit ? `/api/db-connections/${c.id}` : '/api/db-connections';
+        const r = await fetch(url, {
+          method: isEdit ? 'PUT' : 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json().catch(() => ({ ok: false }));
+        if (!d.ok) { msg.textContent = d.error || 'Save failed'; msg.style.color = 'var(--red)'; return; }
+        formEl.style.display = 'none';
+        formEl.innerHTML = '';
+        renderList();
+      } catch (e) {
+        msg.textContent = 'Save failed: ' + e.message;
+        msg.style.color = 'var(--red)';
+      }
+    });
+  }
+
+  addBtn.addEventListener('click', () => showForm(null));
+  renderList();
 }
 
 async function initEmailAccountsSettings() {

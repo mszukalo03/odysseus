@@ -1,102 +1,69 @@
 """
 extensions/ithaca/backend.py
 
-Ithaca hub — backend for the dashboard/homepage tile screen.
+Ithaca hub — backend for the dashboard/homepage tile screen. Route wiring
+only; each concern lives in its own module:
 
-The hub is the in-app frontend for the external n8n "Monday" digest workflow,
-which PATCHes weather + software-update sections into a daily-digest markdown
-file in an Obsidian vault (via the Obsidian Local REST API). Endpoints:
+  extensions/ithaca/weather.py         — the one persistent built-in tile
+  extensions/ithaca/tile_schema.py     — the portable tile config contract
+  extensions/ithaca/tiles.py           — tile CRUD, query execution, layout
+  extensions/ithaca/ai_tile_builder.py — single-shot LLM tile proposal
+  extensions/ithaca/tile_packaging.py  — tile export/import
+
+Endpoints:
 
 * GET  /api/ithaca/weather   — live OpenWeatherMap current conditions +
-  3-hourly forecast, queried directly (NOT from the digest), TTL-cached.
-* GET  /api/ithaca/digest    — latest daily-digest markdown, split into
-  heading sections; the "Software Updates" table is parsed into structured
-  rows and enriched with per-app links. Read from the vault on disk when
-  OBSIDIAN_VAULT_PATH is set, else over the Obsidian Local REST API.
-* GET  /api/ithaca/config    — per-app link config (git repo URL, ssh host,
-  deploy path) used by the Software Updates tile. PUT is admin-only.
-* POST /api/ithaca/ssh/open  — admin-only: ssh into an app's host and list
-  its deploy path (the action behind the tile's "deployed on" link).
+  3-hourly forecast, TTL-cached.
+* GET  /api/ithaca/tiles              — list user-defined tile configs.
+* GET  /api/ithaca/tiles/{id}/data    — run a saved tile's query (TTL-cached,
+  ?refresh=1 bypass) against its configured external Postgres connection
+  (core/external_db.py) and return data shaped for its viz type.
+* POST/DELETE /api/ithaca/tiles[/{id}] — admin-only: create/update/delete a
+  tile config.
+* POST /api/ithaca/tiles/preview      — admin-only: run an unsaved draft
+  config for the tile-builder UI.
+* POST /api/ithaca/tiles/ai-propose   — admin-only: single-shot LLM tile
+  proposal from a connection + free-form context doc + NL instruction.
+  Returns an unsaved draft config.
+* GET  /api/ithaca/tiles/{id}/package.json — admin-only: download a portable
+  tile package — the config plus a non-secret connection hint, never
+  credentials.
+* POST /api/ithaca/tiles/import       — admin-only: import a package,
+  requiring an explicit local connection_binding (never auto-matched).
+* GET  /api/ithaca/layout              — grid placement (col/row/w/h) for
+  every tile, built-in or user-defined.
+* PUT  /api/ithaca/layout/{id}         — admin-only: persist a drag/resize.
 
 Also exposed to the AI agent as read-only tools (src/tools/ithaca.py):
-get_home_weather, get_homelab_updates.
+get_home_weather, query_ithaca_tile.
 
 Config: OPENWEATHER_API_KEY, OPENWEATHER_LAT, OPENWEATHER_LON,
-OPENWEATHER_UNITS, OBSIDIAN_VAULT_PATH, OBSIDIAN_API_URL, OBSIDIAN_API_TOKEN,
-OBSIDIAN_DIGEST_DIR (see .env.example) — or the same keys settable in
-Settings > Integrations ("Ithaca Hub" card), which take priority over the env
-vars when non-empty (see `_setting_or_env`).
-
-Digest source: OBSIDIAN_VAULT_PATH (the vault directory on disk) is preferred
-and is what the tile should normally use. The Local REST API is a *plugin*
-hosted inside the Obsidian desktop process, so it only answers while that app
-is open — pointing the tile at it makes the dashboard fail with connection
-refused / timeouts whenever Obsidian is closed, no matter which host or port
-is used. Reading the synced vault files needs no HTTP, token, or running app.
+OPENWEATHER_UNITS (see .env.example) — or the same keys settable in
+Settings > Integrations ("Ithaca Hub" card), which take priority over the
+env vars when non-empty (see weather.py's `_setting_or_env`).
 """
 
-import asyncio
 import json
 import logging
-import os
-import re
-import shlex
-import time
-from typing import Any, Dict, List, Optional
-from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
-from typing import Iterable
 
-from core.atomic_io import atomic_write_json
-from core.constants import DATA_DIR
 from core.middleware import require_admin
+from core.external_db import ExternalDbError
+
+from extensions.ithaca import tiles as _tiles
+from extensions.ithaca import weather as _weather
+from extensions.ithaca.ai_tile_builder import propose_tile_config, TileProposalError
+from extensions.ithaca.tile_packaging import build_tile_package, install_tile_package, TilePackagingError
+from src.constants import TILE_IMPORT_MAX_BYTES
 
 logger = logging.getLogger(__name__)
-
-ITHACA_CONFIG_FILE = os.path.join(DATA_DIR, "ithaca.json")
 
 # Bearer-token callers need this scope (see routes/api_token_routes.py).
 # Cookie-session callers already passed AuthMiddleware, so they go through
 # untouched — same split the feeds routes use.
 ITHACA_READ_SCOPES = {"ithaca:read"}
-
-WEATHER_CACHE_TTL = 10 * 60   # OpenWeatherMap free tier: no need to re-poll faster
-DIGEST_CACHE_TTL = 5 * 60     # digest file changes weekly; keep tile loads instant
-FORECAST_SLOTS = 9            # 9 × 3h ≈ next 27 hours
-
-# Seed links for the projects tracked by the n8n workflow. data/ithaca.json
-# overrides/extends these — the file wins per-app, defaults fill the gaps.
-DEFAULT_APP_LINKS: Dict[str, Dict[str, str]] = {
-    "Radarr":       {"repo_url": "https://github.com/Radarr/Radarr", "ssh_host": "", "path": ""},
-    "Sonarr":       {"repo_url": "https://github.com/Sonarr/Sonarr", "ssh_host": "", "path": ""},
-    "Prowlarr":     {"repo_url": "https://github.com/Prowlarr/Prowlarr", "ssh_host": "", "path": ""},
-    "Transmission": {"repo_url": "https://github.com/transmission/transmission", "ssh_host": "", "path": ""},
-    "Jellyfin":     {"repo_url": "https://github.com/jellyfin/jellyfin", "ssh_host": "", "path": ""},
-    "Seerr":        {"repo_url": "https://github.com/seerr-team/seerr", "ssh_host": "", "path": ""},
-    "Jellyseerr/Seerr": {"repo_url": "https://github.com/seerr-team/seerr", "ssh_host": "", "path": ""},
-}
-
-_DIGEST_NAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}.*\.md$")
-_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
-_FRONTMATTER_FENCE_RE = re.compile(r"^-{3,}\s*$")
-
-# Secret scrubbing for digest bodies. /api/ithaca/digest hands every heading
-# section back to the client verbatim, and the digest is a human-edited note in
-# a vault that also holds the credentials wired into this automation — a pasted
-# `Bearer <obsidian token>` under "## Notes" was being served to every caller
-# holding ithaca:read. Patterns stay narrow so real release-note prose (which
-# says things like "fixes HTTP Basic Auth handling") is never mangled:
-REDACTED = "[redacted]"
-_BEARER_RE = re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._\-+/=]{16,}")
-_AUTH_HEADER_RE = re.compile(r"(?im)^(\s*authorization\s*:).*$")
-# 48+ hex chars is key-shaped and past a git SHA's 40, so commit hashes in
-# release notes survive.
-_LONG_HEX_RE = re.compile(r"\b[0-9a-fA-F]{48,}\b")
-
-# ─── Auth helpers ───────────────────────────────────────────────────────────
 
 
 def _require_read_access(request: Request) -> None:
@@ -115,565 +82,136 @@ def _reject_cross_site(request: Request) -> None:
         raise HTTPException(403, "Cross-site request rejected")
 
 
-# ─── Digest markdown parsing (pure functions — unit tested) ─────────────────
-
-
-def redact_secrets(text: str, known: Iterable[str] = ()) -> str:
-    """Blank credential-shaped content in digest markdown before it is served.
-
-    `known` holds values this deployment already knows are secrets (the
-    configured Obsidian token / OpenWeatherMap key) — exact-match replacement,
-    so those can never leak regardless of how they were written into the note.
-    The regex tier then catches credentials belonging to *other* systems that
-    happen to sit in the same note.
-    """
-    for secret in known:
-        secret = (secret or "").strip()
-        # Guard against a short/blank setting turning into a global mangling.
-        if len(secret) >= 8:
-            text = text.replace(secret, REDACTED)
-    text = _BEARER_RE.sub(lambda m: f"{m.group(1)} {REDACTED}", text)
-    text = _AUTH_HEADER_RE.sub(lambda m: f"{m.group(1)} {REDACTED}", text)
-    return _LONG_HEX_RE.sub(REDACTED, text)
-
-
-def strip_frontmatter(markdown: str) -> str:
-    """Drop a leading YAML frontmatter block, if present.
-
-    Digest notes start with an Obsidian property block (`---` / title, date,
-    tags… / `---`). Without this the whole block lands in the ""-keyed
-    preamble section and renders as raw YAML above the tiles.
-    """
-    lines = markdown.splitlines()
-    i = 0
-    while i < len(lines) and not lines[i].strip():
-        i += 1
-    if i >= len(lines) or not _FRONTMATTER_FENCE_RE.match(lines[i]):
-        return markdown
-    for j in range(i + 1, len(lines)):
-        if _FRONTMATTER_FENCE_RE.match(lines[j]):
-            return "\n".join(lines[j + 1:])
-    return markdown  # unterminated block — treat as ordinary content
-
-
-def parse_digest_sections(markdown: str) -> Dict[str, str]:
-    """Split a digest markdown document into {heading text: body markdown}.
-
-    Any heading level starts a new section (the n8n workflow patches under
-    `Weather` / `Software Updates`, but other automations may add more at any
-    level). Text before the first heading is keyed under "" when non-empty.
-    A repeated heading name keeps the LAST occurrence — a re-patched section
-    supersedes stale content above it.
-    """
-    markdown = strip_frontmatter(markdown)
-    sections: Dict[str, str] = {}
-    current = ""
-    buf: List[str] = []
-    for line in markdown.splitlines():
-        m = _HEADING_RE.match(line)
-        if m:
-            body = "\n".join(buf).strip()
-            if current or body:
-                sections[current] = body
-            current = m.group(2).strip()
-            buf = []
-        else:
-            buf.append(line)
-    body = "\n".join(buf).strip()
-    if current or body:
-        sections[current] = body
-    return sections
-
-
-def _clean_cell(cell: str) -> str:
-    cell = cell.strip()
-    if cell.startswith("**") and cell.endswith("**") and len(cell) > 4:
-        cell = cell[2:-2].strip()
-    return cell.replace("\\|", "|")
-
-
-_HEADER_KEY_MAP = {
-    "app": "app",
-    "hosted on": "hosted_on",
-    "currently deployed": "deployed",
-    "update?": "update",
-    "update": "update",
-    "version no.": "version",
-    "version": "version",
-    "desc": "desc",
-    "description": "desc",
-}
-
-
-def parse_updates_table(section_md: str) -> Dict[str, Any]:
-    """Parse the workflow's Software Updates markdown table.
-
-    Expected shape (produced by the workflow's "Code in JavaScript3" node):
-
-        | **App** | **Hosted On** | **Currently Deployed** | **Update?** | **Version No.** | **Desc** |
-        | --- | --- | ... |
-        | **Radarr** | latitude | v6.3.1 | Yes | v6.4.0 | ... |
-
-        <optional trailing note, e.g. "No Flatpak updates available.">
-
-    Returns {"rows": [...], "note": str}. Unknown extra columns are kept
-    under their slugified header name so a future automation change degrades
-    gracefully instead of dropping data.
-    """
-    rows: List[Dict[str, Any]] = []
-    notes: List[str] = []
-    headers: List[str] = []
-    for line in section_md.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if not stripped.startswith("|"):
-            notes.append(stripped)
-            continue
-        # Split on unescaped pipes only — the workflow escapes literal pipes
-        # inside desc cells as "\|" (see Code in JavaScript3's replace).
-        core = stripped[1:]
-        if core.endswith("|") and not core.endswith("\\|"):
-            core = core[:-1]
-        cells = [_clean_cell(c) for c in re.split(r"(?<!\\)\|", core)]
-        if not headers:
-            headers = [
-                _HEADER_KEY_MAP.get(c.lower(), re.sub(r"[^a-z0-9]+", "_", c.lower()).strip("_"))
-                for c in cells
-            ]
-            continue
-        if all(re.fullmatch(r":?-{3,}:?", c) for c in cells if c):
-            continue  # separator row
-        row: Dict[str, Any] = {}
-        for i, cell in enumerate(cells):
-            key = headers[i] if i < len(headers) else f"col_{i}"
-            row[key] = cell
-        if not any(v for v in row.values()):
-            continue
-        row["update_available"] = str(row.get("update", "")).strip().lower() == "yes"
-        rows.append(row)
-    return {"rows": rows, "note": " ".join(notes).strip()}
-
-
-# ─── Per-app link config ────────────────────────────────────────────────────
-
-
-def load_app_links() -> Dict[str, Dict[str, str]]:
-    """Merged per-app link map: data/ithaca.json entries over the defaults."""
-    merged = {name: dict(info) for name, info in DEFAULT_APP_LINKS.items()}
-    try:
-        if os.path.exists(ITHACA_CONFIG_FILE):
-            with open(ITHACA_CONFIG_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            apps = data.get("apps") if isinstance(data, dict) else None
-            if isinstance(apps, dict):
-                for name, info in apps.items():
-                    if not isinstance(info, dict):
-                        continue
-                    entry = merged.setdefault(str(name), {"repo_url": "", "ssh_host": "", "path": ""})
-                    for key in ("repo_url", "ssh_host", "path"):
-                        if key in info:
-                            entry[key] = str(info[key] or "")
-    except Exception as exc:
-        logger.warning("Failed to read %s: %s", ITHACA_CONFIG_FILE, exc)
-    return merged
-
-
-def _match_app_links(app_name: str, links: Dict[str, Dict[str, str]]) -> Optional[Dict[str, str]]:
-    """Exact match first, then case-insensitive — AI-generated titles vary in
-    case ("Jellyfin" vs "jellyfin") but are otherwise stable."""
-    if app_name in links:
-        return links[app_name]
-    lowered = app_name.lower()
-    for name, info in links.items():
-        if name.lower() == lowered:
-            return info
-    return None
-
-
-# ─── TTL caches (in-memory, per-process) ────────────────────────────────────
-
-_weather_cache: Dict[str, Any] = {"key": None, "expires": 0.0, "data": None}
-_digest_cache: Dict[str, Any] = {"key": None, "expires": 0.0, "data": None}
-_weather_lock = asyncio.Lock()
-_digest_lock = asyncio.Lock()
-
-
-def _setting_or_env(setting_key: str, env_var: str, default: str = "") -> str:
-    """Resolve a config value: a value saved in Settings > Integrations wins,
-    falling back to the env var, then `default`. Mirrors
-    services/search/providers.py's `_get_provider_key`/`_get_search_instance`
-    pattern used for the other UI-configurable API keys."""
-    try:
-        from src.settings import get_setting
-        val = (get_setting(setting_key) or "").strip()
-        if val:
-            return val
-    except Exception:
-        pass
-    return (os.getenv(env_var) or default).strip()
-
-
-def _weather_settings() -> Dict[str, str]:
-    return {
-        "api_key": _setting_or_env("openweather_api_key", "OPENWEATHER_API_KEY"),
-        "lat": _setting_or_env("openweather_lat", "OPENWEATHER_LAT"),
-        "lon": _setting_or_env("openweather_lon", "OPENWEATHER_LON"),
-        "units": _setting_or_env("openweather_units", "OPENWEATHER_UNITS", "metric"),
-    }
-
-
-def _obsidian_settings() -> Dict[str, str]:
-    return {
-        "vault_path": _setting_or_env("obsidian_vault_path", "OBSIDIAN_VAULT_PATH"),
-        "base": _setting_or_env("obsidian_api_url", "OBSIDIAN_API_URL").rstrip("/"),
-        "token": _setting_or_env("obsidian_api_token", "OBSIDIAN_API_TOKEN"),
-        "digest_dir": _setting_or_env("obsidian_digest_dir", "OBSIDIAN_DIGEST_DIR", "daily-digest").strip("/"),
-    }
-
-
-def digest_cache_key(cfg: Dict[str, str]) -> str:
-    """Cache identity of the configured digest source. Shared with
-    src/tools/ithaca.py so the agent tool and the tile hit the same entry."""
-    return f"{cfg.get('vault_path', '')}|{cfg.get('base', '')}|{cfg.get('digest_dir', '')}"
-
-
-async def _fetch_weather() -> Dict[str, Any]:
-    cfg = _weather_settings()
-    api_key = cfg["api_key"]
-    lat = cfg["lat"]
-    lon = cfg["lon"]
-    units = cfg["units"]
-    if not api_key:
-        raise HTTPException(503, "OPENWEATHER_API_KEY is not configured")
-    if not lat or not lon:
-        raise HTTPException(503, "OPENWEATHER_LAT / OPENWEATHER_LON are not configured")
-
-    params = {"lat": lat, "lon": lon, "units": units, "appid": api_key}
-    # Overridable for proxies/tests; production default is the real API.
-    base = (os.getenv("OPENWEATHER_API_BASE") or "https://api.openweathermap.org").rstrip("/")
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        current_resp, forecast_resp = await asyncio.gather(
-            client.get(f"{base}/data/2.5/weather", params=params),
-            client.get(f"{base}/data/2.5/forecast", params=params),
-        )
-    if current_resp.status_code == 401 or forecast_resp.status_code == 401:
-        raise HTTPException(502, "OpenWeatherMap rejected the API key")
-    if current_resp.status_code != 200 or forecast_resp.status_code != 200:
-        raise HTTPException(
-            502,
-            f"OpenWeatherMap error (weather={current_resp.status_code}, "
-            f"forecast={forecast_resp.status_code})",
-        )
-    cur = current_resp.json()
-    fc = forecast_resp.json()
-
-    def _cond(block: dict) -> Dict[str, Any]:
-        w = (block.get("weather") or [{}])[0]
-        return {"description": w.get("description", ""), "icon": w.get("icon", "")}
-
-    tz_offset = int(fc.get("city", {}).get("timezone", cur.get("timezone", 0)) or 0)
-    hourly = []
-    for entry in (fc.get("list") or [])[:FORECAST_SLOTS]:
-        hourly.append({
-            "dt": entry.get("dt"),
-            "local_hour": ((int(entry.get("dt", 0)) + tz_offset) // 3600) % 24,
-            "temp": entry.get("main", {}).get("temp"),
-            "feels_like": entry.get("main", {}).get("feels_like"),
-            "humidity": entry.get("main", {}).get("humidity"),
-            "pop": round(float(entry.get("pop") or 0) * 100),
-            **_cond(entry),
-        })
-    return {
-        "location": fc.get("city", {}).get("name") or cur.get("name") or "",
-        "units": units,
-        "current": {
-            "temp": cur.get("main", {}).get("temp"),
-            "feels_like": cur.get("main", {}).get("feels_like"),
-            "humidity": cur.get("main", {}).get("humidity"),
-            "wind_speed": cur.get("wind", {}).get("speed"),
-            **_cond(cur),
-        },
-        "hourly": hourly,
-        "fetched_at": int(time.time()),
-    }
-
-
-def _digest_dir_on_disk(cfg: Dict[str, str]) -> str:
-    """Resolve <vault_path>/<digest_dir>, refusing to escape the vault root.
-
-    digest_dir is admin-settable from the Settings UI, so containment is
-    checked rather than assumed — a stray "../.." must not turn the digest
-    reader into an arbitrary-file browser.
-    """
-    root = os.path.realpath(os.path.expanduser(cfg["vault_path"]))
-    target = os.path.realpath(os.path.join(root, cfg["digest_dir"]))
-    if target != root and not target.startswith(root + os.sep):
-        raise HTTPException(400, "OBSIDIAN_DIGEST_DIR resolves outside OBSIDIAN_VAULT_PATH")
-    return target
-
-
-def _read_digest_from_disk(cfg: Dict[str, str]) -> tuple:
-    """Newest digest file in the vault directory, as (filename, markdown).
-
-    Blocking I/O — call via asyncio.to_thread.
-    """
-    dir_path = _digest_dir_on_disk(cfg)
-    if not os.path.isdir(dir_path):
-        raise HTTPException(
-            503,
-            f"Vault digest directory not found: {dir_path} — check OBSIDIAN_VAULT_PATH "
-            "and OBSIDIAN_DIGEST_DIR (in Docker, the vault must be bind-mounted into "
-            "the container)",
-        )
-    try:
-        names = os.listdir(dir_path)
-    except OSError as exc:
-        raise HTTPException(502, f"Cannot read {dir_path}: {exc}")
-    digests = sorted(
-        (n for n in names if _DIGEST_NAME_RE.match(n)),
-        reverse=True,  # date-prefixed names → lexicographic == chronological
-    )
-    if not digests:
-        raise HTTPException(404, f"No digest files (YYYY-MM-DD*.md) found in {dir_path}")
-    filename = digests[0]
-    try:
-        with open(os.path.join(dir_path, filename), "r", encoding="utf-8") as f:
-            return filename, f.read()
-    except OSError as exc:
-        raise HTTPException(502, f"Cannot read {os.path.join(dir_path, filename)}: {exc}")
-
-
-async def _read_digest_from_api(cfg: Dict[str, str]) -> tuple:
-    """Newest digest file over the Obsidian Local REST API, as
-    (filename, markdown). Only works while the Obsidian desktop app is open."""
-    if not cfg["token"]:
-        raise HTTPException(503, "OBSIDIAN_API_TOKEN is not configured")
-    headers = {"Authorization": f"Bearer {cfg['token']}"}
-    dir_url = f"{cfg['base']}/vault/{quote(cfg['digest_dir'])}/"
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        listing = await client.get(dir_url, headers={**headers, "Accept": "application/json"})
-        if listing.status_code == 401:
-            raise HTTPException(502, "Obsidian API rejected the token")
-        if listing.status_code != 200:
-            raise HTTPException(502, f"Obsidian API listing error ({listing.status_code})")
-        try:
-            files = listing.json().get("files") or []
-        except ValueError:
-            raise HTTPException(502, "Obsidian API returned a non-JSON directory listing")
-        digests = sorted(
-            (f for f in files if isinstance(f, str) and _DIGEST_NAME_RE.match(f)),
-            reverse=True,  # date-prefixed names → lexicographic == chronological
-        )
-        if not digests:
-            raise HTTPException(404, f"No digest files found in '{cfg['digest_dir']}/'")
-        filename = digests[0]
-        doc = await client.get(
-            f"{cfg['base']}/vault/{quote(cfg['digest_dir'])}/{quote(filename)}",
-            headers={**headers, "Accept": "text/markdown"},
-        )
-        if doc.status_code != 200:
-            raise HTTPException(502, f"Obsidian API file error ({doc.status_code})")
-    return filename, doc.text
-
-
-async def _fetch_digest() -> Dict[str, Any]:
-    """Latest digest, parsed and link-enriched. Prefers the vault on disk;
-    falls back to the Local REST API when no vault path is configured."""
-    cfg = _obsidian_settings()
-    if cfg["vault_path"]:
-        filename, text = await asyncio.to_thread(_read_digest_from_disk, cfg)
-        source = "vault"
-    elif cfg["base"]:
-        filename, text = await _read_digest_from_api(cfg)
-        source = "api"
-    else:
-        raise HTTPException(
-            503,
-            "No digest source configured — set OBSIDIAN_VAULT_PATH to the vault "
-            "directory (recommended: reads the synced markdown straight off disk), "
-            "or OBSIDIAN_API_URL + OBSIDIAN_API_TOKEN to use the Obsidian Local REST "
-            "API, which only responds while the Obsidian desktop app is running",
-        )
-    return _build_digest(filename, text, source)
-
-
-def _build_digest(filename: str, text: str, source: str) -> Dict[str, Any]:
-    # Scrub before parsing so sections, table cells and the trailing note are
-    # all covered by one pass.
-    cfg = _obsidian_settings()
-    wcfg = _weather_settings()
-    clean = redact_secrets(text, (cfg.get("token", ""), wcfg.get("api_key", "")))
-    if clean != text:
-        logger.warning(
-            "Redacted credential-shaped content from digest %s — a secret is stored "
-            "in plaintext in that note; remove it and rotate the credential.",
-            filename,
-        )
-    sections = parse_digest_sections(clean)
-    updates_md = next(
-        (body for name, body in sections.items() if name.lower() == "software updates"), None
-    )
-    software_updates = parse_updates_table(updates_md) if updates_md is not None else None
-    if software_updates:
-        links = load_app_links()
-        for row in software_updates["rows"]:
-            info = _match_app_links(str(row.get("app", "")), links) or {}
-            # Table-provided values win — if the automation ever emits its own
-            # Repo URL / host columns, the config only fills the gaps.
-            row["repo_url"] = row.get("repo_url") or info.get("repo_url", "")
-            row["ssh_host"] = row.get("ssh_host") or info.get("ssh_host", "")
-            row["ssh_path"] = row.get("ssh_path") or info.get("path", "")
-    return {
-        "filename": filename,
-        "date": filename[:10] if _DIGEST_NAME_RE.match(filename) else "",
-        "source": source,
-        "sections": sections,
-        "software_updates": software_updates,
-        "fetched_at": int(time.time()),
-    }
-
-
-async def _cached(cache: Dict[str, Any], lock: asyncio.Lock, key: str, ttl: int,
-                  fetch, refresh: bool) -> Dict[str, Any]:
-    """Single-flight TTL cache: concurrent tile loads share one upstream call."""
-    now = time.monotonic()
-    if not refresh and cache["key"] == key and cache["expires"] > now and cache["data"]:
-        return cache["data"]
-    async with lock:
-        now = time.monotonic()
-        if not refresh and cache["key"] == key and cache["expires"] > now and cache["data"]:
-            return cache["data"]
-        data = await fetch()
-        cache.update({"key": key, "expires": now + ttl, "data": data})
-        return data
-
-
-# ─── Routes ─────────────────────────────────────────────────────────────────
-
-
-class AppLinkEntry(BaseModel):
-    repo_url: str = ""
-    ssh_host: str = ""
-    path: str = ""
-
-
-class IthacaConfigUpdate(BaseModel):
-    apps: Dict[str, AppLinkEntry]
-
-
-class SshOpenRequest(BaseModel):
-    app: str
-
-
 def setup() -> APIRouter:
     router = APIRouter(prefix="/api/ithaca", tags=["ithaca"])
 
     @router.get("/weather")
     async def get_weather(request: Request, refresh: bool = False):
         _require_read_access(request)
-        wcfg = _weather_settings()
-        key = "|".join((wcfg["lat"], wcfg["lon"], wcfg["units"]))
         try:
-            return await _cached(_weather_cache, _weather_lock, key,
-                                 WEATHER_CACHE_TTL, _fetch_weather, refresh)
+            return await _weather.get_weather(refresh)
         except HTTPException:
             raise
         except httpx.HTTPError as exc:
             raise HTTPException(502, f"OpenWeatherMap unreachable ({exc.__class__.__name__}): {exc}")
 
-    @router.get("/digest")
-    async def get_digest(request: Request, refresh: bool = False):
+    # ─── User-defined tiles ──────────────────────────────────────────────
+
+    @router.get("/tiles")
+    async def list_tiles(request: Request):
         _require_read_access(request)
-        cfg = _obsidian_settings()
-        try:
-            return await _cached(_digest_cache, _digest_lock, digest_cache_key(cfg),
-                                 DIGEST_CACHE_TTL, _fetch_digest, refresh)
-        except HTTPException:
-            raise
-        except httpx.HTTPError as exc:
-            raise HTTPException(
-                502,
-                f"Obsidian Local REST API unreachable at {cfg['base']} "
-                f"({exc.__class__.__name__}): {exc} — that API is served by the Obsidian "
-                "desktop app, so it only answers while Obsidian is open. Set "
-                "OBSIDIAN_VAULT_PATH to read the vault from disk instead.",
-            )
+        return {"tiles": _tiles.list_tile_configs()}
 
-    @router.get("/config")
-    async def get_config(request: Request):
+    @router.get("/tiles/{tile_id}/data")
+    async def get_tile_data(tile_id: str, request: Request, refresh: bool = False):
         _require_read_access(request)
-        return {"apps": load_app_links(), "config_file": ITHACA_CONFIG_FILE}
-
-    @router.put("/config")
-    async def put_config(data: IthacaConfigUpdate, request: Request):
-        require_admin(request)
-        _reject_cross_site(request)
-        atomic_write_json(
-            ITHACA_CONFIG_FILE,
-            {"apps": {name: entry.model_dump() for name, entry in data.apps.items()}},
-            indent=2,
-        )
-        # The digest cache embeds enriched link fields — drop it so the next
-        # tile load reflects the new mapping without waiting out the TTL.
-        _digest_cache.update({"key": None, "expires": 0.0, "data": None})
-        return {"ok": True, "apps": load_app_links()}
-
-    @router.post("/ssh/open")
-    async def ssh_open(body: SshOpenRequest, request: Request):
-        # SSH exec is remote code execution — admin-only, same bar as
-        # /api/shell/exec. Host+path come from the server-side config, never
-        # from the client payload.
-        require_admin(request)
-        _reject_cross_site(request)
-        links = load_app_links()
-        info = _match_app_links(body.app, links)
-        if not info:
-            raise HTTPException(404, f"No Ithaca config entry for app '{body.app}'")
-        host = (info.get("ssh_host") or "").strip()
-        if not host:
-            raise HTTPException(
-                400,
-                f"No ssh_host configured for '{body.app}' — set it in data/ithaca.json "
-                "or via PUT /api/ithaca/config",
-            )
-        path = (info.get("path") or "").strip()
-
-        from routes.shell_routes import _ssh_base_argv  # shared argv hardening
         try:
-            argv = _ssh_base_argv(host, None)
+            return await _tiles.run_tile(tile_id, force=refresh)
         except ValueError as exc:
-            raise HTTPException(400, str(exc))
-        # BatchMode: fail fast instead of hanging on a password prompt — the
-        # ssh targets are key-authed aliases (same assumption n8n makes).
-        argv[1:1] = ["-o", "BatchMode=yes"]
-        if path and path != "~":
-            remote_cmd = f"cd {shlex.quote(path)} && pwd && ls -la"
-        else:
-            remote_cmd = "cd && pwd && ls -la"
-        argv.append(remote_cmd)
+            raise HTTPException(404, str(exc))
+        except ExternalDbError as exc:
+            raise HTTPException(502, str(exc))
 
+    @router.post("/tiles")
+    async def save_tile(request: Request):
+        require_admin(request)
+        _reject_cross_site(request)
+        body = await request.json()
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *argv,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            return {"ok": True, "tile": _tiles.save_tile_config(body)}
+        except Exception as exc:
+            raise HTTPException(400, str(exc))
+
+    @router.delete("/tiles/{tile_id}")
+    async def remove_tile(tile_id: str, request: Request):
+        require_admin(request)
+        _reject_cross_site(request)
+        ok = _tiles.delete_tile_config(tile_id)
+        _tiles.delete_tile_layout(tile_id)  # layout entries have no meaning once the tile is gone
+        return {"ok": ok}
+
+    @router.post("/tiles/preview")
+    async def preview_tile(request: Request):
+        require_admin(request)
+        _reject_cross_site(request)
+        body = await request.json()
+        try:
+            return await _tiles.preview_tile(body)
+        except ExternalDbError as exc:
+            raise HTTPException(400, str(exc))
+        except Exception as exc:
+            raise HTTPException(400, str(exc))
+
+    @router.post("/tiles/ai-propose")
+    async def ai_propose_tile(request: Request):
+        # Single-shot LLM proposal (extensions/ithaca/ai_tile_builder.py) — a
+        # dedicated backend call, not the general agent tool loop (see that
+        # module's docstring for why). Admin-only: this can run arbitrary
+        # SELECTs against an external DB, same bar as saving a tile by hand.
+        require_admin(request)
+        _reject_cross_site(request)
+        body = await request.json()
+        tile_id = str(body.get("id") or "").strip()
+        connection_ref = str(body.get("connection_ref") or "").strip()
+        instruction = str(body.get("instruction") or "")
+        context_doc = str(body.get("context_doc") or "")
+        if not tile_id or not connection_ref:
+            raise HTTPException(400, "id and connection_ref are required")
+        from src.auth_helpers import effective_user
+        try:
+            return await propose_tile_config(
+                tile_id, connection_ref, instruction, context_doc,
+                owner=effective_user(request),
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
-        except FileNotFoundError:
-            raise HTTPException(500, "ssh binary not found on the server")
-        except asyncio.TimeoutError:
-            try:
-                proc.kill()
-            except Exception:
-                pass
-            raise HTTPException(504, f"ssh to '{host}' timed out")
-        out = stdout.decode("utf-8", "replace").strip()
-        err = stderr.decode("utf-8", "replace").strip()
-        if proc.returncode != 0:
-            return {"ok": False, "host": host, "path": path,
-                    "error": err or f"ssh exited with code {proc.returncode}"}
-        return {"ok": True, "host": host, "path": path, "output": out, "stderr": err}
+        except TileProposalError as exc:
+            raise HTTPException(400, str(exc))
+
+    # ─── Tile export/import packaging (extensions/ithaca/tile_packaging.py) ─
+
+    @router.get("/tiles/{tile_id}/package.json")
+    async def download_tile_package(tile_id: str, request: Request):
+        # A tile's SQL query and viz config are the same sensitivity as the
+        # tile itself (admin-only to create) — no credentials are ever in
+        # the package, but the query text may reference internal hostnames.
+        require_admin(request)
+        try:
+            return build_tile_package(tile_id)
+        except TilePackagingError as exc:
+            raise HTTPException(404, str(exc))
+
+    @router.post("/tiles/import")
+    async def import_tile_package(request: Request):
+        require_admin(request)
+        _reject_cross_site(request)
+        raw = await request.body()
+        if len(raw) > TILE_IMPORT_MAX_BYTES:
+            raise HTTPException(413, f"Import payload exceeds the {TILE_IMPORT_MAX_BYTES}-byte tile package limit")
+        try:
+            body = json.loads(raw)
+        except json.JSONDecodeError:
+            raise HTTPException(400, "Request body is not valid JSON")
+        package = body.get("package")
+        connection_binding = body.get("connection_binding")
+        if not isinstance(package, dict):
+            raise HTTPException(400, "package must be a JSON object")
+        try:
+            return {"ok": True, "tile": install_tile_package(package, connection_binding)}
+        except TilePackagingError as exc:
+            raise HTTPException(400, str(exc))
+
+    # ─── Grid layout (drag/resize) — separate from tile content configs so ──
+    # ─── it also covers the built-in Weather tile.                         ──
+
+    @router.get("/layout")
+    async def get_layout(request: Request):
+        _require_read_access(request)
+        return {"layout": _tiles.load_layout()}
+
+    @router.put("/layout/{tile_id}")
+    async def put_layout(tile_id: str, request: Request):
+        require_admin(request)
+        _reject_cross_site(request)
+        body = await request.json()
+        return {"ok": True, "layout": _tiles.save_tile_layout(tile_id, body)}
 
     return router

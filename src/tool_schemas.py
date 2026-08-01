@@ -1113,12 +1113,12 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
-            "name": "get_homelab_updates",
-            "description": "List pending software/app updates for the user's self-hosted homelab stack (e.g. Radarr, Sonarr, Prowlarr, Jellyfin). Reads the latest weekly digest markdown produced by the user's n8n automation and returns each app's current vs available version, whether an update is available, and a short changelog summary. Use for 'what needs updating', 'any updates for my apps', 'is X up to date'. (This mirrors the 'Ithaca hub' dashboard's Software Updates tile.)",
+            "name": "query_ithaca_tile",
+            "description": "List or run the user's custom Ithaca dashboard tiles — each backed by a live query against a database the user connected (e.g. a homelab automation's Postgres tracking app versions/hosts/update status). Call with no tile_id to list available tiles (id/title/notes); call again with a tile_id to run it and get its live data as text. Use for questions like 'what version of X is deployed', 'which apps are flagged for review', 'what host is Y running on', or any ask about data the user has built a tile for — call without tile_id first if you don't already know which tile covers it.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "refresh": {"type": "boolean", "description": "Bypass the cache and re-read the digest file now"}
+                    "tile_id": {"type": "string", "description": "The tile's id, from a prior no-argument call. Omit to list tiles instead of running one."}
                 },
                 "required": []
             }

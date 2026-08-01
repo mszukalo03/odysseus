@@ -729,6 +729,10 @@ app.include_router(setup_model_routes(model_discovery))
 from routes.copilot_routes import setup_copilot_routes
 app.include_router(setup_copilot_routes())
 
+# External (non-app-owned) Postgres connections — data sources for Ithaca tiles
+from routes.external_db_routes import setup_external_db_routes
+app.include_router(setup_external_db_routes())
+
 # ChatGPT Subscription device-flow login
 from routes.chatgpt_subscription_routes import setup_chatgpt_subscription_routes
 app.include_router(setup_chatgpt_subscription_routes())

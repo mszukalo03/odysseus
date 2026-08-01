@@ -1,7 +1,7 @@
 """Regression: the Ithaca hub's agent tools were registered at all ~8 points of
 the tool pipeline, yet the chat LLM never called them — asking "any software
 updates for today?" got "I don't have real-time data access" instead of a
-get_homelab_updates call.
+query_ithaca_tile call.
 
 Two independent gates were dropping the turn before the schema reached the model:
 
@@ -68,7 +68,7 @@ def test_own_location_weather_questions_get_ithaca_domain():
 def test_ithaca_domain_seeds_both_hub_tools():
     """The domain must seed the actual tools so they are offered even when
     semantic retrieval misses."""
-    assert _DOMAIN_TOOL_MAP["ithaca"] == {"get_home_weather", "get_homelab_updates"}
+    assert _DOMAIN_TOOL_MAP["ithaca"] == {"get_home_weather", "query_ithaca_tile"}
 
 
 def test_ithaca_domain_has_a_rule_pack():
@@ -76,8 +76,8 @@ def test_ithaca_domain_has_a_rule_pack():
     otherwise _domain_rules_for_tools raises KeyError when the tools are
     selected."""
     assert "ithaca" in _DOMAIN_RULES
-    rules = _domain_rules_for_tools({"get_homelab_updates"})
-    assert any("homelab update rules" in r for r in rules)
+    rules = _domain_rules_for_tools({"query_ithaca_tile"})
+    assert any("custom dashboard tile rules" in r for r in rules)
 
 
 def test_every_domain_tool_map_key_has_rules():
