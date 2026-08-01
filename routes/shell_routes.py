@@ -15,7 +15,7 @@ from collections import namedtuple
 from pathlib import Path
 from typing import Dict, Any
 from core.platform_compat import IS_APPLE_SILICON, which_tool
-from core.middleware import INTERNAL_TOOL_USER
+from core.middleware import INTERNAL_TOOL_USER, reject_cross_site as _reject_cross_site
 from src.host_docker_access import (
     HOST_DOCKER_ACCESS_HINT,
     host_docker_access_enabled as _host_docker_access_enabled,
@@ -67,12 +67,6 @@ def _require_admin(request: Request):
         raise HTTPException(403, "Admin only")
     if not auth_manager.is_admin(user):
         raise HTTPException(403, "Admin only")
-
-
-def _reject_cross_site(request: Request):
-    """Reject browser cross-site navigations to shell-touching endpoints."""
-    if request.headers.get("sec-fetch-site") == "cross-site":
-        raise HTTPException(403, "Cross-site request rejected")
 
 
 _SSH_PORT_RE = re.compile(r"^\d{1,5}$")

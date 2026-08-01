@@ -31,6 +31,7 @@ second line of defense, not a substitute for least-privilege credentials.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Any, Optional
@@ -40,14 +41,22 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from core.database import SessionLocal, ExternalDbConnection
+from core.ttl_cache import TTLCache
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_ROW_LIMIT = 500
 INTROSPECT_ROW_LIMIT = 5000
 STATEMENT_TIMEOUT_MS = 5000
+# Schema rarely changes and a tile-builder session often introspects the same
+# connection repeatedly (Generate, tweak, Generate again) — a short cache
+# avoids re-querying information_schema on every call without risking a
+# stale schema for long (see also invalidate_schema_cache, called on
+# connection update/delete since host/db could change under the same id).
+SCHEMA_CACHE_TTL = 60
 
 _engine_cache: dict[str, Engine] = {}
+_schema_cache = TTLCache()
 
 _WRITE_KEYWORDS = re.compile(
     r"(?i)\b(insert|update|delete|drop|alter|truncate|grant|revoke|create|"
@@ -166,10 +175,7 @@ def run_readonly_query(
         raise ExternalDbError(str(exc)) from exc
 
 
-def introspect_schema(conn_id: str) -> list[dict[str, Any]]:
-    """List tables + columns visible to this connection's role, via
-    information_schema — generic to any Postgres schema/table shape, used by
-    both a manual "pick a table" UI and the AI tile-proposal flow."""
+def _introspect_schema_sync(conn_id: str) -> list[dict[str, Any]]:
     result = run_readonly_query(
         conn_id,
         """
@@ -186,6 +192,24 @@ def introspect_schema(conn_id: str) -> list[dict[str, Any]]:
         entry = tables.setdefault(key, {"schema": schema, "table": table, "columns": []})
         entry["columns"].append({"name": column, "type": dtype})
     return list(tables.values())
+
+
+async def introspect_schema(conn_id: str) -> list[dict[str, Any]]:
+    """List tables + columns visible to this connection's role, via
+    information_schema — generic to any Postgres schema/table shape, used by
+    both a manual "pick a table" UI and the AI tile-proposal flow. TTL-cached
+    (see core/ttl_cache.py) since a tile-builder session often introspects
+    the same connection repeatedly."""
+    return await _schema_cache.get(
+        conn_id, SCHEMA_CACHE_TTL, lambda: asyncio.to_thread(_introspect_schema_sync, conn_id),
+    )
+
+
+def invalidate_schema_cache(conn_id: str) -> None:
+    """Drop a connection's cached schema — call after editing/deleting a
+    connection, since its host/database (and therefore schema) may differ
+    under the same id."""
+    _schema_cache.invalidate(conn_id)
 
 
 def test_connection(conn_id: str) -> dict[str, Any]:

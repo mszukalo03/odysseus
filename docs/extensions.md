@@ -8,6 +8,10 @@ packaged up so you can host your own and share them between instances.
 > Looking for the developer-facing manifest/API reference (how to *build* an
 > extension)? See [`extensions/README.md`](../extensions/README.md) in the repo
 > root. This page is about *using* the feature.
+>
+> Looking for how to use Ithaca specifically (connecting a database,
+> building/AI-generating tiles, arranging the dashboard)? See
+> [`ithaca.md`](ithaca.md).
 
 ## The short version
 

@@ -49,7 +49,7 @@ import logging
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 
-from core.middleware import require_admin
+from core.middleware import require_admin, reject_cross_site as _reject_cross_site
 from core.external_db import ExternalDbError
 
 from extensions.ithaca import tiles as _tiles
@@ -74,12 +74,6 @@ def _require_read_access(request: Request) -> None:
         scopes = set(getattr(request.state, "api_token_scopes", []) or [])
         if not scopes.intersection(ITHACA_READ_SCOPES):
             raise HTTPException(403, "API token missing required scope: ithaca:read")
-
-
-def _reject_cross_site(request: Request) -> None:
-    """Reject browser cross-site navigations to state-touching endpoints."""
-    if request.headers.get("sec-fetch-site") == "cross-site":
-        raise HTTPException(403, "Cross-site request rejected")
 
 
 def setup() -> APIRouter:

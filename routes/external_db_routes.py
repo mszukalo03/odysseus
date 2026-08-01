@@ -16,12 +16,12 @@ non-admin users, and passwords are never included in list/get responses.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from core.database import SessionLocal, ExternalDbConnection
-from core.middleware import require_admin
-from core.external_db import test_connection, introspect_schema, ExternalDbError
+from core.middleware import require_admin, reject_cross_site
+from core.external_db import test_connection, introspect_schema, invalidate_schema_cache, ExternalDbError
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,8 @@ def setup_external_db_routes() -> APIRouter:
             db.close()
 
     @router.post("")
-    async def create_db_connection(data: DbConnectionCreate):
+    async def create_db_connection(data: DbConnectionCreate, request: Request):
+        reject_cross_site(request)
         label = data.label.strip()
         if not label:
             return {"ok": False, "error": "label required"}
@@ -104,7 +105,8 @@ def setup_external_db_routes() -> APIRouter:
             db.close()
 
     @router.put("/{conn_id}")
-    async def update_db_connection(conn_id: str, data: DbConnectionUpdate):
+    async def update_db_connection(conn_id: str, data: DbConnectionUpdate, request: Request):
+        reject_cross_site(request)
         db = SessionLocal()
         try:
             row = db.get(ExternalDbConnection, conn_id)
@@ -119,12 +121,14 @@ def setup_external_db_routes() -> APIRouter:
             if data.password:
                 row.password = data.password
             db.commit()
+            invalidate_schema_cache(conn_id)  # host/db may have changed under this id
             return {"ok": True, "id": row.id}
         finally:
             db.close()
 
     @router.delete("/{conn_id}")
-    async def delete_db_connection(conn_id: str):
+    async def delete_db_connection(conn_id: str, request: Request):
+        reject_cross_site(request)
         db = SessionLocal()
         try:
             row = db.get(ExternalDbConnection, conn_id)
@@ -132,18 +136,20 @@ def setup_external_db_routes() -> APIRouter:
                 return {"ok": False, "error": "Connection not found"}
             db.delete(row)
             db.commit()
+            invalidate_schema_cache(conn_id)
             return {"ok": True}
         finally:
             db.close()
 
     @router.post("/{conn_id}/test")
-    async def test_db_connection(conn_id: str):
+    async def test_db_connection(conn_id: str, request: Request):
+        reject_cross_site(request)
         return test_connection(conn_id)
 
     @router.get("/{conn_id}/introspect")
     async def introspect_db_connection(conn_id: str):
         try:
-            return {"tables": introspect_schema(conn_id)}
+            return {"tables": await introspect_schema(conn_id)}
         except ExternalDbError as exc:
             raise HTTPException(400, str(exc))
 

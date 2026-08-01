@@ -22,11 +22,12 @@ from typing import Any, Dict
 import httpx
 from fastapi import HTTPException
 
+from core.ttl_cache import TTLCache
+
 WEATHER_CACHE_TTL = 10 * 60   # OpenWeatherMap free tier: no need to re-poll faster
 FORECAST_SLOTS = 9            # 9 × 3h ≈ next 27 hours
 
-_cache: Dict[str, Any] = {"key": None, "expires": 0.0, "data": None}
-_lock = asyncio.Lock()
+_cache = TTLCache()
 
 
 def _setting_or_env(setting_key: str, env_var: str, default: str = "") -> str:
@@ -115,17 +116,11 @@ async def _fetch_weather() -> Dict[str, Any]:
 
 
 async def get_weather(refresh: bool = False) -> Dict[str, Any]:
-    """Current conditions + hourly forecast, single-flight TTL-cached so
-    concurrent tile/tool calls share one upstream request."""
+    """Current conditions + hourly forecast, single-flight TTL-cached (see
+    core/ttl_cache.py) so concurrent tile/tool calls share one upstream
+    request."""
     cfg = weather_settings()
     key = "|".join((cfg["lat"], cfg["lon"], cfg["units"]))
-    now = time.monotonic()
-    if not refresh and _cache["key"] == key and _cache["expires"] > now and _cache["data"]:
-        return _cache["data"]
-    async with _lock:
-        now = time.monotonic()
-        if not refresh and _cache["key"] == key and _cache["expires"] > now and _cache["data"]:
-            return _cache["data"]
-        data = await _fetch_weather()
-        _cache.update({"key": key, "expires": now + WEATHER_CACHE_TTL, "data": data})
-        return data
+    if refresh:
+        _cache.invalidate(key)
+    return await _cache.get(key, WEATHER_CACHE_TTL, _fetch_weather)

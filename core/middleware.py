@@ -56,6 +56,14 @@ def require_admin(request: Request):
         raise HTTPException(403, "Admin only")
 
 
+def reject_cross_site(request: Request):
+    """Reject browser cross-site navigations to state-touching endpoints.
+    Shared by every route module with mutating admin endpoints (shell exec,
+    Ithaca tiles/connections, ...) — previously reimplemented per-module."""
+    if request.headers.get("sec-fetch-site") == "cross-site":
+        raise HTTPException(403, "Cross-site request rejected")
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add standard security headers to all responses."""
 

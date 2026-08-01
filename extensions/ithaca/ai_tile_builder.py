@@ -146,7 +146,7 @@ async def propose_tile_config(
     if not instruction.strip():
         raise TileProposalError("instruction is required")
     try:
-        tables = introspect_schema(connection_ref)
+        tables = await introspect_schema(connection_ref)
     except ExternalDbError as exc:
         raise TileProposalError(f"Could not introspect connection '{connection_ref}': {exc}") from exc
 

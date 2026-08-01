@@ -13,9 +13,9 @@ from src.tools.ithaca import do_get_home_weather, do_query_ithaca_tile
 
 @pytest.fixture(autouse=True)
 def _reset_weather_cache():
-    weather._cache.update({"key": None, "expires": 0.0, "data": None})
+    weather._cache.invalidate()
     yield
-    weather._cache.update({"key": None, "expires": 0.0, "data": None})
+    weather._cache.invalidate()
 
 
 FAKE_WEATHER = {

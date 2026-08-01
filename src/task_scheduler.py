@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, Tuple
 
 from core.auth import RESERVED_USERNAMES
+from core.ttl_cache import TTLCache
 from src.task_action_policy import (
     is_admin_only_task_action,
     owner_has_admin_task_privileges,
@@ -56,46 +57,11 @@ def compose_task_relevant_tools(rag_tools, assistant_always, disabled_tools):
 # external data (Miniflux unreads, MCP tool snapshots, etc.). This cache
 # deduplicates those fetches — in-flight requests for the same key await the
 # same underlying coroutine, and completed results are reused until TTL expiry.
-_shared_cache: Dict[Tuple, Tuple[float, Any]] = {}
-_shared_cache_pending: Dict[Tuple, asyncio.Future] = {}
-_shared_cache_lock = asyncio.Lock()
+_shared_ttl_cache = TTLCache()
 
 
 async def _cached(key: Tuple, ttl: float, fetch: Callable[[], Awaitable[Any]]) -> Any:
-    """Return a cached result for `key` if fresh, else call `fetch()` and store.
-
-    Concurrent callers for the same missing key share one `fetch()` call.
-    Exceptions propagate to every waiter and do not poison the cache.
-    """
-    now = time.monotonic()
-    async with _shared_cache_lock:
-        entry = _shared_cache.get(key)
-        if entry and entry[0] > now:
-            return entry[1]
-        fut = _shared_cache_pending.get(key)
-        if fut is not None:
-            pending = fut
-            owner = False
-        else:
-            loop = asyncio.get_running_loop()
-            fut = loop.create_future()
-            _shared_cache_pending[key] = fut
-            pending = fut
-            owner = True
-    if not owner:
-        return await pending
-    try:
-        val = await fetch()
-        async with _shared_cache_lock:
-            _shared_cache[key] = (time.monotonic() + ttl, val)
-            _shared_cache_pending.pop(key, None)
-        pending.set_result(val)
-        return val
-    except Exception as e:
-        async with _shared_cache_lock:
-            _shared_cache_pending.pop(key, None)
-        pending.set_exception(e)
-        raise
+    return await _shared_ttl_cache.get(key, ttl, fetch)
 
 
 def compute_next_run(schedule: str, scheduled_time: str,

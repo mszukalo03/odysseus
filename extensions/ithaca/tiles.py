@@ -1,15 +1,14 @@
 """
 extensions/ithaca/tiles.py
 
-CRUD + query-execution glue for user-defined Ithaca dashboard tiles. Kept
-separate from backend.py's weather/digest logic (already a large file) —
-this module owns everything that's generic to *any* tile config, regardless
-of what Postgres connection/table it points at.
+CRUD + query-execution glue for user-defined Ithaca dashboard tiles — kept
+separate from weather.py (the one built-in tile) so this module owns
+everything that's generic to *any* tile config, regardless of what Postgres
+connection/table it points at.
 
-Storage: one JSON file per tile under data/ithaca/tiles/<id>.json (same
-atomic_write_json pattern backend.py uses for data/ithaca.json) — no DB table
-needed at this scale, and it keeps a single tile trivially exportable
-(Phase 4 packaging just reads the file).
+Storage: one JSON file per tile under data/ithaca/tiles/<id>.json
+(atomic_write_json) — no DB table needed at this scale, and it keeps a
+single tile trivially exportable (tile_packaging.py just reads the file).
 """
 
 from __future__ import annotations
@@ -19,12 +18,11 @@ import glob
 import json
 import logging
 import os
-import time
-from typing import Any, Dict
 
 from core.atomic_io import atomic_write_json
 from core.constants import DATA_DIR
 from core.external_db import run_readonly_query, ExternalDbError
+from core.ttl_cache import TTLCache
 
 from extensions.ithaca.tile_schema import TileConfig
 
@@ -33,15 +31,14 @@ logger = logging.getLogger(__name__)
 TILES_DIR = os.path.join(DATA_DIR, "ithaca", "tiles")
 
 # Grid placement (col/row/w/h, in the dashboard's grid track units) is kept
-# separate from tile *content* configs — it applies to the built-in
-# Weather/Software Updates tiles too (ids "weather"/"updates"), which have
-# no config JSON of their own to attach a layout field to.
+# separate from tile *content* configs — it applies to the built-in Weather
+# tile too (id "weather"), which has no config JSON of its own to attach a
+# layout field to.
 LAYOUT_FILE = os.path.join(DATA_DIR, "ithaca", "layout.json")
 
-# Per-tile TTL cache: {tile_id: {"expires": float, "data": dict}}. Single-flight
-# via a per-tile lock, mirroring backend.py's _cached() for weather/digest.
-_tile_cache: Dict[str, Dict[str, Any]] = {}
-_tile_locks: Dict[str, asyncio.Lock] = {}
+# Per-tile TTL cache, single-flight (see core/ttl_cache.py) — each tile is
+# cached independently, keyed by its own id.
+_tile_cache = TTLCache()
 
 
 def _tile_path(tile_id: str) -> str:
@@ -73,7 +70,7 @@ def save_tile_config(data: dict) -> dict:
     """Validate against TileConfig and persist. Returns the normalized dict."""
     cfg = TileConfig.model_validate(data)
     atomic_write_json(_tile_path(cfg.id), cfg.model_dump(), indent=2)
-    _tile_cache.pop(cfg.id, None)
+    _tile_cache.invalidate(cfg.id)
     return cfg.model_dump()
 
 
@@ -82,7 +79,7 @@ def delete_tile_config(tile_id: str) -> bool:
     if not os.path.exists(path):
         return False
     os.remove(path)
-    _tile_cache.pop(tile_id, None)
+    _tile_cache.invalidate(tile_id)
     return True
 
 
@@ -155,27 +152,20 @@ def _run_tile_sync(cfg: TileConfig) -> dict:
 
 
 async def run_tile(tile_id: str, force: bool = False) -> dict:
-    """Resolve + run a saved tile config, TTL-cached per its own
-    refresh_interval_seconds. Raises ExternalDbError on query failure or
-    ValueError if the tile config doesn't exist."""
+    """Resolve + run a saved tile config, TTL-cached (see core/ttl_cache.py)
+    per its own refresh_interval_seconds. Raises ExternalDbError on query
+    failure or ValueError if the tile config doesn't exist."""
     data = get_tile_config(tile_id)
     if data is None:
         raise ValueError(f"No tile config with id '{tile_id}'")
     cfg = TileConfig.model_validate(data)
 
-    lock = _tile_locks.setdefault(tile_id, asyncio.Lock())
-    now = time.monotonic()
-    cached = _tile_cache.get(tile_id)
-    if not force and cached and cached["expires"] > now:
-        return cached["data"]
-    async with lock:
-        now = time.monotonic()
-        cached = _tile_cache.get(tile_id)
-        if not force and cached and cached["expires"] > now:
-            return cached["data"]
-        shaped = await asyncio.to_thread(_run_tile_sync, cfg)
-        _tile_cache[tile_id] = {"expires": now + cfg.refresh_interval_seconds, "data": shaped}
-        return shaped
+    if force:
+        _tile_cache.invalidate(tile_id)
+    return await _tile_cache.get(
+        tile_id, cfg.refresh_interval_seconds,
+        lambda: asyncio.to_thread(_run_tile_sync, cfg),
+    )
 
 
 async def preview_tile(data: dict) -> dict:

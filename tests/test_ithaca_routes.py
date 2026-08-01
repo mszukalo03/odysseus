@@ -118,7 +118,7 @@ async def test_weather_route_reports_real_network_error(monkeypatch):
 
 
 async def test_get_weather_caches_and_refresh_bypasses(monkeypatch):
-    weather._cache.update({"key": None, "expires": 0.0, "data": None})
+    weather._cache.invalidate()
     import src.settings as settings_mod
     monkeypatch.setattr(settings_mod, "get_setting", lambda key, default=None: {
         "openweather_lat": "1.1", "openweather_lon": "2.2",
@@ -137,4 +137,4 @@ async def test_get_weather_caches_and_refresh_bypasses(monkeypatch):
 
     await weather.get_weather(refresh=True)
     assert calls["n"] == 2  # refresh bypassed the cache
-    weather._cache.update({"key": None, "expires": 0.0, "data": None})
+    weather._cache.invalidate()
