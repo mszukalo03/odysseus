@@ -42775,6 +42775,26 @@ body.neon-glow #sidebar {
 .ithaca-tile-stat { font-size: 2rem; font-weight: 600; padding: 8px 2px; }
 .ithaca-tile-canvas { max-width: 100%; max-height: 100%; }
 
+.ithaca-tile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ithaca-tile-action-btn {
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent-primary, #6ca0f6) 12%, transparent);
+  color: inherit;
+  cursor: pointer;
+}
+.ithaca-tile-action-btn:hover { background: color-mix(in srgb, var(--accent-primary, #6ca0f6) 22%, transparent); }
+.ithaca-tile-action-btn:disabled { opacity: 0.6; cursor: default; }
+
 .ithaca-tilebuilder-modal { width: min(560px, 92vw); }
 .ithaca-tilebuilder-modal .ithaca-tilebuilder-body { padding: 10px 12px; overflow-y: auto; }
 .ithaca-tilebuilder-modal textarea.settings-input { resize: vertical; font-family: inherit; }

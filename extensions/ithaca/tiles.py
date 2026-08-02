@@ -173,3 +173,23 @@ async def preview_tile(data: dict) -> dict:
     persisted, not cached."""
     cfg = TileConfig.model_validate(data)
     return await asyncio.to_thread(_run_tile_sync, cfg)
+
+
+async def run_tile_action(tile_id: str, action_id: str) -> dict:
+    """Fire one of a saved tile's action buttons (core/webhook_action.py).
+    Never cached — an action button click is a one-shot side effect, not a
+    data fetch. Raises ValueError if the tile or action doesn't exist."""
+    from core.webhook_action import run_webhook_action
+
+    data = get_tile_config(tile_id)
+    if data is None:
+        raise ValueError(f"No tile config with id '{tile_id}'")
+    cfg = TileConfig.model_validate(data)
+
+    action = next((a for a in cfg.actions if a.id == action_id), None)
+    if action is None:
+        raise ValueError(f"Tile '{tile_id}' has no action '{action_id}'")
+
+    return await run_webhook_action(
+        action.endpoint_ref, method_override=action.method, path=action.path, body=action.body,
+    )

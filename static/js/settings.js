@@ -2454,6 +2454,7 @@ function initAll() {
   initIntegrations();
   initIthacaSettings();
   initDbConnectionsSettings();
+  initWebhookTargetsSettings();
   initEmailSettings();
   initEmailAccountsSettings();
   initReminderSettings();
@@ -3079,6 +3080,127 @@ async function initDbConnectionsSettings() {
       };
       try {
         const url = isEdit ? `/api/db-connections/${c.id}` : '/api/db-connections';
+        const r = await fetch(url, {
+          method: isEdit ? 'PUT' : 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json().catch(() => ({ ok: false }));
+        if (!d.ok) { msg.textContent = d.error || 'Save failed'; msg.style.color = 'var(--red)'; return; }
+        formEl.style.display = 'none';
+        formEl.innerHTML = '';
+        renderList();
+      } catch (e) {
+        msg.textContent = 'Save failed: ' + e.message;
+        msg.style.color = 'var(--red)';
+      }
+    });
+  }
+
+  addBtn.addEventListener('click', () => showForm(null));
+  renderList();
+}
+
+/* ── Webhook endpoints (Ithaca tile action buttons) ──
+   Mirrors initDbConnectionsSettings()'s list+form pattern. */
+async function initWebhookTargetsSettings() {
+  const listEl = el('set-webhook-list');
+  const formEl = el('set-webhook-form');
+  const addBtn = el('set-webhook-add-btn');
+  if (!listEl || !formEl || !addBtn) return;
+
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  async function fetchTargets() {
+    const r = await fetch('/api/webhook-targets', { credentials: 'same-origin' });
+    if (!r.ok) return [];
+    const d = await r.json();
+    return d.targets || [];
+  }
+
+  function renderRow(t) {
+    return `<div class="whtarget-row" data-target-id="${esc(t.id)}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;">${esc(t.label)}</div>
+        <div style="font-size:11px;opacity:0.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.method)} ${esc(t.url)}</div>
+      </div>
+      <span class="whtarget-test-dot" title="Check endpoint" style="width:8px;height:8px;border-radius:50%;background:var(--border);cursor:pointer;flex-shrink:0;"></span>
+      <button class="admin-btn-sm whtarget-edit-btn" style="font-size:10px">Edit</button>
+      <button class="admin-btn-sm whtarget-del-btn" style="font-size:10px;opacity:0.6">Delete</button>
+    </div>`;
+  }
+
+  async function renderList() {
+    const targets = await fetchTargets();
+    if (!targets.length) {
+      listEl.innerHTML = '<div style="padding:12px;opacity:0.5;font-size:12px;text-align:center">No webhook endpoints configured</div>';
+      return;
+    }
+    listEl.innerHTML = targets.map(renderRow).join('');
+    listEl.querySelectorAll('.whtarget-row').forEach(row => {
+      const id = row.dataset.targetId;
+      row.querySelector('.whtarget-test-dot')?.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const dot = e.currentTarget;
+        dot.style.background = 'var(--border)';
+        const r = await fetch(`/api/webhook-targets/${id}/test`, { method: 'POST', credentials: 'same-origin' });
+        const d = await r.json().catch(() => ({ ok: false }));
+        dot.style.background = d.ok ? 'var(--green, #50fa7b)' : 'var(--red)';
+        dot.title = d.ok ? 'Configured' : (d.error || 'Not found');
+      });
+      row.querySelector('.whtarget-edit-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showForm(targets.find(t => t.id === id));
+      });
+      row.querySelector('.whtarget-del-btn')?.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const label = targets.find(t => t.id === id)?.label;
+        if (!await window.styledConfirm(`Delete webhook endpoint "${label}"? Any tile action buttons using it will stop working.`, { confirmText: 'Delete', danger: true })) return;
+        await fetch(`/api/webhook-targets/${id}`, { method: 'DELETE', credentials: 'same-origin' });
+        renderList();
+      });
+    });
+  }
+
+  function showForm(existing) {
+    const t = existing || {};
+    const isEdit = !!existing;
+    formEl.style.display = '';
+    formEl.innerHTML = `
+      <h3 style="font-size:12px;margin:0 0 8px">${isEdit ? 'Edit Endpoint' : 'New Endpoint'}</h3>
+      <div class="settings-col">
+        <div class="settings-row"><label class="settings-label">Label</label><input id="whf-label" class="settings-input" placeholder="roadmap_reprocess" value="${esc(t.label || '')}"></div>
+        <div class="settings-row"><label class="settings-label">URL</label><input id="whf-url" class="settings-input" placeholder="https://n8n.example.com/webhook/..." value="${esc(t.url || '')}"></div>
+        <div class="settings-row"><label class="settings-label">Method</label><select id="whf-method" class="settings-select" style="width:120px;">
+          <option value="POST">POST</option><option value="GET">GET</option><option value="PUT">PUT</option><option value="PATCH">PATCH</option>
+        </select></div>
+        <div class="settings-row"><label class="settings-label">Auth</label><select id="whf-auth-scheme" class="settings-select" style="width:160px;">
+          <option value="none">None</option><option value="bearer">Bearer token</option><option value="basic">Basic (user:pass)</option>
+        </select></div>
+        <div class="settings-row"><label class="settings-label">Token</label><input id="whf-auth-token" class="settings-input" type="password" placeholder="${isEdit && t.has_auth_token ? '(unchanged)' : ''}"></div>
+        <div class="settings-row"><label class="settings-label">Timeout (s)</label><input id="whf-timeout" class="settings-input" type="number" value="${esc(t.timeout_seconds || 15)}" style="max-width:100px"></div>
+        <div class="settings-row" style="margin-top:10px;align-items:center;">
+          <button class="admin-btn-add" id="whf-save">${isEdit ? 'Save' : 'Create'}</button>
+          <span id="whf-msg" style="font-size:11px;flex:1;margin-left:8px;"></span>
+          <button class="admin-btn-add" id="whf-cancel" style="opacity:0.7;margin-left:auto;">Cancel</button>
+        </div>
+      </div>`;
+    el('whf-method').value = t.method || 'POST';
+    el('whf-auth-scheme').value = t.auth_scheme || 'none';
+    el('whf-cancel').addEventListener('click', () => { formEl.style.display = 'none'; formEl.innerHTML = ''; });
+    el('whf-save').addEventListener('click', async () => {
+      const msg = el('whf-msg');
+      const body = {
+        label: el('whf-label').value.trim(),
+        url: el('whf-url').value.trim(),
+        method: el('whf-method').value,
+        auth_scheme: el('whf-auth-scheme').value,
+        auth_token: el('whf-auth-token').value,
+        timeout_seconds: parseInt(el('whf-timeout').value, 10) || 15,
+      };
+      try {
+        const url = isEdit ? `/api/webhook-targets/${t.id}` : '/api/webhook-targets';
         const r = await fetch(url, {
           method: isEdit ? 'PUT' : 'POST',
           credentials: 'same-origin',

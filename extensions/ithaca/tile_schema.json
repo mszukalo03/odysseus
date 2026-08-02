@@ -38,6 +38,23 @@
         "value_field": { "type": ["string", "null"] }
       }
     },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "endpoint_ref"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9_-]+$" },
+          "label": { "type": "string" },
+          "endpoint_ref": { "type": "string" },
+          "method": { "type": ["string", "null"] },
+          "path": { "type": ["string", "null"] },
+          "body": { "type": ["object", "null"] },
+          "confirm": { "type": "boolean" },
+          "confirm_message": { "type": ["string", "null"] }
+        }
+      }
+    },
     "refresh_interval_seconds": { "type": "integer", "minimum": 60 },
     "created_by": { "type": "string" },
     "notes": { "type": "string" }

@@ -15,6 +15,17 @@ function _slugify(title) {
 }
 
 let _draft = null; // current proposed/edited TileConfig, or null before Generate
+let _draftActions = []; // TileAction list being built for the current draft
+
+async function _fetchWebhookTargets() {
+  try {
+    const r = await fetch('/api/webhook-targets', { credentials: 'same-origin' });
+    const d = await r.json();
+    return d.targets || [];
+  } catch (err) {
+    return [];
+  }
+}
 
 export function closeTileBuilder() {
   document.getElementById('ithaca-tilebuilder-overlay')?.remove();
@@ -23,6 +34,7 @@ export function closeTileBuilder() {
 export async function openTileBuilder(onSaved) {
   closeTileBuilder();
   _draft = null;
+  _draftActions = [];
 
   const overlay = document.createElement('div');
   overlay.className = 'ithaca-modal-overlay'; // reuse the existing modal-overlay look
@@ -67,6 +79,17 @@ export async function openTileBuilder(onSaved) {
             <span id="itb-save-msg" style="font-size:11px;flex:1;margin-left:8px;"></span>
           </div>
           <div id="itb-preview-body" class="ithaca-tile-body" style="border:1px solid var(--border);border-radius:6px;min-height:60px;"></div>
+
+          <hr style="border-color:var(--border);margin:10px 0">
+          <div style="font-size:12px;font-weight:600;margin-bottom:6px;">Action buttons (optional)</div>
+          <div id="itb-actions-list"></div>
+          <div class="settings-row"><label class="settings-label">Button label</label>
+            <input id="itb-action-label" class="settings-input" placeholder="e.g. Reprocess Roadmap"></div>
+          <div class="settings-row"><label class="settings-label">Webhook endpoint</label>
+            <select id="itb-action-endpoint" class="settings-select"></select></div>
+          <div class="settings-row">
+            <button class="admin-btn-add" id="itb-action-add">+ Add Action</button>
+          </div>
         </div>
       </div>
     </div>`;
@@ -85,6 +108,48 @@ export async function openTileBuilder(onSaved) {
   } catch (err) {
     connSel.innerHTML = '<option value="">Failed to load connections</option>';
   }
+
+  const endpointSel = document.getElementById('itb-action-endpoint');
+  const webhookTargets = await _fetchWebhookTargets();
+  endpointSel.innerHTML = webhookTargets.length
+    ? webhookTargets.map((t) => `<option value="${_esc(t.id)}">${_esc(t.label)}</option>`).join('')
+    : '<option value="">No webhook endpoints configured — add one in Settings first</option>';
+
+  function _renderActionsList() {
+    const listEl = document.getElementById('itb-actions-list');
+    if (!_draftActions.length) {
+      listEl.innerHTML = '';
+      return;
+    }
+    listEl.innerHTML = _draftActions.map((a, i) => `
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;">
+        <span style="flex:1;">${_esc(a.label)}</span>
+        <button type="button" class="doc-action-icon-btn itb-action-remove" data-idx="${i}" title="Remove">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>`).join('');
+    listEl.querySelectorAll('.itb-action-remove').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        _draftActions.splice(parseInt(btn.dataset.idx, 10), 1);
+        _renderActionsList();
+      });
+    });
+  }
+
+  document.getElementById('itb-action-add').addEventListener('click', () => {
+    const label = document.getElementById('itb-action-label').value.trim();
+    const endpointRef = endpointSel.value;
+    if (!label) return;
+    if (!endpointRef) return;
+    _draftActions.push({
+      id: _slugify(label),
+      label,
+      endpoint_ref: endpointRef,
+      confirm: true,
+    });
+    document.getElementById('itb-action-label').value = '';
+    _renderActionsList();
+  });
 
   document.getElementById('itb-generate').addEventListener('click', async () => {
     const msg = document.getElementById('itb-msg');
@@ -132,6 +197,7 @@ export async function openTileBuilder(onSaved) {
       title: document.getElementById('itb-d-title').value.trim() || _draft.title,
       data_source: { ..._draft.data_source, query: document.getElementById('itb-d-query').value },
       viz: { ..._draft.viz, type: document.getElementById('itb-d-viztype').value },
+      actions: _draftActions,
     };
   }
 
@@ -233,6 +299,7 @@ export async function openImportTileModal(onImported) {
         <div id="iti-hint" style="font-size:11px;opacity:0.7;margin:-4px 0 4px;"></div>
         <div class="settings-row"><label class="settings-label">Bind to connection</label>
           <select id="iti-connection" class="settings-select"></select></div>
+        <div id="iti-action-bindings"></div>
         <div class="settings-row">
           <button class="admin-btn-add" id="iti-import" style="background:var(--red);border-color:var(--red);color:#fff;">Import</button>
           <span id="iti-msg" style="font-size:11px;flex:1;margin-left:8px;"></span>
@@ -255,16 +322,29 @@ export async function openImportTileModal(onImported) {
     connSel.innerHTML = '<option value="">Failed to load connections</option>';
   }
 
+  const webhookTargets = await _fetchWebhookTargets();
+
   document.getElementById('iti-package').addEventListener('input', (e) => {
     const hintEl = document.getElementById('iti-hint');
+    const bindingsEl = document.getElementById('iti-action-bindings');
     try {
       const pkg = JSON.parse(e.target.value);
       const hint = pkg.connection_hint;
       hintEl.textContent = hint
         ? `This tile expects a ${_esc(hint.kind || 'postgres')} connection like "${_esc(hint.label || '')}"${hint.database ? ` (db: ${_esc(hint.database)})` : ''}.`
         : '';
+      const actionHints = pkg.action_hints || [];
+      bindingsEl.innerHTML = actionHints.map((h) => `
+        <div class="settings-row"><label class="settings-label">${_esc(h.label)} action</label>
+          <select class="settings-select iti-action-binding" data-action-id="${_esc(h.action_id)}">
+            ${webhookTargets.length
+              ? webhookTargets.map((t) => `<option value="${_esc(t.id)}">${_esc(t.label)}</option>`).join('')
+              : '<option value="">No webhook endpoints configured — add one in Settings first</option>'}
+          </select>
+        </div>`).join('');
     } catch (_) {
       hintEl.textContent = '';
+      bindingsEl.innerHTML = '';
     }
   });
 
@@ -284,12 +364,16 @@ export async function openImportTileModal(onImported) {
       msg.style.color = 'var(--red)';
       return;
     }
+    const actionBindings = {};
+    document.querySelectorAll('.iti-action-binding').forEach((sel) => {
+      actionBindings[sel.dataset.actionId] = sel.value;
+    });
     msg.textContent = 'Importing…';
     msg.style.color = '';
     try {
       const resp = await _api('/tiles/import', {
         method: 'POST',
-        body: JSON.stringify({ package: pkg, connection_binding: connectionBinding }),
+        body: JSON.stringify({ package: pkg, connection_binding: connectionBinding, action_bindings: actionBindings }),
       });
       const data = await resp.json();
       if (!resp.ok || !data.ok) {

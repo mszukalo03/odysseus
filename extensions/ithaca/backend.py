@@ -18,6 +18,9 @@ Endpoints:
 * GET  /api/ithaca/tiles/{id}/data    — run a saved tile's query (TTL-cached,
   ?refresh=1 bypass) against its configured external Postgres connection
   (core/external_db.py) and return data shaped for its viz type.
+* POST /api/ithaca/tiles/{id}/actions/{action_id}/run — fire one of a tile's
+  action buttons (core/webhook_action.py) — same access tier as viewing the
+  tile's data, since it's a pre-wired, admin-approved action.
 * POST/DELETE /api/ithaca/tiles[/{id}] — admin-only: create/update/delete a
   tile config.
 * POST /api/ithaca/tiles/preview      — admin-only: run an unsaved draft
@@ -29,7 +32,8 @@ Endpoints:
   tile package — the config plus a non-secret connection hint, never
   credentials.
 * POST /api/ithaca/tiles/import       — admin-only: import a package,
-  requiring an explicit local connection_binding (never auto-matched).
+  requiring an explicit local connection_binding and, if the tile has
+  action buttons, an action_bindings map (never auto-matched).
 * GET  /api/ithaca/layout              — grid placement (col/row/w/h) for
   every tile, built-in or user-defined.
 * PUT  /api/ithaca/layout/{id}         — admin-only: persist a drag/resize.
@@ -51,6 +55,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from core.middleware import require_admin, reject_cross_site as _reject_cross_site
 from core.external_db import ExternalDbError
+from core.webhook_action import WebhookActionError
 
 from extensions.ithaca import tiles as _tiles
 from extensions.ithaca import weather as _weather
@@ -105,6 +110,21 @@ def setup() -> APIRouter:
             raise HTTPException(404, str(exc))
         except ExternalDbError as exc:
             raise HTTPException(502, str(exc))
+
+    @router.post("/tiles/{tile_id}/actions/{action_id}/run")
+    async def run_tile_action(tile_id: str, action_id: str, request: Request):
+        # Same access tier as viewing the tile's data (not admin) — an action
+        # button is a pre-wired, admin-approved side effect the tile's own
+        # viewers are meant to click; creating/editing the underlying webhook
+        # target is what's admin-gated (routes/webhook_action_routes.py).
+        _require_read_access(request)
+        _reject_cross_site(request)
+        try:
+            return await _tiles.run_tile_action(tile_id, action_id)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc))
+        except WebhookActionError as exc:
+            raise HTTPException(400, str(exc))
 
     @router.post("/tiles")
     async def save_tile(request: Request):
@@ -186,10 +206,11 @@ def setup() -> APIRouter:
             raise HTTPException(400, "Request body is not valid JSON")
         package = body.get("package")
         connection_binding = body.get("connection_binding")
+        action_bindings = body.get("action_bindings")
         if not isinstance(package, dict):
             raise HTTPException(400, "package must be a JSON object")
         try:
-            return {"ok": True, "tile": install_tile_package(package, connection_binding)}
+            return {"ok": True, "tile": install_tile_package(package, connection_binding, action_bindings)}
         except TilePackagingError as exc:
             raise HTTPException(400, str(exc))
 

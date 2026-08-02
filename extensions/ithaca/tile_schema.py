@@ -51,6 +51,33 @@ class TileViz(BaseModel):
     value_field: Optional[str] = None
 
 
+class TileAction(BaseModel):
+    """A button on a tile that hits an admin-configured webhook
+    (core/webhook_action.py, WebhookTarget in core/database.py) — e.g. "kick
+    off a reprocessing workflow" next to the data that workflow updates.
+
+    `endpoint_ref` is a LOCAL WebhookTarget id, resolved at click time —
+    exactly like TileDataSource.connection_ref, this is what lets the tile
+    config (and its action) travel in an exported package without carrying
+    the target's URL/auth token. See tile_packaging.py.
+    """
+    id: str
+    label: str
+    endpoint_ref: str
+    method: Optional[str] = None      # override the target's own default method
+    path: Optional[str] = None        # appended to the target's base URL
+    body: Optional[dict] = None       # static JSON payload — no secrets belong here
+    confirm: bool = True
+    confirm_message: Optional[str] = None
+
+    @field_validator("id")
+    @classmethod
+    def _valid_action_id(cls, v: str) -> str:
+        if not _ID_RE.match(v or ""):
+            raise ValueError("action id must match [a-z0-9_-]+")
+        return v
+
+
 class TileConfig(BaseModel):
     schema_version: int = SCHEMA_VERSION
     id: str
@@ -58,6 +85,7 @@ class TileConfig(BaseModel):
     slot: Optional[str] = None
     data_source: TileDataSource
     viz: TileViz = Field(default_factory=TileViz)
+    actions: list[TileAction] = Field(default_factory=list)
     refresh_interval_seconds: int = 900
     created_by: str = "manual"
     notes: str = ""

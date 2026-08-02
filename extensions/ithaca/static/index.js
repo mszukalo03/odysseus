@@ -201,6 +201,38 @@ async function _applyBuiltinTileLayout(screen) {
   if (window._isAdmin) makeTileLayoutable(tileEl, grid, (placement) => _persistLayout('weather', placement));
 }
 
+// ─── Tile action buttons (extensions/ithaca/tile_schema.py's TileAction) ──
+
+async function _runTileAction(cfg, action, btn) {
+  if (action.confirm !== false) {
+    const message = action.confirm_message || `Run "${action.label}" on "${cfg.title}"?`;
+    const confirmed = window.styledConfirm
+      ? await window.styledConfirm(message, { confirmText: 'Run' })
+      : window.confirm(message);
+    if (!confirmed) return;
+  }
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  try {
+    const resp = await api(`/tiles/${encodeURIComponent(cfg.id)}/actions/${encodeURIComponent(action.id)}/run`, {
+      method: 'POST',
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      btn.textContent = 'Failed';
+      console.error(`Ithaca tile action '${action.id}' failed:`, data.detail || data.error || resp.status);
+    } else {
+      btn.textContent = 'Done';
+    }
+  } catch (err) {
+    btn.textContent = 'Failed';
+    console.error(`Ithaca tile action '${action.id}' failed:`, err);
+  } finally {
+    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
+  }
+}
+
 // ─── User-defined tiles (config-driven, auto-flow past Weather) ───────────
 
 async function _loadUserTiles() {
@@ -231,9 +263,17 @@ async function _loadUserTiles() {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
           </button>` : ''}
         </div>
-        <div class="ithaca-tile-body"><div class="ithaca-tile-hint">Loading…</div></div>`;
+        <div class="ithaca-tile-body"><div class="ithaca-tile-hint">Loading…</div></div>
+        ${(cfg.actions || []).length ? `<div class="ithaca-tile-actions">${(cfg.actions || []).map((a) => `
+          <button class="ithaca-tile-action-btn" data-action-id="${esc(a.id)}">${esc(a.label)}</button>
+        `).join('')}</div>` : ''}`;
       grid.appendChild(tile);
       tile.querySelector('.ithaca-tile-download')?.addEventListener('click', () => downloadTilePackage(cfg.id, cfg.title));
+      tile.querySelectorAll('.ithaca-tile-action-btn').forEach((btn) => {
+        const action = (cfg.actions || []).find((a) => a.id === btn.dataset.actionId);
+        if (!action) return;
+        btn.addEventListener('click', () => _runTileAction(cfg, action, btn));
+      });
       tile.querySelector('.ithaca-tile-delete')?.addEventListener('click', async () => {
         const confirmed = window.styledConfirm
           ? await window.styledConfirm(`Delete tile "${cfg.title}"?`, { confirmText: 'Delete', danger: true })

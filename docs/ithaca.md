@@ -112,6 +112,37 @@ only a hint about what kind of connection it expects (e.g. "a postgres
 connection like `homelab_main_db`"). You always explicitly choose the local
 connection; it's never auto-matched by name.
 
+## Action buttons
+
+A tile isn't limited to displaying data — it can also carry one or more
+buttons that hit an HTTP endpoint you configure, e.g. an n8n webhook that
+kicks off a reprocessing job for the data the tile shows.
+
+**1. Add a webhook endpoint** — Settings → Integrations → **Webhook
+Endpoints**: give it a label, the URL, the HTTP method (GET/POST/PUT/PATCH),
+and optional auth (none, a bearer token, or basic `user:pass`). The URL and
+token stay on this instance; a tile only ever references the endpoint by
+name.
+
+**2. Add an action to a tile** — in the tile builder, under "Action buttons",
+pick a label and an endpoint, then **+ Add Action**. Add as many as you like
+before saving the tile.
+
+**3. Click it** — the button appears in the tile's footer. By default it
+asks for confirmation first (a webhook is a real side effect, not a data
+fetch); the confirmation text is customizable. On click, the server fires
+the request (with its configured auth) and the button briefly shows
+Running…/Done/Failed.
+
+Clicking a button needs the same access level as viewing the tile itself —
+admin-only is only required to *create or edit* an endpoint or an action,
+matching the same split as viewing vs. editing tile data.
+
+Only `http://`/`https://` URLs and `GET/POST/PUT/PATCH` are allowed — no
+other schemes or verbs. There's no read-only enforcement here the way there
+is for tile queries (a webhook's whole point is to trigger something); the
+safety boundary is which URL you were willing to configure.
+
 ## Arranging tiles
 
 Every tile — Weather included — can be **dragged by its header** to move it,
@@ -128,9 +159,12 @@ tile — but every other tile can be.
 ## Exporting / importing tiles
 
 The download icon in a tile's header downloads a `.tile.json` file — the
-tile's config plus a non-secret hint about what connection it expects, never
-credentials. Hand that file to another Odysseus instance's **Import Tile**
-flow to recreate it there, bound to that instance's own connection.
+tile's config plus a non-secret hint about what connection (and any action
+endpoints) it expects, never credentials. Hand that file to another
+Odysseus instance's **Import Tile** flow to recreate it there, bound to
+that instance's own connection — and, if the tile has action buttons, its
+own webhook endpoint(s) too. Every action must be explicitly bound; none of
+it is auto-matched by name.
 
 ## Using tiles from chat
 

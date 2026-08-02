@@ -14,15 +14,19 @@ trusted there. `install_tile_package` requires the importer to explicitly
 choose one of their own local connections to bind to — never auto-matched
 by name/id, since a same-named-but-different connection on the target
 instance would otherwise silently run the tile's query against the wrong
-database.
+database. Each action button's `endpoint_ref` (a local WebhookTarget id) is
+stripped the same way and requires its own explicit binding on import — an
+imported tile must never silently point at whatever webhook happens to
+share an id on the new instance.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Optional
 
 from core.external_db import get_connection, ExternalDbError
+from core.webhook_action import get_target, WebhookActionError
 
 from extensions.ithaca.tile_schema import TileConfig
 from extensions.ithaca.tiles import get_tile_config, save_tile_config
@@ -63,12 +67,29 @@ def build_tile_package(tile_id: str) -> dict[str, Any]:
     package["data_source"]["connection_ref"] = ""
     package["package_schema_version"] = PACKAGE_SCHEMA_VERSION
     package["connection_hint"] = hint
+
+    action_hints = []
+    for action, raw_action in zip(cfg.actions, package.get("actions") or []):
+        target_hint = {"action_id": action.id, "label": action.label}
+        try:
+            target = get_target(action.endpoint_ref)
+            target_hint["endpoint_label"] = target.label
+        except WebhookActionError:
+            pass  # target may have since been deleted — export anyway, weaker hint
+        action_hints.append(target_hint)
+        raw_action["endpoint_ref"] = ""
+    if action_hints:
+        package["action_hints"] = action_hints
+
     return package
 
 
-def install_tile_package(package: dict[str, Any], connection_binding: str) -> dict[str, Any]:
-    """Validate an imported package and save it bound to a LOCAL connection
-    the importing admin explicitly chose. Returns the saved tile config."""
+def install_tile_package(
+    package: dict[str, Any], connection_binding: str, action_bindings: Optional[dict[str, str]] = None,
+) -> dict[str, Any]:
+    """Validate an imported package and save it bound to LOCAL connection/
+    webhook-target ids the importing admin explicitly chose. Returns the
+    saved tile config."""
     if not isinstance(package, dict):
         raise TilePackagingError("Package is not a JSON object")
     if package.get("package_schema_version") != PACKAGE_SCHEMA_VERSION:
@@ -83,10 +104,28 @@ def install_tile_package(package: dict[str, Any], connection_binding: str) -> di
     except ExternalDbError as exc:
         raise TilePackagingError(str(exc)) from exc
 
-    tile = {k: v for k, v in package.items() if k not in ("package_schema_version", "connection_hint")}
+    tile = {k: v for k, v in package.items() if k not in ("package_schema_version", "connection_hint", "action_hints")}
     data_source = dict(tile.get("data_source") or {})
     data_source["connection_ref"] = connection_binding
     tile["data_source"] = data_source
+
+    actions = tile.get("actions") or []
+    if actions:
+        action_bindings = action_bindings or {}
+        missing = [a.get("id") for a in actions if not action_bindings.get(a.get("id"))]
+        if missing:
+            raise TilePackagingError(
+                f"This tile has action button(s) that need a local webhook endpoint bound: {', '.join(missing)}"
+            )
+        bound_actions = []
+        for a in actions:
+            endpoint_id = action_bindings[a["id"]]
+            try:
+                get_target(endpoint_id)
+            except WebhookActionError as exc:
+                raise TilePackagingError(str(exc)) from exc
+            bound_actions.append({**a, "endpoint_ref": endpoint_id})
+        tile["actions"] = bound_actions
 
     tile_id = str(tile.get("id") or "").strip()
     if not tile_id or not _ID_RE.match(tile_id):

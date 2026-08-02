@@ -733,6 +733,10 @@ app.include_router(setup_copilot_routes())
 from routes.external_db_routes import setup_external_db_routes
 app.include_router(setup_external_db_routes())
 
+# Webhook targets — action buttons on Ithaca tiles
+from routes.webhook_action_routes import setup_webhook_action_routes
+app.include_router(setup_webhook_action_routes())
+
 # ChatGPT Subscription device-flow login
 from routes.chatgpt_subscription_routes import setup_chatgpt_subscription_routes
 app.include_router(setup_chatgpt_subscription_routes())

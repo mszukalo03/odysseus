@@ -509,6 +509,29 @@ class ExternalDbConnection(TimestampMixin, Base):
     read_only = Column(Boolean, nullable=False, default=True)
 
 
+class WebhookTarget(TimestampMixin, Base):
+    """Admin-configured HTTP endpoint an Ithaca tile action button can hit
+    (extensions/ithaca/tile_schema.py's TileAction, core/webhook_action.py) —
+    e.g. an n8n webhook that reprocesses something. Kept as its own model
+    (not folded into ExternalDbConnection) because it's a different trust
+    surface: this is an outbound HTTP side effect, not a read-only SQL query.
+
+    `auth_token` uses EncryptedText, same at-rest protection as
+    ExternalDbConnection.password / EmailAccount.imap_password. Tile configs
+    reference this by id (`endpoint_ref`) and never embed the token — that's
+    what keeps exported tile packages (tile_packaging.py) credential-free.
+    """
+    __tablename__ = "webhook_targets"
+
+    id = Column(String, primary_key=True, index=True)   # slug, e.g. "roadmap_reprocess"
+    label = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    method = Column(String, nullable=False, default="POST")  # GET|POST|PUT|PATCH
+    auth_scheme = Column(String, nullable=False, default="none")  # none|bearer|basic
+    auth_token = Column(EncryptedText, nullable=True)  # bearer token, or "user:pass" for basic
+    timeout_seconds = Column(Integer, nullable=False, default=15)
+
+
 class McpServer(TimestampMixin, Base):
     """Admin-configured MCP (Model Context Protocol) tool servers."""
     __tablename__ = "mcp_servers"
