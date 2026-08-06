@@ -6148,10 +6148,20 @@ function syncAdminVisibility() {
 /* ═══════════════════════════════════════════
    PUBLIC API
    ═══════════════════════════════════════════ */
-export function open(tab) {
+export async function open(tab) {
   if (!initialized) initAll();
   syncAppearanceCheckboxes();
-  if (modalEl.classList.contains('hidden')) {
+  // If minimized, restore through the manager (dock resume, z-index bump,
+  // etc.) instead of just clearing `.hidden` — this module never registers
+  // itself with modalManager, so without this check a click on the gear
+  // icon while minimized left the window un-hidden but not really restored.
+  // Falls through either way so the tab-switch logic below still applies.
+  let restored = false;
+  try {
+    const Modals = await import('./modalManager.js');
+    if (Modals.isMinimized('settings-modal')) { Modals.restore('settings-modal'); restored = true; }
+  } catch (_) {}
+  if (!restored && modalEl.classList.contains('hidden')) {
     resetWindowPlacement();
   }
   modalEl.classList.remove('hidden');

@@ -32,6 +32,25 @@ import { nextToolWindowZ } from './toolWindowZOrder.js';
 
 const _state = new Map(); // id -> { restoreFn, closeFn, railBtnId, isMinimized, restoreMinHeight }
 
+// Shared "is this modal element actually on screen" check — used by the
+// auto-stack observer in register(), the auto-registration scan, and the
+// click-outside-to-minimize eligibility check, so all three agree on what
+// "visible" means instead of each re-deriving it slightly differently.
+function _isModalVisible(el) {
+  return !!el && !el.classList.contains('hidden') && getComputedStyle(el).display !== 'none';
+}
+
+// The "is this window edge-docked" test — same three classes minimize(),
+// the swipe-dismiss handler, and the click-outside-to-minimize eligibility
+// check below all need to agree on (docking suspends rather than fully
+// tears down, and a docked window is meant to stay open while the rest of
+// the app is used, so several code paths special-case it identically).
+function _isEdgeDocked(modal) {
+  return !!modal && (modal.classList.contains('modal-right-docked')
+    || modal.classList.contains('modal-left-docked')
+    || modal.classList.contains('email-snap-left'));
+}
+
 const _rememberedDockKey = (id) => `odysseus-modal-remembered-dock-${id}`;
 function _rememberDock(id, side) {
   if (!id || !side) return;
@@ -1162,11 +1181,9 @@ export function register(id, { restoreFn, closeFn, railBtnId, sidebarBtnId, labe
   // transition. Idempotent on re-register.
   const _modalEl = document.getElementById(id);
   if (_modalEl && !_modalEl._mmAutoStackObs) {
-    const _isVisible = () => !_modalEl.classList.contains('hidden')
-        && getComputedStyle(_modalEl).display !== 'none';
-    _modalEl._mmAutoStackLast = _isVisible();
+    _modalEl._mmAutoStackLast = _isModalVisible(_modalEl);
     const obs = new MutationObserver(() => {
-      const vis = _isVisible();
+      const vis = _isModalVisible(_modalEl);
       if (vis && !_modalEl._mmAutoStackLast) {
         _bringToFront(_modalEl);
         _applyRememberedDock(id);
@@ -1237,9 +1254,7 @@ export function minimize(id) {
     // If this window is edge-docked (right/left), SUSPEND the dock: release
     // the body push so the chat returns to full width while the window is
     // minimized, but keep the dock so restoring the chip snaps it back in.
-    if (modal.classList.contains('modal-right-docked')
-        || modal.classList.contains('modal-left-docked')
-        || modal.classList.contains('email-snap-left')) {
+    if (_isEdgeDocked(modal)) {
       try { suspendDock(modal); } catch (e) { console.warn('suspendDock on minimize failed', e); }
     }
     modal.classList.add('hidden');
@@ -1414,7 +1429,11 @@ const _AUTO_WIRE = {
   'email-lib-modal':      { rail: null,             sidebar: null },
   'research-overlay':     { rail: 'rail-research',  sidebar: 'tool-research-btn' },
   'theme-modal':          { rail: null,             sidebar: 'tool-theme-btn' },
-  'settings-modal':       { rail: null,             sidebar: 'tool-settings-btn' },
+  // Settings has no rail icon; its real sidebar openers are the gear icon
+  // (default tab) and the profile row (account tab) — 'tool-settings-btn'
+  // doesn't exist in the DOM (app.js:1301-1307 wires these two ids directly
+  // to settings.js's open(), not through a single canonical id).
+  'settings-modal':       { rail: null,             sidebar: ['user-bar-settings', 'user-bar-profile'] },
   'compare-model-overlay':{ rail: 'rail-compare',   sidebar: 'tool-compare-btn' },
   'ge-shortcuts-modal':   { rail: null,             sidebar: null },
   // Prompt window opens from the overflow menu (no rail/sidebar button), but
@@ -1449,14 +1468,17 @@ function _autoRegister(id) {
 }
 
 // Watch the document for tool modals being added/shown and inject the `_`
-// button next to the close button. We do NOT pre-register here — only inject
-// the button. Registration happens when the modal is actually minimized,
-// either via the `_` button click or via swipe-dismiss.
+// button next to the close button. Also auto-register any modal that's
+// visible but hasn't registered itself (e.g. settings.js never calls
+// Modals.register()) — needed so _state has a live entry (btnIds, dock
+// state) for the click-outside-to-minimize check below the moment a modal
+// is on screen, not just after its first minimize.
 function _scanAndWire() {
   for (const id of Object.keys(_AUTO_WIRE)) {
     const modal = document.getElementById(id);
     if (!modal) continue;
     injectMinimizeButton(modal, id);
+    if (!_state.has(id) && _isModalVisible(modal)) _autoRegister(id);
   }
 }
 const _scanTimer = setInterval(_scanAndWire, 1000);
@@ -1524,9 +1546,7 @@ window.addEventListener('modal-dismissed', (e) => {
   const modal = document.getElementById(id);
   if (modal) {
     const isEmailModal = id === 'email-lib-modal' || id.startsWith('email-reader-');
-    if (modal.classList.contains('modal-right-docked')
-        || modal.classList.contains('modal-left-docked')
-        || modal.classList.contains('email-snap-left')) {
+    if (_isEdgeDocked(modal)) {
       try { suspendDock(modal); } catch (err) { console.warn('suspendDock on dismissed failed', err); }
     }
     if (isEmailModal) _clearEmailSplitAfterMinimize();
@@ -1537,6 +1557,85 @@ window.addEventListener('modal-dismissed', (e) => {
   // Stop legacy listeners that reset internal `_open` state
   e.stopImmediatePropagation();
 });
+
+// ── Click-outside-to-minimize ────────────────────────────────────────────
+//
+// These popups have no real backdrop (base .modal CSS is pointer-events:none
+// with no overlay — only .modal-content is interactive), so the rest of the
+// app stays usable around/behind an open one. Clicking that background now
+// minimizes the popup, the same as pressing its `_` button, for every modal
+// this manager tracks — implemented once here rather than per tool module.
+
+// Grace window after a drag or resize ends: windowDrag.js/windowResize.js
+// both remove their "in progress" class synchronously on mouseup, which is
+// BEFORE the browser's subsequent synthetic `click` fires — so a plain class
+// check can't tell "click that ended a drag which released outside the
+// popup" apart from a genuine outside click. Track a timestamp instead.
+let _lastDragOrResizeEndAt = 0;
+document.addEventListener('mouseup', () => {
+  if (document.body.classList.contains('window-dragging-active')
+      || document.body.classList.contains('window-resizing-active')) {
+    _lastDragOrResizeEndAt = Date.now();
+  }
+}, true);
+document.addEventListener('touchend', () => { _lastDragOrResizeEndAt = Date.now(); }, true);
+
+// Fullscreen has no per-module class to check (fsClass is caller-defined —
+// 'notes-window-fullscreen', 'doclib-fullscreen', etc. — and a new caller
+// could pick a new name), so detect it geometrically instead: a popup
+// covering ~the whole viewport has no meaningful "outside" to click.
+function _coversViewport(modal) {
+  const content = modal.querySelector('.modal-content') || modal;
+  const r = content.getBoundingClientRect();
+  return r.left <= 1 && r.top <= 1
+    && r.right >= window.innerWidth - 1 && r.bottom >= window.innerHeight - 1;
+}
+
+function _isModalEligibleForOutsideMinimize(s, modal) {
+  if (!s || s.isMinimized || !_isModalVisible(modal)) return false;
+  // Docking exists precisely so the popup stays open while the rest of the
+  // app is used — an outside click there is expected, not a dismissal.
+  if (_isEdgeDocked(modal)) return false;
+  if (_coversViewport(modal)) return false;
+  return true;
+}
+
+function _isClickExcluded(e, s, modal) {
+  const target = e.target;
+  // Real blocking dialogs (styledConfirm/styledPrompt) render as siblings of
+  // the popup in <body>, not descendants of its .modal-content.
+  if (target.closest && target.closest('#styled-confirm-overlay, #styled-prompt-overlay')) return true;
+  // Body-mounted transient menus (dropdowns, etc.) registered through
+  // escMenuStack.bindMenuDismiss stamp `_dismiss` on their root element —
+  // walk up from the click target looking for one, since there's no shared
+  // CSS class to select against.
+  for (let n = target; n && n !== document.body; n = n.parentElement) {
+    if (typeof n._dismiss === 'function') return true;
+  }
+  // The popup's own opener/toggle button(s).
+  if (s.btnIds.length && target.closest) {
+    const btn = target.closest('[id]');
+    if (btn && s.btnIds.includes(btn.id)) return true;
+  }
+  if (Date.now() - _lastDragOrResizeEndAt < 60) return true;
+  return false;
+}
+
+// Deferred capture-phase attach — same idiom as escMenuStack's
+// bindMenuDismiss — so the listener never sees the click that opened a
+// popup in the first place.
+setTimeout(() => {
+  document.addEventListener('click', (e) => {
+    for (const [modalId, s] of _state.entries()) {
+      const modal = document.getElementById(modalId);
+      if (!_isModalEligibleForOutsideMinimize(s, modal)) continue;
+      const content = modal.querySelector('.modal-content') || modal;
+      if (content.contains(e.target)) continue;
+      if (_isClickExcluded(e, s, modal)) continue;
+      minimize(modalId);
+    }
+  }, true);
+}, 0);
 
 // Capture-phase intercept: if user clicks a sidebar/rail button whose
 // associated modal is currently MINIMIZED, restore it and stop the click
