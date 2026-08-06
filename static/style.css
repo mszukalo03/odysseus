@@ -42209,6 +42209,48 @@ body.neon-glow #sidebar {
   -webkit-box-orient: vertical;
 }
 
+/* Grid view — a pure layout swap over the same .rss-article-item markup
+   _articleItemHtml already produces (see extensions/rss/static/index.js),
+   toggled via .rss-view-grid on the workspace root. Full-width rows that
+   aren't article cards (empty state, group summary bar/panel) span every
+   column so they don't get squeezed into a single grid cell. */
+.rss-workspace.rss-view-grid .rss-article-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  align-content: start;
+  gap: 12px;
+  padding: 12px;
+}
+
+.rss-workspace.rss-view-grid .rss-empty-state,
+.rss-workspace.rss-view-grid .rss-summarize-bar,
+.rss-workspace.rss-view-grid .rss-summary-panel {
+  grid-column: 1 / -1;
+}
+
+.rss-workspace.rss-view-grid .rss-article-item {
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.rss-workspace.rss-view-grid .rss-article-thumb {
+  width: 100%;
+  height: 120px;
+  border-radius: 0;
+}
+
+.rss-workspace.rss-view-grid .rss-article-body {
+  padding: 10px 12px;
+}
+
+.rss-workspace.rss-view-grid .rss-article-snippet {
+  -webkit-line-clamp: 3;
+}
+
 .rss-reader {
   flex: 1;
   display: flex;
