@@ -253,7 +253,10 @@ async function _loadUserTiles() {
         <div class="ithaca-tile-header">
           <span class="ithaca-tile-title">${esc(cfg.title)}</span>
           <span style="flex:1"></span>
-          ${window._isAdmin ? `<button class="doc-action-icon-btn ithaca-tile-download" title="Download tile package">
+          ${window._isAdmin ? `<button class="doc-action-icon-btn ithaca-tile-edit" title="Edit tile">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+          </button>
+          <button class="doc-action-icon-btn ithaca-tile-download" title="Download tile package">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           </button>` : ''}
           <button class="doc-action-icon-btn ithaca-tile-refresh" title="Refresh">
@@ -268,6 +271,7 @@ async function _loadUserTiles() {
           <button class="ithaca-tile-action-btn" data-action-id="${esc(a.id)}">${esc(a.label)}</button>
         `).join('')}</div>` : ''}`;
       grid.appendChild(tile);
+      tile.querySelector('.ithaca-tile-edit')?.addEventListener('click', () => openTileBuilder(() => _loadUserTiles(), cfg));
       tile.querySelector('.ithaca-tile-download')?.addEventListener('click', () => downloadTilePackage(cfg.id, cfg.title));
       tile.querySelectorAll('.ithaca-tile-action-btn').forEach((btn) => {
         const action = (cfg.actions || []).find((a) => a.id === btn.dataset.actionId);

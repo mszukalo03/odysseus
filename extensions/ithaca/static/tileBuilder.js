@@ -16,6 +16,7 @@ function _slugify(title) {
 
 let _draft = null; // current proposed/edited TileConfig, or null before Generate
 let _draftActions = []; // TileAction list being built for the current draft
+let _editingId = null; // id of the tile being edited, or null when adding a new one
 
 async function _fetchWebhookTargets() {
   try {
@@ -31,10 +32,11 @@ export function closeTileBuilder() {
   document.getElementById('ithaca-tilebuilder-overlay')?.remove();
 }
 
-export async function openTileBuilder(onSaved) {
+export async function openTileBuilder(onSaved, existingTile = null) {
   closeTileBuilder();
-  _draft = null;
-  _draftActions = [];
+  _draft = existingTile ? { ...existingTile } : null;
+  _draftActions = existingTile ? [...(existingTile.actions || [])] : [];
+  _editingId = existingTile ? existingTile.id : null;
 
   const overlay = document.createElement('div');
   overlay.className = 'ithaca-modal-overlay'; // reuse the existing modal-overlay look
@@ -42,7 +44,7 @@ export async function openTileBuilder(onSaved) {
   overlay.innerHTML = `
     <div class="ithaca-modal ithaca-tilebuilder-modal">
       <div class="ithaca-modal-header">
-        <span>Add Tile</span>
+        <span>${_editingId ? `Edit Tile: ${_esc(existingTile.title || _editingId)}` : 'Add Tile'}</span>
         <span style="flex:1"></span>
         <button id="itb-close" class="doc-action-icon-btn" title="Close">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -50,19 +52,19 @@ export async function openTileBuilder(onSaved) {
       </div>
       <div class="ithaca-tilebuilder-body">
         <div class="settings-row"><label class="settings-label">Connection</label>
-          <select id="itb-connection" class="settings-select"></select>
+          <select id="itb-connection" class="settings-select" ${_editingId ? 'disabled' : ''}></select>
         </div>
         <div class="settings-row"><label class="settings-label">Title</label>
           <input id="itb-title" class="settings-input" placeholder="e.g. Flagged for Review"></div>
         <div class="settings-row" style="align-items:flex-start"><label class="settings-label">Context notes</label>
           <textarea id="itb-context" class="settings-input" rows="4" placeholder="Paste any notes you have about this table/schema (optional)"></textarea></div>
-        <div class="settings-row" style="align-items:flex-start"><label class="settings-label">What to show</label>
-          <textarea id="itb-instruction" class="settings-input" rows="2" placeholder="e.g. Show me apps flagged for review in a table"></textarea></div>
+        <div class="settings-row" style="align-items:flex-start"><label class="settings-label">${_editingId ? 'What to change' : 'What to show'}</label>
+          <textarea id="itb-instruction" class="settings-input" rows="2" placeholder="${_editingId ? 'e.g. Add a filter for status = open, make it a bar chart' : 'e.g. Show me apps flagged for review in a table'}"></textarea></div>
         <div class="settings-row">
-          <button class="admin-btn-add" id="itb-generate">Generate</button>
+          <button class="admin-btn-add" id="itb-generate">${_editingId ? 'Regenerate with AI' : 'Generate'}</button>
           <span id="itb-msg" style="font-size:11px;flex:1;margin-left:8px;"></span>
         </div>
-        <div id="itb-draft" style="display:none;">
+        <div id="itb-draft" style="${_editingId ? '' : 'display:none;'}">
           <hr style="border-color:var(--border);margin:10px 0">
           <div class="settings-row"><label class="settings-label">Title</label><input id="itb-d-title" class="settings-input"></div>
           <div class="settings-row" style="align-items:flex-start"><label class="settings-label">SQL query</label><textarea id="itb-d-query" class="settings-input" rows="4" style="font-family:monospace;font-size:11px;"></textarea></div>
@@ -105,6 +107,7 @@ export async function openTileBuilder(onSaved) {
     connSel.innerHTML = conns.length
       ? conns.map((c) => `<option value="${_esc(c.id)}">${_esc(c.label)}</option>`).join('')
       : '<option value="">No connections configured — add one in Settings first</option>';
+    if (existingTile?.data_source?.connection_ref) connSel.value = existingTile.data_source.connection_ref;
   } catch (err) {
     connSel.innerHTML = '<option value="">Failed to load connections</option>';
   }
@@ -114,6 +117,13 @@ export async function openTileBuilder(onSaved) {
   endpointSel.innerHTML = webhookTargets.length
     ? webhookTargets.map((t) => `<option value="${_esc(t.id)}">${_esc(t.label)}</option>`).join('')
     : '<option value="">No webhook endpoints configured — add one in Settings first</option>';
+
+  if (existingTile) {
+    document.getElementById('itb-title').value = existingTile.title || '';
+    document.getElementById('itb-d-title').value = existingTile.title || '';
+    document.getElementById('itb-d-query').value = existingTile.data_source?.query || '';
+    document.getElementById('itb-d-viztype').value = existingTile.viz?.type || 'table';
+  }
 
   function _renderActionsList() {
     const listEl = document.getElementById('itb-actions-list');
@@ -135,6 +145,7 @@ export async function openTileBuilder(onSaved) {
       });
     });
   }
+  _renderActionsList();
 
   document.getElementById('itb-action-add').addEventListener('click', () => {
     const label = document.getElementById('itb-action-label').value.trim();
@@ -158,17 +169,30 @@ export async function openTileBuilder(onSaved) {
     const instruction = document.getElementById('itb-instruction').value.trim();
     const contextDoc = document.getElementById('itb-context').value;
     if (!connectionRef) { msg.textContent = 'Pick a connection first'; msg.style.color = 'var(--red)'; return; }
-    if (!instruction) { msg.textContent = 'Describe what you want to see'; msg.style.color = 'var(--red)'; return; }
+    if (!instruction) {
+      msg.textContent = _editingId ? 'Describe what to change' : 'Describe what you want to see';
+      msg.style.color = 'var(--red)';
+      return;
+    }
     msg.textContent = 'Generating…';
     msg.style.color = '';
+    // When editing, revise the tile's *current* form state (including any
+    // manual edits made since opening) rather than the version it was
+    // originally saved with, so Regenerate builds on what's on screen.
+    const currentConfig = _editingId ? {
+      title: document.getElementById('itb-d-title').value.trim() || title,
+      query: document.getElementById('itb-d-query').value,
+      viz_type: document.getElementById('itb-d-viztype').value,
+    } : null;
     try {
       const resp = await _api('/tiles/ai-propose', {
         method: 'POST',
         body: JSON.stringify({
-          id: _slugify(title || instruction),
+          id: _editingId || _slugify(title || instruction),
           connection_ref: connectionRef,
           instruction,
           context_doc: contextDoc,
+          current_config: currentConfig,
         }),
       });
       const data = await resp.json();

@@ -111,8 +111,16 @@ def _format_schema(tables: list[dict]) -> str:
 
 def _extract_json(text: str) -> dict:
     text = (text or "").strip()
+    if not text:
+        # json.loads("") raises "Expecting value: line 1 column 1 (char 0)",
+        # which reads like a malformed-response bug when it's actually just
+        # an empty completion — surface a message that says so plainly.
+        raise TileProposalError("Model returned an empty response")
     m = _JSON_FENCE_RE.search(text) or _JSON_OBJECT_RE.search(text)
     candidate = m.group(1) if (m and m.re is _JSON_FENCE_RE) else (m.group(0) if m else text)
+    candidate = candidate.strip()
+    if not candidate:
+        raise TileProposalError("Model returned an empty response")
     try:
         return json.loads(candidate)
     except json.JSONDecodeError as exc:
@@ -137,12 +145,43 @@ def _humanize(field: str) -> str:
     return " ".join(w.capitalize() for w in field.replace("-", "_").split("_")) or field
 
 
+async def _generate_json(url: str, model: str, headers: dict, messages: list[dict]) -> dict:
+    """Call the model and parse its reply as JSON, retrying once with a
+    sharper instruction if the first completion comes back empty or
+    unparsable. Small local models occasionally emit a blank/whitespace-only
+    completion on the first try (esp. "thinking" models that burn their
+    token budget on reasoning before ever writing the JSON) — a single retry
+    clears most of those without the user having to manually hit Generate
+    again."""
+    # Small, deterministic completion: this is a fixed-shape extraction task,
+    # not open-ended generation — temperature 0 and a tight token cap both
+    # reduce the chance of the model wandering off-format.
+    last_error: Optional[TileProposalError] = None
+    for msgs in (messages, messages + [
+        {"role": "user", "content": "Reply with ONLY the JSON object — no markdown, no commentary, no empty response."},
+    ]):
+        raw = await llm_call_async(url, model, msgs, headers=headers, max_tokens=400, temperature=0.0)
+        if not raw or not raw.strip():
+            last_error = TileProposalError("LLM returned no content")
+            continue
+        try:
+            return _extract_json(raw)
+        except TileProposalError as exc:
+            last_error = exc
+    raise last_error
+
+
 async def propose_tile_config(
     tile_id: str, connection_ref: str, instruction: str, context_doc: str = "",
-    owner: Optional[str] = None,
+    owner: Optional[str] = None, current_config: Optional[dict] = None,
 ) -> dict:
     """Introspect the connection, ask the LLM for a minimal tile draft,
-    assemble + validate the full TileConfig, and return it (unsaved)."""
+    assemble + validate the full TileConfig, and return it (unsaved).
+
+    If `current_config` is given (editing an existing tile), the model is
+    asked to *revise* that query/title/viz_type per the instruction rather
+    than propose one from scratch — lets "add a filter for X" or "make this
+    a bar chart" work against what's already there."""
     if not instruction.strip():
         raise TileProposalError("instruction is required")
     try:
@@ -161,20 +200,21 @@ async def propose_tile_config(
     user_parts = [f"Schema:\n{_format_schema(tables)}"]
     if context_doc.strip():
         user_parts.append(f"Notes:\n{context_doc.strip()}")
+    if current_config:
+        user_parts.append(
+            "Current tile — revise it per the request below, keeping anything "
+            "not mentioned in the request as-is:\n"
+            f"Title: {current_config.get('title', '')}\n"
+            f"Query: {current_config.get('query', '')}\n"
+            f"Viz type: {current_config.get('viz_type', 'table')}"
+        )
     user_parts.append(f"Request: {instruction.strip()}")
 
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": "\n\n".join(user_parts)},
     ]
-    # Small, deterministic completion: this is a fixed-shape extraction task,
-    # not open-ended generation — temperature 0 and a tight token cap both
-    # reduce the chance of the model wandering off-format.
-    raw = await llm_call_async(url, model, messages, headers=headers, max_tokens=400, temperature=0.0)
-    if not raw:
-        raise TileProposalError("LLM returned no content")
-
-    proposed = _extract_json(raw)
+    proposed = await _generate_json(url, model, headers, messages)
     title = str(proposed.get("title") or instruction.strip()[:60]).strip()
     query = _sanitize_query(str(proposed.get("query") or ""))
     viz_type = str(proposed.get("viz_type") or "table").strip().lower()
