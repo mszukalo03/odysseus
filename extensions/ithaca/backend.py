@@ -27,7 +27,9 @@ Endpoints:
   config for the tile-builder UI.
 * POST /api/ithaca/tiles/ai-propose   — admin-only: single-shot LLM tile
   proposal from a connection + free-form context doc + NL instruction.
-  Returns an unsaved draft config.
+  Optional `current_config` {title,query,viz_type} asks the model to revise
+  an existing tile instead of proposing one from scratch (used by the
+  builder's Edit flow). Returns an unsaved draft config.
 * GET  /api/ithaca/tiles/{id}/package.json — admin-only: download a portable
   tile package — the config plus a non-secret connection hint, never
   credentials.
@@ -169,6 +171,7 @@ def setup() -> APIRouter:
         connection_ref = str(body.get("connection_ref") or "").strip()
         instruction = str(body.get("instruction") or "")
         context_doc = str(body.get("context_doc") or "")
+        current_config = body.get("current_config")
         if not tile_id or not connection_ref:
             raise HTTPException(400, "id and connection_ref are required")
         from src.auth_helpers import effective_user
@@ -176,6 +179,7 @@ def setup() -> APIRouter:
             return await propose_tile_config(
                 tile_id, connection_ref, instruction, context_doc,
                 owner=effective_user(request),
+                current_config=current_config if isinstance(current_config, dict) else None,
             )
         except TileProposalError as exc:
             raise HTTPException(400, str(exc))
