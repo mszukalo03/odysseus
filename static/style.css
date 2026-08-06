@@ -42228,27 +42228,80 @@ body.neon-glow #sidebar {
   grid-column: 1 / -1;
 }
 
+/* Each tile is a fixed-aspect photo card with the title/source overlaid on
+   a bottom gradient scrim (Netflix/Pinterest-style) — a fixed aspect-ratio
+   keeps every tile the same size regardless of how much title text there
+   is, and the scrim guarantees legibility over any photo without having to
+   reserve separate below-the-fold space for text. Articles with no
+   thumbnail (`_articleItemHtml` only emits `.rss-article-thumb` when
+   `a.image` is set) fall back to a plain solid-background card with the
+   body flowing normally instead of overlaid — the :has() below is what
+   tells the two cases apart. */
 .rss-workspace.rss-view-grid .rss-article-item {
+  position: relative;
   flex-direction: column;
   gap: 0;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
+  aspect-ratio: 4 / 3;
+  background: rgba(128,128,128,0.08);
 }
 
 .rss-workspace.rss-view-grid .rss-article-thumb {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: 120px;
+  height: 100%;
   border-radius: 0;
 }
 
+/* .rss-article-body is `flex: 1` in the base (row) layout, which is right
+   for a horizontal list row — but in this column card that same flex:1
+   fights an auto-height container for space it can never resolve, and the
+   whole body collapses to zero height (title/meta/snippet all present in
+   the DOM, just rendered at 0px). `flex: none` makes it size to its own
+   content instead, like a normal block. */
 .rss-workspace.rss-view-grid .rss-article-body {
-  padding: 10px 12px;
+  flex: none;
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
+.rss-workspace.rss-view-grid .rss-article-item:has(.rss-article-thumb) .rss-article-body {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding-top: 26px;
+  background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.5) 65%, transparent 100%);
+  color: #fff;
+}
+
+.rss-workspace.rss-view-grid .rss-article-title {
+  font-size: 13px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 0;
+}
+
+.rss-workspace.rss-view-grid .rss-article-meta {
+  margin-bottom: 0;
+}
+
+.rss-workspace.rss-view-grid .rss-article-item:has(.rss-article-thumb) .rss-article-meta {
+  opacity: 0.8;
+}
+
+/* Snippet body copy doesn't fit the tile format — title + source is enough
+   context at this size, and keeps every card the same shape. */
 .rss-workspace.rss-view-grid .rss-article-snippet {
-  -webkit-line-clamp: 3;
+  display: none;
 }
 
 .rss-reader {
