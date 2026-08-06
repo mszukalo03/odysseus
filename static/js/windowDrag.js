@@ -35,6 +35,11 @@
 //                        Default true.
 //     enableFullscreen: bool — enable top-edge fullscreen snap.
 //                        Default true when onEnterFullscreen is supplied.
+//     enableBottomDrag: bool — also drag-to-move from a thin band just
+//                        inside the bottom edge (below windowResize's own
+//                        resize border), so popups with no footer bar can
+//                        still be grabbed low, not just by the header.
+//                        Default true.
 
 import { makeEdgeDockController } from './modalSnap.js';
 import { makeWindowResizable } from './windowResize.js';
@@ -43,6 +48,12 @@ const SNAP_PX = 6;        // cursor distance from top edge for fullscreen snap
 const UNSNAP_PX = 24;     // cursor distance from top before fullscreen exits
 const DOCK_EDGE_PX = 60;  // cursor distance from L/R edge to trigger dock
                           // exit while still in fullscreen state
+const RESIZE_EDGE_PX = 7; // must match windowResize.js's own EDGE — the
+                          // bottom drag-to-move zone below starts just past
+                          // this so the two never contest the same pixels
+const BOTTOM_DRAG_ZONE_PX = 18; // inner band (RESIZE_EDGE_PX..this many px
+                          // from the bottom) that also drags the window, so
+                          // popups with no footer can still be grabbed low
 
 // CSS-var lookup for the rail+sidebar width — used to decide where the
 // "left edge" effectively is during a fullscreen drag-out (the cursor
@@ -149,6 +160,11 @@ export function makeWindowDraggable(modal, options = {}) {
   const _startDrag = (cx, cy) => {
     dragging = true;
     if (modal) modal.classList.add('modal-dragging');
+    // Body-level signal (mirrors windowResize.js's window-resizing-active)
+    // that a drag is in flight — lets other listeners (e.g. modalManager's
+    // click-outside-to-minimize) tell a real outside click apart from the
+    // synthetic click that follows a drag ending outside the popup's bounds.
+    document.body.classList.add('window-dragging-active');
     // Cancel any in-flight open animation so we don't pin a mid-animation
     // rect and then jump once the animation settles.
     try {
@@ -250,6 +266,7 @@ export function makeWindowDraggable(modal, options = {}) {
     if (!dragging) return;
     dragging = false;
     if (modal) modal.classList.remove('modal-dragging');
+    document.body.classList.remove('window-dragging-active');
     _showSnapHint(false);
     // Top edge wins over side edges — fullscreen is the more common gesture.
     if (enableFullscreen && typeof cy === 'number' && cy <= SNAP_PX) {
@@ -278,56 +295,118 @@ export function makeWindowDraggable(modal, options = {}) {
     }
   };
 
-  header.addEventListener('mousedown', (e) => {
-    if (mobileSkip > 0 && window.innerWidth <= mobileSkip) return;
-    if (skipSelector && e.target.closest(skipSelector)) return;
-    e.preventDefault();
-    movedDuringDrag = false;
-    _startDrag(e.clientX, e.clientY);
-    const onMove = (ev) => _onMove(ev.clientX, ev.clientY);
-    const onUp = (ev) => {
-      _onEnd(ev.clientX, ev.clientY);
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      // If the pointer actually moved, swallow the synthetic click the
-      // browser fires next — otherwise a header click handler (collapse
-      // expanded card / "back to list") runs and undoes the drag intent.
-      if (movedDuringDrag) {
-        const swallow = (clickEv) => {
-          clickEv.stopPropagation();
-          clickEv.preventDefault();
-        };
-        header.addEventListener('click', swallow, { capture: true, once: true });
-        // Safety: if no click fires (some browsers), drop the listener.
-        setTimeout(() => header.removeEventListener('click', swallow, { capture: true }), 50);
-      }
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  });
-
-  if (enableTouch) {
-    header.addEventListener('touchstart', (e) => {
+  // Wires a drag-to-move gesture onto `el` (mouse + optional touch), sharing
+  // the same _startDrag/_onMove/_onEnd state machine regardless of which
+  // handle the gesture started from. `getStartPoint(e, touch)` may return
+  // null to decline the gesture (e.g. the bottom zone only arms within its
+  // own band) — defaults to "always start", which reproduces the header's
+  // original unconditional behavior exactly.
+  const _wireDragHandle = (el, { getStartPoint } = {}) => {
+    const _point = getStartPoint || ((e, t) => (t ? { cx: t.clientX, cy: t.clientY } : { cx: e.clientX, cy: e.clientY }));
+    el.addEventListener('mousedown', (e) => {
       if (mobileSkip > 0 && window.innerWidth <= mobileSkip) return;
       if (skipSelector && e.target.closest(skipSelector)) return;
-      const t = e.touches[0];
-      if (!t) return;
+      const pt = _point(e, null);
+      if (!pt) return;
+      e.preventDefault();
       movedDuringDrag = false;
-      _startDrag(t.clientX, t.clientY);
-      const onMove = (ev) => {
-        const tt = ev.touches[0];
-        if (tt) _onMove(tt.clientX, tt.clientY);
+      _startDrag(pt.cx, pt.cy);
+      const onMove = (ev) => _onMove(ev.clientX, ev.clientY);
+      const onUp = (ev) => {
+        _onEnd(ev.clientX, ev.clientY);
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        // If the pointer actually moved, swallow the synthetic click the
+        // browser fires next — otherwise a click handler on `el` (collapse
+        // expanded card / "back to list") runs and undoes the drag intent.
+        if (movedDuringDrag) {
+          const swallow = (clickEv) => {
+            clickEv.stopPropagation();
+            clickEv.preventDefault();
+          };
+          el.addEventListener('click', swallow, { capture: true, once: true });
+          // Safety: if no click fires (some browsers), drop the listener.
+          setTimeout(() => el.removeEventListener('click', swallow, { capture: true }), 50);
+        }
       };
-      const onEnd = (ev) => {
-        const tt = (ev.changedTouches && ev.changedTouches[0]) || null;
-        _onEnd(tt ? tt.clientX : null, tt ? tt.clientY : null);
-        document.removeEventListener('touchmove', onMove);
-        document.removeEventListener('touchend', onEnd);
-        document.removeEventListener('touchcancel', onEnd);
-      };
-      document.addEventListener('touchmove', onMove, { passive: true });
-      document.addEventListener('touchend', onEnd);
-      document.addEventListener('touchcancel', onEnd);
-    }, { passive: true });
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    if (enableTouch) {
+      el.addEventListener('touchstart', (e) => {
+        if (mobileSkip > 0 && window.innerWidth <= mobileSkip) return;
+        if (skipSelector && e.target.closest(skipSelector)) return;
+        const t = e.touches[0];
+        if (!t) return;
+        const pt = _point(e, t);
+        if (!pt) return;
+        movedDuringDrag = false;
+        _startDrag(pt.cx, pt.cy);
+        const onMove = (ev) => {
+          const tt = ev.touches[0];
+          if (tt) _onMove(tt.clientX, tt.clientY);
+        };
+        const onEnd = (ev) => {
+          const tt = (ev.changedTouches && ev.changedTouches[0]) || null;
+          _onEnd(tt ? tt.clientX : null, tt ? tt.clientY : null);
+          document.removeEventListener('touchmove', onMove);
+          document.removeEventListener('touchend', onEnd);
+          document.removeEventListener('touchcancel', onEnd);
+        };
+        document.addEventListener('touchmove', onMove, { passive: true });
+        document.addEventListener('touchend', onEnd);
+        document.addEventListener('touchcancel', onEnd);
+      }, { passive: true });
+    }
+  };
+
+  _wireDragHandle(header);
+
+  // Bottom drag-to-move zone: a thin inner band just past windowResize's own
+  // RESIZE_EDGE_PX border strip, so popups with no footer bar (none of them
+  // have one today) can still be grabbed near the bottom, not just the
+  // header. The two bands never overlap — windowResize's own mousedown
+  // listener on `content` runs in the CAPTURE phase and calls
+  // stopPropagation() for anything within RESIZE_EDGE_PX of an edge, so a
+  // mousedown that deep never reaches this bubble-phase handler at all.
+  if (options.enableBottomDrag !== false) {
+    const _inBottomZone = (cx, cy) => {
+      const r = content.getBoundingClientRect();
+      const distFromBottom = r.bottom - cy;
+      return cx >= r.left && cx <= r.right
+        && distFromBottom > RESIZE_EDGE_PX && distFromBottom <= BOTTOM_DRAG_ZONE_PX;
+    };
+    _wireDragHandle(content, {
+      getStartPoint: (e, t) => {
+        const cx = t ? t.clientX : e.clientX;
+        const cy = t ? t.clientY : e.clientY;
+        return _inBottomZone(cx, cy) ? { cx, cy } : null;
+      },
+    });
+
+    // Cursor affordance for the band, mirroring the header's cursor:move.
+    // windowResize.js runs its own hover listener on this same `content`
+    // element for its own (disjoint) edge band — the two never fight over
+    // the same pixel, each just clears its own cursor once the pointer
+    // leaves its own zone.
+    let hoverActive = false;
+    content.addEventListener('mousemove', (e) => {
+      if (mobileSkip > 0 && window.innerWidth <= mobileSkip) return;
+      if (e.target.closest && skipSelector && e.target.closest(skipSelector)) {
+        if (hoverActive) { content.style.cursor = ''; hoverActive = false; }
+        return;
+      }
+      if (_inBottomZone(e.clientX, e.clientY)) {
+        content.style.cursor = 'move';
+        hoverActive = true;
+      } else if (hoverActive) {
+        content.style.cursor = '';
+        hoverActive = false;
+      }
+    });
+    content.addEventListener('mouseleave', () => {
+      if (hoverActive) { content.style.cursor = ''; hoverActive = false; }
+    });
   }
 }
