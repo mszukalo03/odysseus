@@ -34,6 +34,11 @@ let _totalArticles = 0;
 let _activeFeedId = null;
 let _activeGroupId = null;
 let _activeArticleId = null;
+// List vs. grid display for the article list — same localStorage-backed
+// pattern notes.js uses for its own view toggle. A pure CSS class flip on
+// the workspace root (no re-render of _articleItemHtml), so it can't drift
+// out of sync with what's actually in the DOM.
+let _viewMode = (typeof localStorage !== 'undefined' && localStorage.getItem('odysseus-rss-view')) || 'list';
 let _filter = 'unread';
 let _searchQuery = '';
 let _pageOffset = 0;
@@ -64,7 +69,7 @@ function _el(id) { return document.getElementById(id); }
 
 function mount(container) {
   const root = document.createElement('div');
-  root.className = 'rss-workspace rss-workspace-open';
+  root.className = `rss-workspace rss-workspace-open${_viewMode === 'grid' ? ' rss-view-grid' : ''}`;
   root.id = 'rss-workspace';
   root.innerHTML = `
     <div class="rss-pane-header">
@@ -85,6 +90,9 @@ function mount(container) {
       </button>
       <button id="rss-opml-btn" class="doc-action-icon-btn" title="Import/Export OPML" style="opacity:0.8;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
+      <button id="rss-view-toggle-btn" class="doc-action-icon-btn" title="Toggle grid/list view" style="opacity:0.8;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
       </button>
       <button id="rss-close-btn" class="doc-action-icon-btn" title="Close RSS" style="opacity:0.8;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -161,6 +169,14 @@ function _wireEvents(root) {
   _el('rss-close-btn')?.addEventListener('click', (e) => {
     e.preventDefault();
     Workspace.close('rss');
+  });
+  const viewToggleBtn = _el('rss-view-toggle-btn');
+  viewToggleBtn?.classList.toggle('active', _viewMode === 'grid');
+  viewToggleBtn?.addEventListener('click', () => {
+    _viewMode = _viewMode === 'grid' ? 'list' : 'grid';
+    try { localStorage.setItem('odysseus-rss-view', _viewMode); } catch (_) {}
+    root.classList.toggle('rss-view-grid', _viewMode === 'grid');
+    viewToggleBtn.classList.toggle('active', _viewMode === 'grid');
   });
   _el('rss-reader-back')?.addEventListener('click', _closeReader);
   _el('rss-reader-prev')?.addEventListener('click', _prevArticle);
