@@ -153,9 +153,11 @@ def setup() -> APIRouter:
         body = await request.json()
         try:
             return await _tiles.preview_tile(body)
-        except ExternalDbError as exc:
-            raise HTTPException(400, str(exc))
         except Exception as exc:
+            # Covers both ExternalDbError (bad query) and TileConfig
+            # validation errors (bad draft shape) with the same 400 —
+            # unlike get_tile_data below, there's no saved config here to
+            # distinguish "doesn't exist" from "doesn't run".
             raise HTTPException(400, str(exc))
 
     @router.post("/tiles/ai-propose")
