@@ -43,6 +43,56 @@ export function renderTile(container, config, data) {
   container.innerHTML = `<div class="ithaca-tile-hint">Unsupported viz type: ${_esc(type)}</div>`;
 }
 
+// Table sort/filter state (current sort column+direction, per-column filter
+// values) is kept per container rather than per tile config, so it survives
+// the auto-refresh re-render (same DOM node, fresh data) but resets if the
+// tile is torn down and rebuilt.
+const _tileTableState = new WeakMap();
+
+// A column with few distinct values (status/category-like) gets a dropdown
+// filter; anything with more variety (names, free text, ids) gets a
+// substring text filter instead. No config needed — this is inferred fresh
+// from whatever rows the query happens to return.
+const _DISTINCT_FILTER_LIMIT = 12;
+
+function _detectColumnType(field, rows) {
+  let sawValue = false;
+  let allNumeric = true;
+  let allDate = true;
+  for (const row of rows) {
+    const v = row[field];
+    if (v === null || v === undefined || v === '') continue;
+    sawValue = true;
+    const n = typeof v === 'number' ? v : Number(v);
+    if (allNumeric && (typeof v === 'boolean' || v === '' || Number.isNaN(n))) allNumeric = false;
+    if (allDate && (typeof v === 'number' || Number.isNaN(Date.parse(v)))) allDate = false;
+  }
+  if (!sawValue) return 'string';
+  if (allNumeric) return 'number';
+  if (allDate) return 'date';
+  return 'string';
+}
+
+function _distinctValues(field, rows) {
+  const set = new Set();
+  for (const row of rows) {
+    set.add(row[field] === null || row[field] === undefined ? '' : String(row[field]));
+    if (set.size > _DISTINCT_FILTER_LIMIT) return null;
+  }
+  return Array.from(set).sort();
+}
+
+function _compareValues(a, b, type) {
+  const aNull = a === null || a === undefined || a === '';
+  const bNull = b === null || b === undefined || b === '';
+  if (aNull && bNull) return 0;
+  if (aNull) return -1;
+  if (bNull) return 1;
+  if (type === 'number') return Number(a) - Number(b);
+  if (type === 'date') return Date.parse(a) - Date.parse(b);
+  return String(a).localeCompare(String(b));
+}
+
 function _renderTable(container, config, data) {
   const columns = data.columns || [];
   const rows = data.rows || [];
@@ -50,11 +100,101 @@ function _renderTable(container, config, data) {
   const colDefs = configured.length ? configured : columns.map((f) => ({ field: f, label: f }));
   if (!rows.length) {
     container.innerHTML = '<div class="ithaca-tile-hint">No rows returned.</div>';
+    _tileTableState.delete(container);
     return;
   }
-  const head = colDefs.map((c) => `<th>${_esc(c.label || c.field)}</th>`).join('');
-  const body = rows.map((row) => `<tr>${colDefs.map((c) => `<td>${_esc(row[c.field])}</td>`).join('')}</tr>`).join('');
-  container.innerHTML = `<table class="ithaca-tile-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+
+  let state = _tileTableState.get(container);
+  if (!state) {
+    state = { sort: null, filters: {} };
+    _tileTableState.set(container, state);
+  }
+
+  const colMeta = colDefs.map((c) => {
+    const type = _detectColumnType(c.field, rows);
+    return { field: c.field, label: c.label || c.field, type, distinct: type === 'string' ? _distinctValues(c.field, rows) : null };
+  });
+
+  container.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'ithaca-tile-table-wrap';
+
+  const table = document.createElement('table');
+  table.className = 'ithaca-tile-table';
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  const filterRow = document.createElement('tr');
+  filterRow.className = 'ithaca-tile-filter-row';
+  const tbody = document.createElement('tbody');
+
+  function applyAndRender() {
+    let filtered = rows.filter((row) => colMeta.every((c) => {
+      const fv = state.filters[c.field];
+      if (!fv) return true;
+      const val = row[c.field];
+      if (c.distinct) return String(val === null || val === undefined ? '' : val) === fv;
+      return String(val === null || val === undefined ? '' : val).toLowerCase().includes(fv.toLowerCase());
+    }));
+    if (state.sort) {
+      const { field, dir } = state.sort;
+      const type = (colMeta.find((c) => c.field === field) || {}).type || 'string';
+      filtered = filtered.slice().sort((a, b) => _compareValues(a[field], b[field], type) * (dir === 'desc' ? -1 : 1));
+    }
+    tbody.innerHTML = filtered.length
+      ? filtered.map((row) => `<tr>${colMeta.map((c) => `<td>${_esc(row[c.field])}</td>`).join('')}</tr>`).join('')
+      : `<tr><td colspan="${colMeta.length}" class="ithaca-tile-hint">No matching rows.</td></tr>`;
+  }
+
+  colMeta.forEach((c) => {
+    const th = document.createElement('th');
+    th.className = 'ithaca-tile-sortable';
+    const active = state.sort && state.sort.field === c.field;
+    th.textContent = c.label + (active ? (state.sort.dir === 'desc' ? ' ▼' : ' ▲') : '');
+    if (active) th.classList.add('ithaca-tile-sort-active');
+    th.addEventListener('click', () => {
+      if (active) {
+        state.sort = state.sort.dir === 'asc' ? { field: c.field, dir: 'desc' } : null;
+      } else {
+        state.sort = { field: c.field, dir: 'asc' };
+      }
+      _renderTable(container, config, data);
+    });
+    headRow.appendChild(th);
+
+    const filterCell = document.createElement('td');
+    if (c.distinct && c.distinct.length > 1) {
+      const select = document.createElement('select');
+      select.className = 'ithaca-tile-filter-input';
+      select.innerHTML = '<option value="">All</option>' + c.distinct.map((v) => `<option value="${_esc(v)}">${_esc(v || '(blank)')}</option>`).join('');
+      select.value = state.filters[c.field] || '';
+      select.addEventListener('change', () => {
+        if (select.value) state.filters[c.field] = select.value; else delete state.filters[c.field];
+        applyAndRender();
+      });
+      filterCell.appendChild(select);
+    } else {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'ithaca-tile-filter-input';
+      input.placeholder = 'Filter…';
+      input.value = state.filters[c.field] || '';
+      input.addEventListener('input', () => {
+        if (input.value) state.filters[c.field] = input.value; else delete state.filters[c.field];
+        applyAndRender();
+      });
+      filterCell.appendChild(input);
+    }
+    filterRow.appendChild(filterCell);
+  });
+
+  thead.appendChild(headRow);
+  thead.appendChild(filterRow);
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  container.appendChild(wrap);
+
+  applyAndRender();
 }
 
 function _renderList(container, data) {
