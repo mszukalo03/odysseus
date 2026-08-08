@@ -1,6 +1,6 @@
 # Routes & Server Actions
 
-> Part of odysseus/.project-knowledge/ | Last updated: 2026-07-19
+> Part of odysseus/.project-knowledge/ | Last updated: 2026-08-08
 > 150+ endpoints across 55+ route files. Prefix `/api/auth` on all auth routes, `/api` on others.
 > Check here before adding a new route — avoid duplicates.
 >
@@ -127,6 +127,6 @@ Canonically `/api/codex/*` (shared by **all** agent integrations — "codex" nam
 | `POST /api/ithaca/tiles/import` | Admin | Import a package, requiring an explicit local connection_binding |
 | `GET /api/ithaca/layout` | Session / `ithaca:read` | Grid placement (col/row/w/h) for every tile, built-in or user-defined |
 | `PUT /api/ithaca/layout/{id}` | Admin | Persist a drag/resize |
-| `GET/POST/PUT/DELETE /api/db-connections[/{id}]` | Admin | CRUD for read-only Postgres connections (core/external_db.py) used as tile data sources |
+| `GET/POST/PUT/DELETE /api/db-connections[/{id}]` | Admin | CRUD for read-only Postgres/SQLite/MySQL connections (`core/external_db.py` + `core/db_dialects.py`, 2026-08-08 multi-dialect) used as Ithaca tile data sources |
 | `POST /api/db-connections/{id}/test` | Admin | Test a connection |
 | `GET /api/db-connections/{id}/introspect` | Admin | List tables/columns visible to the connection's role |

@@ -1,6 +1,6 @@
 # Roadmap
 
-> Part of odysseus/.project-knowledge/ | Last updated: 2026-07-27
+> Part of odysseus/.project-knowledge/ | Last updated: 2026-08-08
 > Forward-looking only. Check this before starting any task — know what's in flight.
 
 ## Current Goal

@@ -1,6 +1,6 @@
 # Systems
 
-> Part of odysseus/.project-knowledge/ | Last updated: 2026-07-27
+> Part of odysseus/.project-knowledge/ | Last updated: 2026-08-08
 
 | System | Status | Details |
 |--------|--------|---------|
@@ -29,6 +29,7 @@
 | Companion App | ✅ Active | Mobile companion pairing endpoints |
 | Codex / Claude Integration | ✅ Active | External AI code editor bridge |
 | RSS Feed Reader | ✅ Active | RSS/Atom feed reader with AI summaries (incl. YouTube transcript fallback), OPML import/export, 3-pane UI, YouTube channel support, keyboard nav, drag-to-reorder/move, optional auto-refresh (`refresh_due_feeds` scheduled task, off by default). Four agent tools (`list_rss_feeds`/`get_rss_articles`/`summarize_rss_articles`/`mark_rss_article`, `src/tools/feed.py`) — a second worked example of the small-tools pattern below, alongside `get_home_weather`/`query_ithaca_tile` |
+| Ithaca Hub | ✅ Active | Manifest-driven extension: fullscreen dashboard with a built-in Weather tile + user-defined tiles (manual SQL, AI-generated, or imported `.tile.json` packages). External data sources are multi-dialect (Postgres/SQLite/MySQL, 2026-08-08, `core/db_dialects.py` adapter seam) read-only connections; table tiles have client-side sort/filter + JSON(B) column rendering. Two read-only agent tools (`get_home_weather`/`query_ithaca_tile`, `src/tools/ithaca.py`) — see the "Adding a New Agent Tool" checklist below and [[features]] for the full description |
 | Notifications (ntfy) | ✅ Active | Push notification support |
 | Docker Deployment | ✅ Active | Docker Compose with GPU overlays |
 | PWA | ✅ Active | Service worker, manifest.json |
