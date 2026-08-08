@@ -42789,6 +42789,10 @@ body.neon-glow #sidebar {
 .ithaca-tile-null { opacity: 0.4; }
 .ithaca-tile-col-number, .ithaca-tile-col-number td, td.ithaca-tile-col-number { text-align: right; }
 .ithaca-tile-col-date, td.ithaca-tile-col-date { white-space: nowrap; }
+/* JSON(B) columns render as readable "key: value, ..." prose (see
+   _jsonValueToText in tileRenderer.js) which can run longer than a typical
+   cell — let it wrap instead of the default single-line ellipsis truncation. */
+td.ithaca-tile-col-json { white-space: normal; }
 .ithaca-tile-pager {
   display: flex;
   align-items: center;

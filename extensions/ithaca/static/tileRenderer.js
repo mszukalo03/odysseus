@@ -57,28 +57,79 @@ const _DISTINCT_FILTER_LIMIT = 12;
 
 function _detectColumnType(field, rows) {
   let sawValue = false;
+  let sawObject = false;
   let allNumeric = true;
   let allDate = true;
   for (const row of rows) {
     const v = row[field];
     if (v === null || v === undefined || v === '') continue;
     sawValue = true;
+    if (typeof v === 'object') { sawObject = true; continue; }
     const n = typeof v === 'number' ? v : Number(v);
     if (allNumeric && (typeof v === 'boolean' || v === '' || Number.isNaN(n))) allNumeric = false;
     if (allDate && (typeof v === 'number' || Number.isNaN(Date.parse(v)))) allDate = false;
   }
   if (!sawValue) return 'string';
+  // Postgres/MySQL JSON(B) columns come back as real JS objects/arrays — a
+  // column can't sensibly be part-object/part-number, so any object value
+  // decides the whole column, ahead of the numeric/date checks below.
+  if (sawObject) return 'json';
   if (allNumeric) return 'number';
   if (allDate) return 'date';
   return 'string';
 }
 
+// Turn a JSON(B) object into readable "key: value" prose instead of raw
+// JSON — e.g. {"latitude":{"version":"v6.3.0"}} -> "latitude: v6.3.0". Used
+// for display, the substring-filter fallback, and sort comparison. Falls
+// back to JSON.stringify for shapes the "version"/first-primitive heuristic
+// doesn't fit (nested objects/arrays with no obvious single field).
+function _jsonValueToText(value) {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return value.map((v) => _jsonValueToText(v)).join(', ');
+  if (typeof value !== 'object') return String(value);
+  return Object.entries(value).map(([k, v]) => {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      if ('version' in v) return `${k}: ${v.version}`;
+      const primitive = Object.entries(v).find(([, vv]) => vv === null || typeof vv !== 'object');
+      if (primitive) return `${k}: ${primitive[1]}`;
+      return `${k}: ${JSON.stringify(v)}`;
+    }
+    return `${k}: ${_jsonValueToText(v)}`;
+  }).join(', ');
+}
+
+// Generic (non-JSON) cell -> string, for filter matching and sort compare.
+function _cellToString(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return _jsonValueToText(value);
+  return String(value);
+}
+
 function _distinctValues(field, rows) {
   const set = new Set();
   for (const row of rows) {
-    set.add(row[field] === null || row[field] === undefined ? '' : String(row[field]));
+    set.add(_cellToString(row[field]));
     if (set.size > _DISTINCT_FILTER_LIMIT) return null;
   }
+  return Array.from(set).sort();
+}
+
+// For a JSON(B) column, "distinct values" worth filtering on are the
+// top-level keys across all rows (e.g. node names: latitude, archPC, ...),
+// not each row's whole blob — a whole-object equality filter would almost
+// never match more than one row, since most rows have a differently-shaped
+// object. Filtering then means "rows whose object has this key" (see
+// applyAndRender below), which is what "only show apps on node X" means.
+function _jsonColumnKeys(field, rows) {
+  const set = new Set();
+  for (const row of rows) {
+    const v = row[field];
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      for (const k of Object.keys(v)) set.add(k);
+    }
+  }
+  if (!set.size || set.size > _DISTINCT_FILTER_LIMIT) return null;
   return Array.from(set).sort();
 }
 
@@ -90,7 +141,7 @@ function _compareValues(a, b, type) {
   if (bNull) return 1;
   if (type === 'number') return Number(a) - Number(b);
   if (type === 'date') return Date.parse(a) - Date.parse(b);
-  return String(a).localeCompare(String(b));
+  return _cellToString(a).localeCompare(_cellToString(b));
 }
 
 const _PAGE_SIZES = [10, 25, 50, 0]; // 0 = "All"
@@ -114,6 +165,9 @@ function _formatCell(value, type, field) {
     if (!Number.isNaN(t)) return _esc(new Date(t).toLocaleString());
     return _esc(value);
   }
+  if (type === 'json') {
+    return _esc(_jsonValueToText(value));
+  }
   return _esc(value);
 }
 
@@ -136,7 +190,10 @@ function _renderTable(container, config, data) {
 
   const colMeta = colDefs.map((c) => {
     const type = _detectColumnType(c.field, rows);
-    return { field: c.field, label: c.label || c.field, type, distinct: type === 'string' ? _distinctValues(c.field, rows) : null };
+    let distinct = null;
+    if (type === 'string') distinct = _distinctValues(c.field, rows);
+    else if (type === 'json') distinct = _jsonColumnKeys(c.field, rows);
+    return { field: c.field, label: c.label || c.field, type, distinct };
   });
 
   container.innerHTML = '';
@@ -176,9 +233,16 @@ function _renderTable(container, config, data) {
     let filtered = rows.filter((row) => colMeta.every((c) => {
       const fv = state.filters[c.field];
       if (!fv) return true;
-      const val = row[c.field];
-      if (c.distinct) return String(val === null || val === undefined ? '' : val) === fv;
-      return String(val === null || val === undefined ? '' : val).toLowerCase().includes(fv.toLowerCase());
+      const raw = row[c.field];
+      if (c.type === 'json' && c.distinct) {
+        // Dropdown mode on a JSON column: fv is a key (e.g. a node name) —
+        // match rows whose object has that key, not a whole-value match.
+        return !!(raw && typeof raw === 'object' && !Array.isArray(raw)
+          && Object.prototype.hasOwnProperty.call(raw, fv));
+      }
+      const val = _cellToString(raw);
+      if (c.distinct) return val === fv;
+      return val.toLowerCase().includes(fv.toLowerCase());
     }));
     if (state.sort) {
       const { field, dir } = state.sort;
