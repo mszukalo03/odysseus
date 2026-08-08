@@ -2992,8 +2992,6 @@ async function initDbConnectionsSettings() {
   const addBtn = el('set-dbconn-add-btn');
   if (!listEl || !formEl || !addBtn) return;
 
-  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
   let kindInfo = null; // { postgres: {default_port, fields, driver_available, driver_hint}, ... }
   async function fetchKinds() {
     if (kindInfo) return kindInfo;
@@ -3167,8 +3165,6 @@ async function initWebhookTargetsSettings() {
   const formEl = el('set-webhook-form');
   const addBtn = el('set-webhook-add-btn');
   if (!listEl || !formEl || !addBtn) return;
-
-  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   async function fetchTargets() {
     const r = await fetch('/api/webhook-targets', { credentials: 'same-origin' });
