@@ -42786,6 +42786,39 @@ body.neon-glow #sidebar {
   background: var(--bg-secondary, transparent);
   color: inherit;
 }
+.ithaca-tile-null { opacity: 0.4; }
+.ithaca-tile-col-number, .ithaca-tile-col-number td, td.ithaca-tile-col-number { text-align: right; }
+.ithaca-tile-col-date, td.ithaca-tile-col-date { white-space: nowrap; }
+.ithaca-tile-pager {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  opacity: 0.75;
+  padding: 6px 2px 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.ithaca-tile-pager-info { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ithaca-tile-pager-btn {
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.ithaca-tile-pager-btn:disabled { opacity: 0.35; cursor: default; }
+.ithaca-tile-pager-size {
+  font-size: 0.72rem;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-secondary, transparent);
+  color: inherit;
+}
 .ithaca-tile-list { margin: 0; padding-left: 18px; font-size: 0.8rem; }
 .ithaca-tile-list li { padding: 2px 0; }
 .ithaca-tile-stat { font-size: 2rem; font-weight: 600; padding: 8px 2px; }

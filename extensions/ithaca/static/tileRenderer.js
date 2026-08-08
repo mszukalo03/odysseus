@@ -93,6 +93,30 @@ function _compareValues(a, b, type) {
   return String(a).localeCompare(String(b));
 }
 
+const _PAGE_SIZES = [10, 25, 50, 0]; // 0 = "All"
+
+// Column-type-aware cell rendering — reuses the same _detectColumnType the
+// sort/filter UI already computes. Must return escaped HTML: callers join
+// this into an innerHTML template string.
+function _formatCell(value, type, field) {
+  if (value === null || value === undefined || value === '') {
+    return '<span class="ithaca-tile-null">—</span>';
+  }
+  if (type === 'number') {
+    const n = Number(value);
+    if (!Number.isNaN(n) && !/(^|_)id$/i.test(field || '')) {
+      return _esc(n.toLocaleString());
+    }
+    return _esc(value);
+  }
+  if (type === 'date') {
+    const t = Date.parse(value);
+    if (!Number.isNaN(t)) return _esc(new Date(t).toLocaleString());
+    return _esc(value);
+  }
+  return _esc(value);
+}
+
 function _renderTable(container, config, data) {
   const columns = data.columns || [];
   const rows = data.rows || [];
@@ -106,7 +130,7 @@ function _renderTable(container, config, data) {
 
   let state = _tileTableState.get(container);
   if (!state) {
-    state = { sort: null, filters: {} };
+    state = { sort: null, filters: {}, page: 1, pageSize: _PAGE_SIZES[1] };
     _tileTableState.set(container, state);
   }
 
@@ -127,6 +151,27 @@ function _renderTable(container, config, data) {
   filterRow.className = 'ithaca-tile-filter-row';
   const tbody = document.createElement('tbody');
 
+  const pager = document.createElement('div');
+  pager.className = 'ithaca-tile-pager';
+  const pagerInfo = document.createElement('span');
+  pagerInfo.className = 'ithaca-tile-pager-info';
+  const prevBtn = document.createElement('button');
+  prevBtn.type = 'button';
+  prevBtn.textContent = '‹';
+  prevBtn.className = 'ithaca-tile-pager-btn';
+  const nextBtn = document.createElement('button');
+  nextBtn.type = 'button';
+  nextBtn.textContent = '›';
+  nextBtn.className = 'ithaca-tile-pager-btn';
+  const sizeSelect = document.createElement('select');
+  sizeSelect.className = 'ithaca-tile-pager-size';
+  sizeSelect.innerHTML = _PAGE_SIZES.map((n) => `<option value="${n}">${n === 0 ? 'All' : n}</option>`).join('');
+  sizeSelect.value = String(state.pageSize);
+  pager.appendChild(pagerInfo);
+  pager.appendChild(prevBtn);
+  pager.appendChild(nextBtn);
+  pager.appendChild(sizeSelect);
+
   function applyAndRender() {
     let filtered = rows.filter((row) => colMeta.every((c) => {
       const fv = state.filters[c.field];
@@ -140,14 +185,37 @@ function _renderTable(container, config, data) {
       const type = (colMeta.find((c) => c.field === field) || {}).type || 'string';
       filtered = filtered.slice().sort((a, b) => _compareValues(a[field], b[field], type) * (dir === 'desc' ? -1 : 1));
     }
-    tbody.innerHTML = filtered.length
-      ? filtered.map((row) => `<tr>${colMeta.map((c) => `<td>${_esc(row[c.field])}</td>`).join('')}</tr>`).join('')
+
+    const pageSize = state.pageSize || filtered.length || 1;
+    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    // Clamp: a refresh returning fewer rows, or a newly applied filter,
+    // could otherwise leave the view stuck on a now-empty page.
+    state.page = Math.min(Math.max(1, state.page), totalPages);
+    const start = state.pageSize ? (state.page - 1) * state.pageSize : 0;
+    const pageRows = state.pageSize ? filtered.slice(start, start + state.pageSize) : filtered;
+
+    tbody.innerHTML = pageRows.length
+      ? pageRows.map((row) => `<tr>${colMeta.map((c) => `<td class="ithaca-tile-col-${c.type}">${_formatCell(row[c.field], c.type, c.field)}</td>`).join('')}</tr>`).join('')
       : `<tr><td colspan="${colMeta.length}" class="ithaca-tile-hint">No matching rows.</td></tr>`;
+
+    pagerInfo.textContent = filtered.length
+      ? `Page ${state.page} of ${totalPages} · ${filtered.length} row${filtered.length === 1 ? '' : 's'}`
+      : '0 rows';
+    prevBtn.disabled = state.page <= 1;
+    nextBtn.disabled = state.page >= totalPages;
   }
+
+  prevBtn.addEventListener('click', () => { state.page -= 1; applyAndRender(); });
+  nextBtn.addEventListener('click', () => { state.page += 1; applyAndRender(); });
+  sizeSelect.addEventListener('change', () => {
+    state.pageSize = parseInt(sizeSelect.value, 10) || 0;
+    state.page = 1;
+    applyAndRender();
+  });
 
   colMeta.forEach((c) => {
     const th = document.createElement('th');
-    th.className = 'ithaca-tile-sortable';
+    th.className = `ithaca-tile-sortable ithaca-tile-col-${c.type}`;
     const active = state.sort && state.sort.field === c.field;
     th.textContent = c.label + (active ? (state.sort.dir === 'desc' ? ' ▼' : ' ▲') : '');
     if (active) th.classList.add('ithaca-tile-sort-active');
@@ -157,6 +225,7 @@ function _renderTable(container, config, data) {
       } else {
         state.sort = { field: c.field, dir: 'asc' };
       }
+      state.page = 1;
       _renderTable(container, config, data);
     });
     headRow.appendChild(th);
@@ -169,6 +238,7 @@ function _renderTable(container, config, data) {
       select.value = state.filters[c.field] || '';
       select.addEventListener('change', () => {
         if (select.value) state.filters[c.field] = select.value; else delete state.filters[c.field];
+        state.page = 1;
         applyAndRender();
       });
       filterCell.appendChild(select);
@@ -180,6 +250,7 @@ function _renderTable(container, config, data) {
       input.value = state.filters[c.field] || '';
       input.addEventListener('input', () => {
         if (input.value) state.filters[c.field] = input.value; else delete state.filters[c.field];
+        state.page = 1;
         applyAndRender();
       });
       filterCell.appendChild(input);
@@ -193,6 +264,7 @@ function _renderTable(container, config, data) {
   table.appendChild(tbody);
   wrap.appendChild(table);
   container.appendChild(wrap);
+  container.appendChild(pager);
 
   applyAndRender();
 }

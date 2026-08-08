@@ -37,7 +37,13 @@ class TileColumn(BaseModel):
 
 
 class TileDataSource(BaseModel):
-    type: Literal["postgres"] = "postgres"
+    # A portable authoring hint, not authoritative — the bound connection's
+    # `kind` (core/database.py's ExternalDbConnection, resolved via
+    # `connection_ref`) decides the dialect at query time. Kept here so an
+    # exported/imported tile package can warn on a mismatch (e.g. imported
+    # onto an instance where the same connection_ref now points at a
+    # different kind of database).
+    type: Literal["postgres", "sqlite", "mysql"] = "postgres"
     connection_ref: str
     query: str
 
