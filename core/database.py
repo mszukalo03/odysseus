@@ -481,12 +481,18 @@ class ProviderAuthSession(TimestampMixin, Base):
     auth_mode = Column(String, nullable=True)
 
 class ExternalDbConnection(TimestampMixin, Base):
-    """Admin-configured connection to an external (non-app-owned) Postgres
-    database — e.g. a homelab automation's own DB — used by Ithaca dashboard
-    tiles as a read-only data source. Deliberately kept separate from this
-    app's own engine/session (`engine`/`SessionLocal` above): it's a genuinely
-    different database, queried via core/external_db.py with a per-row
+    """Admin-configured connection to an external (non-app-owned) database —
+    e.g. a homelab automation's own Postgres/MySQL DB, or a standalone SQLite
+    file — used by Ithaca dashboard tiles as a read-only data source.
+    Deliberately kept separate from this app's own engine/session
+    (`engine`/`SessionLocal` above): it's a genuinely different database,
+    queried via core/external_db.py + core/db_dialects.py with a per-row
     short-lived engine, never through the app's ORM session.
+
+    `kind` ("postgres" | "sqlite" | "mysql") selects the dialect adapter
+    (core/db_dialects.py) and is the single source of truth at query time —
+    see extensions/ithaca/tile_schema.py's TileDataSource.type for why that
+    field is only a portable authoring hint, not authoritative.
 
     `password` uses EncryptedText (see above) — same at-rest protection as
     ModelEndpoint.api_key / EmailAccount.imap_password.
@@ -502,6 +508,11 @@ class ExternalDbConnection(TimestampMixin, Base):
     username = Column(String, nullable=False)
     password = Column(EncryptedText, nullable=True)
     sslmode = Column(String, nullable=False, default="prefer")
+    # SQLite connections are a FILE PATH, not host/port/user/password. NULL
+    # for postgres/mysql. host/database/username stay NOT NULL (relaxing that
+    # on the app's own SQLite DB would need a full table rebuild) and are
+    # stored as "" for sqlite rows instead — see routes/external_db_routes.py.
+    file_path = Column(String, nullable=True)
     # Advisory today (queries are always enforced read-only at the session
     # level by core/external_db.py regardless of this flag) — kept as an
     # explicit record of intent and a future off-switch if a write-capable
@@ -2060,6 +2071,40 @@ def init_db():
     _migrate_add_feed_sort_order()
     _migrate_drop_dead_feed_tables()
     _migrate_backfill_task_folders()
+    _migrate_add_external_db_file_path()
+
+
+def _migrate_add_external_db_file_path():
+    """Add file_path to external_db_connections (SQLite Ithaca connections
+    are a file path, not host/port/user/password — core/db_dialects.py).
+    Idempotent. Also defensively backfills any row whose kind is NULL/empty
+    to "postgres" (every row was created with an explicit kind before this
+    migration existed, but kind is now load-bearing at query time)."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(external_db_connections)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if columns and "file_path" not in columns:
+            conn.execute("ALTER TABLE external_db_connections ADD COLUMN file_path VARCHAR")
+        if columns:
+            conn.execute(
+                "UPDATE external_db_connections SET kind = 'postgres' "
+                "WHERE kind IS NULL OR kind = ''"
+            )
+        conn.commit()
+        logging.getLogger(__name__).info("Migrated: added 'file_path' to external_db_connections")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"external_db_connections file_path migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def _migrate_add_feed_sort_order():

@@ -43,6 +43,134 @@ export function renderTile(container, config, data) {
   container.innerHTML = `<div class="ithaca-tile-hint">Unsupported viz type: ${_esc(type)}</div>`;
 }
 
+// Table sort/filter state (current sort column+direction, per-column filter
+// values) is kept per container rather than per tile config, so it survives
+// the auto-refresh re-render (same DOM node, fresh data) but resets if the
+// tile is torn down and rebuilt.
+const _tileTableState = new WeakMap();
+
+// A column with few distinct values (status/category-like) gets a dropdown
+// filter; anything with more variety (names, free text, ids) gets a
+// substring text filter instead. No config needed — this is inferred fresh
+// from whatever rows the query happens to return.
+const _DISTINCT_FILTER_LIMIT = 12;
+
+function _detectColumnType(field, rows) {
+  let sawValue = false;
+  let sawObject = false;
+  let allNumeric = true;
+  let allDate = true;
+  for (const row of rows) {
+    const v = row[field];
+    if (v === null || v === undefined || v === '') continue;
+    sawValue = true;
+    if (typeof v === 'object') { sawObject = true; continue; }
+    const n = typeof v === 'number' ? v : Number(v);
+    if (allNumeric && (typeof v === 'boolean' || v === '' || Number.isNaN(n))) allNumeric = false;
+    if (allDate && (typeof v === 'number' || Number.isNaN(Date.parse(v)))) allDate = false;
+  }
+  if (!sawValue) return 'string';
+  // Postgres/MySQL JSON(B) columns come back as real JS objects/arrays — a
+  // column can't sensibly be part-object/part-number, so any object value
+  // decides the whole column, ahead of the numeric/date checks below.
+  if (sawObject) return 'json';
+  if (allNumeric) return 'number';
+  if (allDate) return 'date';
+  return 'string';
+}
+
+// Turn a JSON(B) object into readable "key: value" prose instead of raw
+// JSON — e.g. {"latitude":{"version":"v6.3.0"}} -> "latitude: v6.3.0". Used
+// for display, the substring-filter fallback, and sort comparison. Falls
+// back to JSON.stringify for shapes the "version"/first-primitive heuristic
+// doesn't fit (nested objects/arrays with no obvious single field).
+function _jsonValueToText(value) {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return value.map((v) => _jsonValueToText(v)).join(', ');
+  if (typeof value !== 'object') return String(value);
+  return Object.entries(value).map(([k, v]) => {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      if ('version' in v) return `${k}: ${v.version}`;
+      const primitive = Object.entries(v).find(([, vv]) => vv === null || typeof vv !== 'object');
+      if (primitive) return `${k}: ${primitive[1]}`;
+      return `${k}: ${JSON.stringify(v)}`;
+    }
+    return `${k}: ${_jsonValueToText(v)}`;
+  }).join(', ');
+}
+
+// Generic (non-JSON) cell -> string, for filter matching and sort compare.
+function _cellToString(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return _jsonValueToText(value);
+  return String(value);
+}
+
+function _distinctValues(field, rows) {
+  const set = new Set();
+  for (const row of rows) {
+    set.add(_cellToString(row[field]));
+    if (set.size > _DISTINCT_FILTER_LIMIT) return null;
+  }
+  return Array.from(set).sort();
+}
+
+// For a JSON(B) column, "distinct values" worth filtering on are the
+// top-level keys across all rows (e.g. node names: latitude, archPC, ...),
+// not each row's whole blob — a whole-object equality filter would almost
+// never match more than one row, since most rows have a differently-shaped
+// object. Filtering then means "rows whose object has this key" (see
+// applyAndRender below), which is what "only show apps on node X" means.
+function _jsonColumnKeys(field, rows) {
+  const set = new Set();
+  for (const row of rows) {
+    const v = row[field];
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      for (const k of Object.keys(v)) set.add(k);
+    }
+  }
+  if (!set.size || set.size > _DISTINCT_FILTER_LIMIT) return null;
+  return Array.from(set).sort();
+}
+
+function _compareValues(a, b, type) {
+  const aNull = a === null || a === undefined || a === '';
+  const bNull = b === null || b === undefined || b === '';
+  if (aNull && bNull) return 0;
+  if (aNull) return -1;
+  if (bNull) return 1;
+  if (type === 'number') return Number(a) - Number(b);
+  if (type === 'date') return Date.parse(a) - Date.parse(b);
+  return _cellToString(a).localeCompare(_cellToString(b));
+}
+
+const _PAGE_SIZES = [10, 25, 50, 0]; // 0 = "All"
+
+// Column-type-aware cell rendering — reuses the same _detectColumnType the
+// sort/filter UI already computes. Must return escaped HTML: callers join
+// this into an innerHTML template string.
+function _formatCell(value, type, field) {
+  if (value === null || value === undefined || value === '') {
+    return '<span class="ithaca-tile-null">—</span>';
+  }
+  if (type === 'number') {
+    const n = Number(value);
+    if (!Number.isNaN(n) && !/(^|_)id$/i.test(field || '')) {
+      return _esc(n.toLocaleString());
+    }
+    return _esc(value);
+  }
+  if (type === 'date') {
+    const t = Date.parse(value);
+    if (!Number.isNaN(t)) return _esc(new Date(t).toLocaleString());
+    return _esc(value);
+  }
+  if (type === 'json') {
+    return _esc(_jsonValueToText(value));
+  }
+  return _esc(value);
+}
+
 function _renderTable(container, config, data) {
   const columns = data.columns || [];
   const rows = data.rows || [];
@@ -50,11 +178,159 @@ function _renderTable(container, config, data) {
   const colDefs = configured.length ? configured : columns.map((f) => ({ field: f, label: f }));
   if (!rows.length) {
     container.innerHTML = '<div class="ithaca-tile-hint">No rows returned.</div>';
+    _tileTableState.delete(container);
     return;
   }
-  const head = colDefs.map((c) => `<th>${_esc(c.label || c.field)}</th>`).join('');
-  const body = rows.map((row) => `<tr>${colDefs.map((c) => `<td>${_esc(row[c.field])}</td>`).join('')}</tr>`).join('');
-  container.innerHTML = `<table class="ithaca-tile-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+
+  let state = _tileTableState.get(container);
+  if (!state) {
+    state = { sort: null, filters: {}, page: 1, pageSize: _PAGE_SIZES[1] };
+    _tileTableState.set(container, state);
+  }
+
+  const colMeta = colDefs.map((c) => {
+    const type = _detectColumnType(c.field, rows);
+    let distinct = null;
+    if (type === 'string') distinct = _distinctValues(c.field, rows);
+    else if (type === 'json') distinct = _jsonColumnKeys(c.field, rows);
+    return { field: c.field, label: c.label || c.field, type, distinct };
+  });
+
+  container.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'ithaca-tile-table-wrap';
+
+  const table = document.createElement('table');
+  table.className = 'ithaca-tile-table';
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  const filterRow = document.createElement('tr');
+  filterRow.className = 'ithaca-tile-filter-row';
+  const tbody = document.createElement('tbody');
+
+  const pager = document.createElement('div');
+  pager.className = 'ithaca-tile-pager';
+  const pagerInfo = document.createElement('span');
+  pagerInfo.className = 'ithaca-tile-pager-info';
+  const prevBtn = document.createElement('button');
+  prevBtn.type = 'button';
+  prevBtn.textContent = '‹';
+  prevBtn.className = 'ithaca-tile-pager-btn';
+  const nextBtn = document.createElement('button');
+  nextBtn.type = 'button';
+  nextBtn.textContent = '›';
+  nextBtn.className = 'ithaca-tile-pager-btn';
+  const sizeSelect = document.createElement('select');
+  sizeSelect.className = 'ithaca-tile-pager-size';
+  sizeSelect.innerHTML = _PAGE_SIZES.map((n) => `<option value="${n}">${n === 0 ? 'All' : n}</option>`).join('');
+  sizeSelect.value = String(state.pageSize);
+  pager.appendChild(pagerInfo);
+  pager.appendChild(prevBtn);
+  pager.appendChild(nextBtn);
+  pager.appendChild(sizeSelect);
+
+  function applyAndRender() {
+    let filtered = rows.filter((row) => colMeta.every((c) => {
+      const fv = state.filters[c.field];
+      if (!fv) return true;
+      const raw = row[c.field];
+      if (c.type === 'json' && c.distinct) {
+        // Dropdown mode on a JSON column: fv is a key (e.g. a node name) —
+        // match rows whose object has that key, not a whole-value match.
+        return !!(raw && typeof raw === 'object' && !Array.isArray(raw)
+          && Object.prototype.hasOwnProperty.call(raw, fv));
+      }
+      const val = _cellToString(raw);
+      if (c.distinct) return val === fv;
+      return val.toLowerCase().includes(fv.toLowerCase());
+    }));
+    if (state.sort) {
+      const { field, dir } = state.sort;
+      const type = (colMeta.find((c) => c.field === field) || {}).type || 'string';
+      filtered = filtered.slice().sort((a, b) => _compareValues(a[field], b[field], type) * (dir === 'desc' ? -1 : 1));
+    }
+
+    const pageSize = state.pageSize || filtered.length || 1;
+    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    // Clamp: a refresh returning fewer rows, or a newly applied filter,
+    // could otherwise leave the view stuck on a now-empty page.
+    state.page = Math.min(Math.max(1, state.page), totalPages);
+    const start = state.pageSize ? (state.page - 1) * state.pageSize : 0;
+    const pageRows = state.pageSize ? filtered.slice(start, start + state.pageSize) : filtered;
+
+    tbody.innerHTML = pageRows.length
+      ? pageRows.map((row) => `<tr>${colMeta.map((c) => `<td class="ithaca-tile-col-${c.type}">${_formatCell(row[c.field], c.type, c.field)}</td>`).join('')}</tr>`).join('')
+      : `<tr><td colspan="${colMeta.length}" class="ithaca-tile-hint">No matching rows.</td></tr>`;
+
+    pagerInfo.textContent = filtered.length
+      ? `Page ${state.page} of ${totalPages} · ${filtered.length} row${filtered.length === 1 ? '' : 's'}`
+      : '0 rows';
+    prevBtn.disabled = state.page <= 1;
+    nextBtn.disabled = state.page >= totalPages;
+  }
+
+  prevBtn.addEventListener('click', () => { state.page -= 1; applyAndRender(); });
+  nextBtn.addEventListener('click', () => { state.page += 1; applyAndRender(); });
+  sizeSelect.addEventListener('change', () => {
+    state.pageSize = parseInt(sizeSelect.value, 10) || 0;
+    state.page = 1;
+    applyAndRender();
+  });
+
+  colMeta.forEach((c) => {
+    const th = document.createElement('th');
+    th.className = `ithaca-tile-sortable ithaca-tile-col-${c.type}`;
+    const active = state.sort && state.sort.field === c.field;
+    th.textContent = c.label + (active ? (state.sort.dir === 'desc' ? ' ▼' : ' ▲') : '');
+    if (active) th.classList.add('ithaca-tile-sort-active');
+    th.addEventListener('click', () => {
+      if (active) {
+        state.sort = state.sort.dir === 'asc' ? { field: c.field, dir: 'desc' } : null;
+      } else {
+        state.sort = { field: c.field, dir: 'asc' };
+      }
+      state.page = 1;
+      _renderTable(container, config, data);
+    });
+    headRow.appendChild(th);
+
+    const filterCell = document.createElement('td');
+    if (c.distinct && c.distinct.length > 1) {
+      const select = document.createElement('select');
+      select.className = 'ithaca-tile-filter-input';
+      select.innerHTML = '<option value="">All</option>' + c.distinct.map((v) => `<option value="${_esc(v)}">${_esc(v || '(blank)')}</option>`).join('');
+      select.value = state.filters[c.field] || '';
+      select.addEventListener('change', () => {
+        if (select.value) state.filters[c.field] = select.value; else delete state.filters[c.field];
+        state.page = 1;
+        applyAndRender();
+      });
+      filterCell.appendChild(select);
+    } else {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'ithaca-tile-filter-input';
+      input.placeholder = 'Filter…';
+      input.value = state.filters[c.field] || '';
+      input.addEventListener('input', () => {
+        if (input.value) state.filters[c.field] = input.value; else delete state.filters[c.field];
+        state.page = 1;
+        applyAndRender();
+      });
+      filterCell.appendChild(input);
+    }
+    filterRow.appendChild(filterCell);
+  });
+
+  thead.appendChild(headRow);
+  thead.appendChild(filterRow);
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  container.appendChild(wrap);
+  container.appendChild(pager);
+
+  applyAndRender();
 }
 
 function _renderList(container, data) {

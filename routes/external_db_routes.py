@@ -1,16 +1,18 @@
 """
 routes/external_db_routes.py
 
-Admin-only CRUD for `ExternalDbConnection` rows (core/database.py) — Postgres
-connections to databases this app doesn't own (e.g. a homelab automation's
-own DB), used as read-only data sources for Ithaca dashboard tiles
-(extensions/ithaca/tiles.py). Query execution and read-only enforcement live
-in core/external_db.py; this module is just the connection CRUD + test +
-introspect HTTP surface.
+Admin-only CRUD for `ExternalDbConnection` rows (core/database.py) —
+Postgres/MySQL/SQLite connections to databases this app doesn't own (e.g. a
+homelab automation's own DB, or a standalone SQLite file), used as read-only
+data sources for Ithaca dashboard tiles (extensions/ithaca/tiles.py). Query
+execution, read-only enforcement, and per-dialect detail live in
+core/external_db.py + core/db_dialects.py; this module is just the
+connection CRUD + test + introspect HTTP surface.
 
-Entirely admin-gated: a connection's host/port/credentials are the
-highest-value secret this feature introduces, so nothing here is exposed to
-non-admin users, and passwords are never included in list/get responses.
+Entirely admin-gated: a connection's host/port/credentials (or SQLite file
+path) are the highest-value secret this feature introduces, so nothing here
+is exposed to non-admin users, and passwords are never included in list/get
+responses.
 """
 
 import logging
@@ -22,18 +24,21 @@ from pydantic import BaseModel
 from core.database import SessionLocal, ExternalDbConnection
 from core.middleware import require_admin, reject_cross_site
 from core.external_db import test_connection, introspect_schema, invalidate_schema_cache, ExternalDbError
+from core.db_dialects import get_adapter, SUPPORTED_KINDS, UnsupportedDialectError
 
 logger = logging.getLogger(__name__)
 
 
 class DbConnectionCreate(BaseModel):
     label: str
-    host: str
-    port: int = 5432
-    database: str
-    username: str
+    kind: str = "postgres"
+    host: str = ""
+    port: int | None = None
+    database: str = ""
+    username: str = ""
     password: str = ""
     sslmode: str = "prefer"
+    file_path: str = ""
 
 
 class DbConnectionUpdate(BaseModel):
@@ -44,9 +49,37 @@ class DbConnectionUpdate(BaseModel):
     username: str | None = None
     password: str | None = None  # only overwritten when non-empty, like EmailAccount
     sslmode: str | None = None
+    file_path: str | None = None
+    # kind is intentionally NOT updatable — changing it would silently
+    # repoint every field's meaning (and any tile using this connection) at
+    # a different backend. Create a new connection instead.
+
+
+def _validate_conn_fields(kind: str, data) -> str | None:
+    """Shared create/update validation. Returns an error string, or None."""
+    if kind not in SUPPORTED_KINDS:
+        return f"kind must be one of {', '.join(SUPPORTED_KINDS)}"
+    if kind == "sqlite":
+        file_path = (getattr(data, "file_path", "") or "").strip()
+        if not file_path:
+            return "file_path is required for sqlite connections"
+    else:
+        if not (data.host or "").strip() or not (data.database or "").strip() or not (data.username or "").strip():
+            return "host, database, and username are required"
+    return None
 
 
 def _to_dict(row: ExternalDbConnection) -> dict:
+    try:
+        get_adapter(row.kind).require_driver()
+        driver_available = True
+        driver_hint = None
+    except UnsupportedDialectError:
+        driver_available = True  # unknown kind isn't a missing-driver problem
+        driver_hint = None
+    except Exception as exc:
+        driver_available = False
+        driver_hint = str(exc)
     return {
         "id": row.id,
         "label": row.label,
@@ -57,7 +90,10 @@ def _to_dict(row: ExternalDbConnection) -> dict:
         "username": row.username,
         "has_password": bool(row.password),
         "sslmode": row.sslmode,
+        "file_path": row.file_path,
         "read_only": bool(row.read_only),
+        "driver_available": driver_available,
+        "driver_hint": driver_hint,
     }
 
 
@@ -66,6 +102,31 @@ def setup_external_db_routes() -> APIRouter:
         prefix="/api/db-connections", tags=["db-connections"],
         dependencies=[Depends(require_admin)],
     )
+
+    @router.get("/kinds")
+    async def list_db_kinds():
+        # Declared above /{conn_id} — otherwise FastAPI would match "kinds"
+        # as a conn_id.
+        kinds = []
+        for kind in SUPPORTED_KINDS:
+            adapter = get_adapter(kind)
+            try:
+                adapter.require_driver()
+                driver_available, driver_hint = True, None
+            except Exception as exc:
+                driver_available, driver_hint = False, str(exc)
+            fields = ["file_path"] if not adapter.uses_network else (
+                ["host", "port", "database", "username", "password"]
+                + (["sslmode"] if adapter.uses_sslmode else [])
+            )
+            kinds.append({
+                "kind": kind,
+                "default_port": adapter.default_port,
+                "fields": fields,
+                "driver_available": driver_available,
+                "driver_hint": driver_hint,
+            })
+        return {"kinds": kinds}
 
     @router.get("")
     async def list_db_connections():
@@ -82,20 +143,24 @@ def setup_external_db_routes() -> APIRouter:
         label = data.label.strip()
         if not label:
             return {"ok": False, "error": "label required"}
-        if not data.host.strip() or not data.database.strip() or not data.username.strip():
-            return {"ok": False, "error": "host, database, and username are required"}
+        kind = (data.kind or "postgres").strip().lower()
+        err = _validate_conn_fields(kind, data)
+        if err:
+            return {"ok": False, "error": err}
+        adapter = get_adapter(kind)
         db = SessionLocal()
         try:
             row = ExternalDbConnection(
                 id=uuid.uuid4().hex,
                 label=label,
-                kind="postgres",
-                host=data.host.strip(),
-                port=int(data.port or 5432),
-                database=data.database.strip(),
-                username=data.username.strip(),
+                kind=kind,
+                host=(data.host or "").strip(),
+                port=int(data.port or adapter.default_port or 0),
+                database=(data.database or "").strip(),
+                username=(data.username or "").strip(),
                 password=data.password or "",
-                sslmode=(data.sslmode or "prefer").strip(),
+                sslmode=(data.sslmode or "prefer").strip() if adapter.uses_sslmode else "",
+                file_path=(data.file_path or "").strip(),
                 read_only=True,
             )
             db.add(row)
@@ -112,7 +177,7 @@ def setup_external_db_routes() -> APIRouter:
             row = db.get(ExternalDbConnection, conn_id)
             if not row:
                 return {"ok": False, "error": "Connection not found"}
-            for key in ("label", "host", "database", "username", "sslmode"):
+            for key in ("label", "host", "database", "username", "sslmode", "file_path"):
                 val = getattr(data, key)
                 if val is not None:
                     setattr(row, key, val.strip())
@@ -121,7 +186,7 @@ def setup_external_db_routes() -> APIRouter:
             if data.password:
                 row.password = data.password
             db.commit()
-            invalidate_schema_cache(conn_id)  # host/db may have changed under this id
+            invalidate_schema_cache(conn_id)  # host/db/file_path may have changed under this id
             return {"ok": True, "id": row.id}
         finally:
             db.close()

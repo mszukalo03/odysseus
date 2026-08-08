@@ -49,9 +49,14 @@ def build_tile_package(tile_id: str) -> dict[str, Any]:
         raise TilePackagingError(f"No tile config with id '{tile_id}'")
     cfg = TileConfig.model_validate(data)
 
-    hint: dict[str, Any] = {"kind": "postgres", "label": cfg.data_source.connection_ref}
+    # Fall back to the tile's own authoring hint (data_source.type) if the
+    # connection has since been deleted — better than always assuming
+    # postgres for a tile that may have been authored against another
+    # dialect.
+    hint: dict[str, Any] = {"kind": cfg.data_source.type, "label": cfg.data_source.connection_ref}
     try:
         conn = get_connection(cfg.data_source.connection_ref)
+        hint["kind"] = conn.kind
         hint["label"] = conn.label
         hint["database"] = conn.database
     except ExternalDbError:

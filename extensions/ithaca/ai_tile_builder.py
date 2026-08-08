@@ -1,10 +1,11 @@
 """
 extensions/ithaca/ai_tile_builder.py
 
-Single-shot AI tile proposal: given a Postgres connection, a free-form
-context doc the user pastes (notes about *that* dataset — nothing here
-assumes any particular table), and a natural-language ask, produce one
-TileConfig-shaped JSON draft for the user to preview/edit/save.
+Single-shot AI tile proposal: given a database connection (Postgres, MySQL,
+or SQLite — core/db_dialects.py), a free-form context doc the user pastes
+(notes about *that* dataset — nothing here assumes any particular table),
+and a natural-language ask, produce one TileConfig-shaped JSON draft for the
+user to preview/edit/save.
 
 Deliberately NOT wired into the general agent tool-calling framework
 (src/agent_loop.py, src/tools/*) — this is a dedicated backend function that
@@ -40,7 +41,7 @@ import logging
 import re
 from typing import Optional
 
-from core.external_db import introspect_schema, run_readonly_query, ExternalDbError
+from core.external_db import introspect_schema, run_readonly_query, get_connection, ExternalDbError
 from src.endpoint_resolver import resolve_endpoint
 from src.llm_core import llm_call_async
 
@@ -100,10 +101,36 @@ Request: {_EXAMPLE_INSTRUCTION}
 Output: {_EXAMPLE_OUTPUT}
 """
 
+# Per-dialect SQL guidance, prepended to the system prompt so the model
+# writes syntax the connection's actual database understands. Kept short —
+# this is a nudge, not a reference manual.
+_DIALECT_GUIDANCE = {
+    "postgres": (
+        "You are writing SQL for a PostgreSQL database. Use double-quoted "
+        "identifiers only if needed, ILIKE for case-insensitive matching, "
+        "NOW() for the current time."
+    ),
+    "mysql": (
+        "You are writing SQL for a MySQL/MariaDB database. Use backtick-"
+        "quoted identifiers only if needed, LOWER(x) LIKE '...' for case-"
+        "insensitive matching (ILIKE does not exist), NOW() for the current "
+        "time."
+    ),
+    "sqlite": (
+        "You are writing SQL for a SQLite database. There are no schemas — "
+        "reference tables by their bare name, not schema.table. LIKE is "
+        "already case-insensitive for ASCII text. Use datetime('now') for "
+        "the current time."
+    ),
+}
+
 
 def _format_schema(tables: list[dict]) -> str:
-    lines = [f"- {t['schema']}.{t['table']}({', '.join(f'{c['name']} {c['type']}' for c in t['columns'])})"
-              for t in tables[:_MAX_SCHEMA_TABLES]]
+    lines = []
+    for t in tables[:_MAX_SCHEMA_TABLES]:
+        cols = ', '.join(f'{c["name"]} {c["type"]}' for c in t['columns'])
+        prefix = f"{t['schema']}." if t.get('schema') else ""
+        lines.append(f"- {prefix}{t['table']}({cols})")
     if len(tables) > _MAX_SCHEMA_TABLES:
         lines.append(f"(+{len(tables) - _MAX_SCHEMA_TABLES} more tables not shown)")
     return "\n".join(lines) or "(no tables visible to this connection's role)"
@@ -185,6 +212,11 @@ async def propose_tile_config(
     if not instruction.strip():
         raise TileProposalError("instruction is required")
     try:
+        conn = get_connection(connection_ref)
+        kind = conn.kind
+    except ExternalDbError as exc:
+        raise TileProposalError(f"Could not resolve connection '{connection_ref}': {exc}") from exc
+    try:
         tables = await introspect_schema(connection_ref)
     except ExternalDbError as exc:
         raise TileProposalError(f"Could not introspect connection '{connection_ref}': {exc}") from exc
@@ -210,8 +242,9 @@ async def propose_tile_config(
         )
     user_parts.append(f"Request: {instruction.strip()}")
 
+    dialect_note = _DIALECT_GUIDANCE.get(kind, _DIALECT_GUIDANCE["postgres"])
     messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "system", "content": f"{dialect_note}\n\n{_SYSTEM_PROMPT}"},
         {"role": "user", "content": "\n\n".join(user_parts)},
     ]
     proposed = await _generate_json(url, model, headers, messages)
@@ -227,7 +260,7 @@ async def propose_tile_config(
         "schema_version": 1,
         "id": tile_id,
         "title": title,
-        "data_source": {"type": "postgres", "connection_ref": connection_ref, "query": query},
+        "data_source": {"type": kind, "connection_ref": connection_ref, "query": query},
         "viz": {
             "type": viz_type,
             "columns": [],

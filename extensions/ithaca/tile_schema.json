@@ -14,7 +14,7 @@
       "type": "object",
       "required": ["type", "connection_ref", "query"],
       "properties": {
-        "type": { "type": "string", "const": "postgres" },
+        "type": { "type": "string", "enum": ["postgres", "sqlite", "mysql"] },
         "connection_ref": { "type": "string" },
         "query": { "type": "string" }
       }

@@ -3,8 +3,9 @@ extensions/ithaca/tiles.py
 
 CRUD + query-execution glue for user-defined Ithaca dashboard tiles — kept
 separate from weather.py (the one built-in tile) so this module owns
-everything that's generic to *any* tile config, regardless of what Postgres
-connection/table it points at.
+everything that's generic to *any* tile config, regardless of what database
+connection/table it points at (Postgres, SQLite, or MySQL — see
+core/db_dialects.py).
 
 Storage: one JSON file per tile under data/ithaca/tiles/<id>.json
 (atomic_write_json) — no DB table needed at this scale, and it keeps a
@@ -21,7 +22,7 @@ import os
 
 from core.atomic_io import atomic_write_json
 from core.constants import DATA_DIR
-from core.external_db import run_readonly_query, ExternalDbError
+from core.external_db import run_readonly_query, get_connection, ExternalDbError
 from core.ttl_cache import TTLCache
 
 from extensions.ithaca.tile_schema import TileConfig
@@ -147,6 +148,21 @@ def _shape_rows(cfg: TileConfig, columns: list[str], rows: list[list]) -> dict:
 
 
 def _run_tile_sync(cfg: TileConfig) -> dict:
+    # data_source.type is only a portable authoring hint (see
+    # tile_schema.py's TileDataSource) — the bound connection's own `kind` is
+    # authoritative at query time, so a mismatch (e.g. a tile authored
+    # against Postgres syntax later pointed at a MySQL connection) is logged
+    # rather than rejected; the query itself is the real test.
+    try:
+        conn = get_connection(cfg.data_source.connection_ref)
+        if conn.kind != cfg.data_source.type:
+            logger.info(
+                "Tile '%s' data_source.type=%s but connection '%s' is kind=%s — "
+                "using the connection's kind",
+                cfg.id, cfg.data_source.type, conn.id, conn.kind,
+            )
+    except ExternalDbError:
+        pass  # let run_readonly_query below raise the real, user-facing error
     result = run_readonly_query(cfg.data_source.connection_ref, cfg.data_source.query)
     return _shape_rows(cfg, result["columns"], result["rows"])
 

@@ -28,6 +28,32 @@ async function _fetchWebhookTargets() {
   }
 }
 
+// One sentence of dialect-specific SQL nudge per connection kind — no
+// client-side query validation, just a hint next to the SQL textarea.
+const _SQL_HINTS = {
+  postgres: 'Postgres: schema-qualify tables if needed, ILIKE for case-insensitive matching, NOW() for the current time.',
+  mysql: 'MySQL: use backtick-quoted identifiers if needed, NOW() for the current time; no ILIKE — use LOWER(x) LIKE instead.',
+  sqlite: 'SQLite: no schema prefix on table names, LIKE is case-insensitive for ASCII, datetime(\'now\') for the current time.',
+};
+
+// Shared by the tile-builder connection picker and the import modal's
+// bind-to-connection picker — was previously duplicated verbatim in both.
+async function _loadConnections(selectEl, selectedId) {
+  try {
+    const r = await fetch('/api/db-connections', { credentials: 'same-origin' });
+    const d = await r.json();
+    const conns = d.connections || [];
+    selectEl.innerHTML = conns.length
+      ? conns.map((c) => `<option value="${_esc(c.id)}" data-kind="${_esc(c.kind || 'postgres')}">${_esc(c.label)} · ${_esc(c.kind || 'postgres')}</option>`).join('')
+      : '<option value="">No connections configured — add one in Settings first</option>';
+    if (selectedId) selectEl.value = selectedId;
+    return conns;
+  } catch (err) {
+    selectEl.innerHTML = '<option value="">Failed to load connections</option>';
+    return [];
+  }
+}
+
 export function closeTileBuilder() {
   document.getElementById('ithaca-tilebuilder-overlay')?.remove();
 }
@@ -68,6 +94,7 @@ export async function openTileBuilder(onSaved, existingTile = null) {
           <hr style="border-color:var(--border);margin:10px 0">
           <div class="settings-row"><label class="settings-label">Title</label><input id="itb-d-title" class="settings-input"></div>
           <div class="settings-row" style="align-items:flex-start"><label class="settings-label">SQL query</label><textarea id="itb-d-query" class="settings-input" rows="4" style="font-family:monospace;font-size:11px;"></textarea></div>
+          <div id="itb-d-sql-hint" style="font-size:11px;opacity:0.6;margin:-6px 0 8px;"></div>
           <div class="settings-row"><label class="settings-label">Viz type</label>
             <select id="itb-d-viztype" class="settings-select" style="width:140px;">
               <option value="table">table</option><option value="stat">stat</option>
@@ -100,17 +127,15 @@ export async function openTileBuilder(onSaved, existingTile = null) {
   document.getElementById('itb-close').addEventListener('click', closeTileBuilder);
 
   const connSel = document.getElementById('itb-connection');
-  try {
-    const r = await fetch('/api/db-connections', { credentials: 'same-origin' });
-    const d = await r.json();
-    const conns = d.connections || [];
-    connSel.innerHTML = conns.length
-      ? conns.map((c) => `<option value="${_esc(c.id)}">${_esc(c.label)}</option>`).join('')
-      : '<option value="">No connections configured — add one in Settings first</option>';
-    if (existingTile?.data_source?.connection_ref) connSel.value = existingTile.data_source.connection_ref;
-  } catch (err) {
-    connSel.innerHTML = '<option value="">Failed to load connections</option>';
+  await _loadConnections(connSel, existingTile?.data_source?.connection_ref);
+
+  function _updateSqlHint() {
+    const kind = connSel.selectedOptions[0]?.dataset.kind || 'postgres';
+    const hintEl = document.getElementById('itb-d-sql-hint');
+    if (hintEl) hintEl.textContent = _SQL_HINTS[kind] || '';
   }
+  connSel.addEventListener('change', _updateSqlHint);
+  _updateSqlHint();
 
   const endpointSel = document.getElementById('itb-action-endpoint');
   const webhookTargets = await _fetchWebhookTargets();
@@ -216,10 +241,11 @@ export async function openTileBuilder(onSaved, existingTile = null) {
 
   function _draftFromForm() {
     if (!_draft) return null;
+    const kind = connSel.selectedOptions[0]?.dataset.kind || _draft.data_source?.type || 'postgres';
     return {
       ..._draft,
       title: document.getElementById('itb-d-title').value.trim() || _draft.title,
-      data_source: { ..._draft.data_source, query: document.getElementById('itb-d-query').value },
+      data_source: { ..._draft.data_source, type: kind, connection_ref: connSel.value, query: document.getElementById('itb-d-query').value },
       viz: { ..._draft.viz, type: document.getElementById('itb-d-viztype').value },
       actions: _draftActions,
     };
@@ -335,28 +361,35 @@ export async function openImportTileModal(onImported) {
   document.getElementById('iti-close').addEventListener('click', closeImportTileModal);
 
   const connSel = document.getElementById('iti-connection');
-  try {
-    const r = await fetch('/api/db-connections', { credentials: 'same-origin' });
-    const d = await r.json();
-    const conns = d.connections || [];
-    connSel.innerHTML = conns.length
-      ? conns.map((c) => `<option value="${_esc(c.id)}">${_esc(c.label)}</option>`).join('')
-      : '<option value="">No connections configured — add one in Settings first</option>';
-  } catch (err) {
-    connSel.innerHTML = '<option value="">Failed to load connections</option>';
-  }
+  const importedConns = await _loadConnections(connSel);
 
   const webhookTargets = await _fetchWebhookTargets();
 
-  document.getElementById('iti-package').addEventListener('input', (e) => {
+  function _updateImportHint() {
     const hintEl = document.getElementById('iti-hint');
+    let pkg;
+    try {
+      pkg = JSON.parse(document.getElementById('iti-package').value);
+    } catch (_) {
+      hintEl.textContent = '';
+      return;
+    }
+    const hint = pkg.connection_hint;
+    if (!hint) { hintEl.textContent = ''; return; }
+    let text = `This tile expects a ${_esc(hint.kind || 'postgres')} connection like "${_esc(hint.label || '')}"${hint.database ? ` (db: ${_esc(hint.database)})` : ''}.`;
+    const bound = importedConns.find((c) => c.id === connSel.value);
+    if (bound && hint.kind && bound.kind && bound.kind !== hint.kind) {
+      text += ` Warning: you picked a ${_esc(bound.kind)} connection — the query may need adjustment for that dialect.`;
+    }
+    hintEl.textContent = text;
+  }
+  connSel.addEventListener('change', _updateImportHint);
+
+  document.getElementById('iti-package').addEventListener('input', (e) => {
+    _updateImportHint();
     const bindingsEl = document.getElementById('iti-action-bindings');
     try {
       const pkg = JSON.parse(e.target.value);
-      const hint = pkg.connection_hint;
-      hintEl.textContent = hint
-        ? `This tile expects a ${_esc(hint.kind || 'postgres')} connection like "${_esc(hint.label || '')}"${hint.database ? ` (db: ${_esc(hint.database)})` : ''}.`
-        : '';
       const actionHints = pkg.action_hints || [];
       bindingsEl.innerHTML = actionHints.map((h) => `
         <div class="settings-row"><label class="settings-label">${_esc(h.label)} action</label>
@@ -367,7 +400,6 @@ export async function openImportTileModal(onImported) {
           </select>
         </div>`).join('');
     } catch (_) {
-      hintEl.textContent = '';
       bindingsEl.innerHTML = '';
     }
   });
