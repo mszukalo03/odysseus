@@ -34,3 +34,9 @@ PyMuPDF
 # [all]/Azure/audio extras (cloud + heavy). Pinned to a release >30 days old per
 # the dependency-age discussion in issue #485.
 markitdown[docx,pptx,xlsx,xls]==0.1.6
+
+# MySQL/MariaDB driver for Ithaca external DB connections (core/db_dialects.py,
+# routes/external_db_routes.py). Pure-Python DBAPI, no system libmysqlclient
+# needed. Install if you want to add a MySQL/MariaDB connection as a tile data
+# source; SQLite and Postgres connections need no extra driver.
+PyMySQL

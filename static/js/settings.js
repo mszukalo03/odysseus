@@ -2981,9 +2981,11 @@ async function initReminderSettings() {
   }
 }
 
-/* ── External Postgres connections (Ithaca tile data sources) ──
+/* ── External DB connections (Ithaca tile data sources) ──
    Mirrors initEmailAccountsSettings()'s list+form pattern, trimmed down to
-   the handful of fields a connection actually needs. */
+   the handful of fields a connection actually needs. Postgres/MySQL/SQLite
+   share this one form; `kindInfo[kind].fields` (from GET /api/db-connections
+   /kinds) drives which field rows are shown. */
 async function initDbConnectionsSettings() {
   const listEl = el('set-dbconn-list');
   const formEl = el('set-dbconn-form');
@@ -2991,6 +2993,18 @@ async function initDbConnectionsSettings() {
   if (!listEl || !formEl || !addBtn) return;
 
   const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  let kindInfo = null; // { postgres: {default_port, fields, driver_available, driver_hint}, ... }
+  async function fetchKinds() {
+    if (kindInfo) return kindInfo;
+    const r = await fetch('/api/db-connections/kinds', { credentials: 'same-origin' });
+    kindInfo = {};
+    if (r.ok) {
+      const d = await r.json();
+      for (const k of (d.kinds || [])) kindInfo[k.kind] = k;
+    }
+    return kindInfo;
+  }
 
   async function fetchConnections() {
     const r = await fetch('/api/db-connections', { credentials: 'same-origin' });
@@ -3000,10 +3014,14 @@ async function initDbConnectionsSettings() {
   }
 
   function renderRow(c) {
+    const subtitle = c.kind === 'sqlite'
+      ? esc(c.file_path)
+      : `${esc(c.username)}@${esc(c.host)}:${esc(c.port)}/${esc(c.database)}`;
     return `<div class="dbconn-row" data-conn-id="${esc(c.id)}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;">
+      <span style="font-size:9px;text-transform:uppercase;letter-spacing:0.04em;opacity:0.55;flex-shrink:0;border:1px solid var(--border);border-radius:3px;padding:1px 4px;">${esc(c.kind || 'postgres')}</span>
       <div style="flex:1;min-width:0">
         <div style="font-size:12px;font-weight:600;">${esc(c.label)}</div>
-        <div style="font-size:11px;opacity:0.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.username)}@${esc(c.host)}:${esc(c.port)}/${esc(c.database)}</div>
+        <div style="font-size:11px;opacity:0.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${subtitle}</div>
       </div>
       <span class="dbconn-test-dot" title="Test connection" style="width:8px;height:8px;border-radius:50%;background:var(--border);cursor:pointer;flex-shrink:0;"></span>
       <button class="admin-btn-sm dbconn-edit-btn" style="font-size:10px">Edit</button>
@@ -3043,22 +3061,36 @@ async function initDbConnectionsSettings() {
     });
   }
 
-  function showForm(existing) {
+  async function showForm(existing) {
     const c = existing || {};
     const isEdit = !!existing;
+    const kinds = await fetchKinds();
+    const kindList = Object.keys(kinds).length ? Object.keys(kinds) : ['postgres', 'sqlite', 'mysql'];
+    const kind = c.kind || 'postgres';
+
+    const kindOptions = kindList.map(k => {
+      const info = kinds[k] || {};
+      const disabled = info.driver_available === false ? 'disabled' : '';
+      const suffix = info.driver_available === false ? ' (driver not installed)' : '';
+      return `<option value="${esc(k)}" ${k === kind ? 'selected' : ''} ${disabled}>${esc(k)}${suffix}</option>`;
+    }).join('');
+
     formEl.style.display = '';
     formEl.innerHTML = `
       <h3 style="font-size:12px;margin:0 0 8px">${isEdit ? 'Edit Connection' : 'New Connection'}</h3>
       <div class="settings-col">
         <div class="settings-row"><label class="settings-label">Label</label><input id="dcf-label" class="settings-input" placeholder="homelab_main_db" value="${esc(c.label || '')}"></div>
-        <div class="settings-row"><label class="settings-label">Host</label><input id="dcf-host" class="settings-input" value="${esc(c.host || '')}"></div>
-        <div class="settings-row"><label class="settings-label">Port</label><input id="dcf-port" class="settings-input" type="number" value="${esc(c.port || 5432)}" style="max-width:100px"></div>
-        <div class="settings-row"><label class="settings-label">Database</label><input id="dcf-database" class="settings-input" value="${esc(c.database || '')}"></div>
-        <div class="settings-row"><label class="settings-label">Username</label><input id="dcf-username" class="settings-input" value="${esc(c.username || '')}"></div>
-        <div class="settings-row"><label class="settings-label">Password</label><input id="dcf-password" class="settings-input" type="password" placeholder="${isEdit && c.has_password ? '(unchanged)' : ''}"></div>
-        <div class="settings-row"><label class="settings-label">SSL mode</label><select id="dcf-sslmode" class="settings-select" style="width:160px;">
+        <div class="settings-row"><label class="settings-label">Kind</label><select id="dcf-kind" class="settings-select" style="width:160px;" ${isEdit ? 'disabled' : ''}>${kindOptions}</select></div>
+        <div class="dcf-field" data-field="host"><div class="settings-row"><label class="settings-label">Host</label><input id="dcf-host" class="settings-input" value="${esc(c.host || '')}"></div></div>
+        <div class="dcf-field" data-field="port"><div class="settings-row"><label class="settings-label">Port</label><input id="dcf-port" class="settings-input" type="number" value="${esc(c.port || '')}" style="max-width:100px"></div></div>
+        <div class="dcf-field" data-field="database"><div class="settings-row"><label class="settings-label">Database</label><input id="dcf-database" class="settings-input" value="${esc(c.database || '')}"></div></div>
+        <div class="dcf-field" data-field="username"><div class="settings-row"><label class="settings-label">Username</label><input id="dcf-username" class="settings-input" value="${esc(c.username || '')}"></div></div>
+        <div class="dcf-field" data-field="password"><div class="settings-row"><label class="settings-label">Password</label><input id="dcf-password" class="settings-input" type="password" placeholder="${isEdit && c.has_password ? '(unchanged)' : ''}"></div></div>
+        <div class="dcf-field" data-field="sslmode"><div class="settings-row"><label class="settings-label">SSL mode</label><select id="dcf-sslmode" class="settings-select" style="width:160px;">
           <option value="prefer">prefer</option><option value="require">require</option><option value="disable">disable</option>
-        </select></div>
+        </select></div></div>
+        <div class="dcf-field" data-field="file_path"><div class="settings-row"><label class="settings-label">File path</label><input id="dcf-file-path" class="settings-input" placeholder="/srv/homelab/metrics.db" value="${esc(c.file_path || '')}"></div></div>
+        <div id="dcf-driver-hint" style="font-size:11px;color:var(--red);display:none;"></div>
         <div class="settings-row" style="margin-top:10px;align-items:center;">
           <button class="admin-btn-add" id="dcf-save">${isEdit ? 'Save' : 'Create'}</button>
           <span id="dcf-msg" style="font-size:11px;flex:1;margin-left:8px;"></span>
@@ -3066,17 +3098,43 @@ async function initDbConnectionsSettings() {
         </div>
       </div>`;
     el('dcf-sslmode').value = c.sslmode || 'prefer';
+
+    function applyKindVisibility(k) {
+      const info = kinds[k] || {};
+      const fields = info.fields || ['host', 'port', 'database', 'username', 'password', 'sslmode'];
+      formEl.querySelectorAll('.dcf-field').forEach(div => {
+        div.style.display = fields.includes(div.dataset.field) ? '' : 'none';
+      });
+      const portEl = el('dcf-port');
+      if (portEl && info.default_port && (!portEl.dataset.touched || !portEl.value)) {
+        portEl.value = info.default_port;
+      }
+      const hint = el('dcf-driver-hint');
+      if (info.driver_available === false) {
+        hint.textContent = info.driver_hint || `${k} driver not installed`;
+        hint.style.display = '';
+      } else {
+        hint.style.display = 'none';
+      }
+    }
+    applyKindVisibility(kind);
+    el('dcf-kind').addEventListener('change', (e) => applyKindVisibility(e.target.value));
+    el('dcf-port')?.addEventListener('input', () => { el('dcf-port').dataset.touched = '1'; });
+
     el('dcf-cancel').addEventListener('click', () => { formEl.style.display = 'none'; formEl.innerHTML = ''; });
     el('dcf-save').addEventListener('click', async () => {
       const msg = el('dcf-msg');
+      const selectedKind = el('dcf-kind').value;
       const body = {
         label: el('dcf-label').value.trim(),
-        host: el('dcf-host').value.trim(),
-        port: parseInt(el('dcf-port').value, 10) || 5432,
-        database: el('dcf-database').value.trim(),
-        username: el('dcf-username').value.trim(),
-        password: el('dcf-password').value,
-        sslmode: el('dcf-sslmode').value,
+        kind: selectedKind,
+        host: el('dcf-host')?.value.trim() || '',
+        port: parseInt(el('dcf-port')?.value, 10) || null,
+        database: el('dcf-database')?.value.trim() || '',
+        username: el('dcf-username')?.value.trim() || '',
+        password: el('dcf-password')?.value || '',
+        sslmode: el('dcf-sslmode')?.value || 'prefer',
+        file_path: el('dcf-file-path')?.value.trim() || '',
       };
       try {
         const url = isEdit ? `/api/db-connections/${c.id}` : '/api/db-connections';
