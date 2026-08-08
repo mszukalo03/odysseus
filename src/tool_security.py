@@ -125,6 +125,9 @@ PLAN_MODE_READONLY_TOOLS = {
     "ask_teacher",
     "get_home_weather",
     "query_ithaca_tile",
+    "list_rss_feeds",
+    "get_rss_articles",
+    "summarize_rss_articles",
 }
 
 

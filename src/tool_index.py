@@ -135,6 +135,10 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "manage_calendar": "Calendar event management: list, create, update, delete. Each event can carry a tag/category (event_type — work/personal/health/travel/meal/social/admin/other) and importance (low/normal/high/critical). Resolve today/tomorrow using the Current date and time context, then use ISO datetimes in the user's local wall time; supports all-day events. Use rrule only for explicit recurrence; for update_event pass rrule='' to remove repeats. For event reminders/alarms, pass reminder_minutes; this creates the Notes reminder, so do not also call manage_notes for the same reminder.",
     "get_home_weather": "Get the user's own home weather: current conditions plus the upcoming hourly forecast, queried directly from OpenWeatherMap for whatever city/coordinates the user configured — NOT restricted to any specific named place. Use for 'what's the weather', 'weather forecast', 'is it going to rain', 'how hot/cold is it' about the user's own location, no matter what city that is — prefer this over web_search for that.",
     "query_ithaca_tile": "List or run the user's custom Ithaca dashboard tiles — each backed by a live query against a database the user connected (e.g. tracking self-hosted app versions, hosts, update status). Call with no tile_id to discover available tiles, then again with a tile_id to get its live data. Use for 'what version of X is running', 'what host is X on', 'which apps are flagged/outdated', or anything about data the user has a tile for.",
+    "list_rss_feeds": "List the user's RSS/YouTube feeds and groups, with unread counts. Use for 'show my feeds', 'my RSS subscriptions', or before get_rss_articles when you don't already know a feed_id/group_id.",
+    "get_rss_articles": "Get articles from the user's RSS/YouTube feeds, optionally filtered by feed, group, read/starred state, or a search term. Use for 'show unread articles', 'what's new in my feeds', 'find articles about X', 'read my RSS'.",
+    "summarize_rss_articles": "Summarize a single RSS/YouTube article, or generate a bullet-point digest of a feed group's unread articles. Use for 'summarize this article', 'summarize my feed', 'give me a digest of X group'.",
+    "mark_rss_article": "Mark an RSS/YouTube article read/unread and/or starred/unstarred. Use for 'mark that article read', 'star this article', after discussing/summarizing an article with the user.",
     "download_model": "Download a HuggingFace model to a local or remote server. Specify repo_id (e.g. 'Qwen/Qwen3-8B'), optional server host, and optional include filter for specific files.",
     "serve_model": "Start serving a model with vLLM, SGLang, llama.cpp, Ollama, or Diffusers. cmd MUST start with the binary directly — e.g. `vllm serve /mnt/HADES/models/Qwen3.5-397B-A17B-AWQ --port 8003 --tensor-parallel-size 8 …`. NEVER prefix with `cd …`, `source …`, or chain with `&&`/`||` — those get rejected by the validator. The venv activation (env_prefix) and CUDA env are added automatically from the target host's saved settings. For image/inpainting/diffusion use python3 scripts/diffusion_server.py --model <repo> --port 8100. After launch, call list_served_models for readiness/errors and retry suggestions. If serve_model fails with 'Invalid characters in cmd', simplify to the bare binary + args.",
     "list_served_models": "List currently running model servers in the Cookbook — shows status (loading, ready, idle, error), model name, port, throughput, and serve failure diagnosis/retry suggestions. Use when the user asks 'what's running', 'show my cookbook', 'which models are up', 'what's serving'.",
@@ -458,6 +462,20 @@ class ToolIndex:
                    "up to date", "outdated", "which apps", "dashboard tile",
                    "ithaca tile", "what version", "flagged for review"}):
             {"query_ithaca_tile"},
+        # RSS/YouTube feed reader. list_rss_feeds is included alongside
+        # get_rss_articles/summarize on most hints since it's the safe
+        # "discover a feed_id/group_id first" entry point, mirroring how
+        # query_ithaca_tile's own no-id list mode works.
+        frozenset({"rss", "rss feed", "rss feeds", "my feeds", "feed subscription",
+                   "feed subscriptions", "unread article", "unread articles",
+                   "new articles", "latest articles", "what's new in my feeds"}):
+            {"list_rss_feeds", "get_rss_articles"},
+        frozenset({"summarize this article", "summarize my feed", "summarize my feeds",
+                   "digest of", "article digest", "feed digest"}):
+            {"summarize_rss_articles"},
+        frozenset({"mark article read", "mark article unread", "mark that article",
+                   "star this article", "star that article", "unstar"}):
+            {"mark_rss_article"},
         frozenset({"research", "reserach", "reasearch", "look into", "investigate",
                    "deep dive", "deep research", "find out about", "study up on",
                    "report on", "do research", "look up everything"}):

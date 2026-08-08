@@ -64,6 +64,8 @@ from src.tools.notes import do_manage_notes  # noqa: F401
 from src.tools.calendar import do_manage_calendar  # noqa: F401
 # Ithaca hub domain: read-only weather + custom dashboard tile tools.
 from src.tools.ithaca import do_get_home_weather, do_query_ithaca_tile  # noqa: F401
+# RSS/feed reader domain: purpose-built tools mirroring the Ithaca shape above.
+from src.tools.feed import do_list_rss_feeds, do_get_rss_articles, do_summarize_rss_articles, do_mark_rss_article  # noqa: F401
 # Image domain extracted to src/tools/image.py (slice 1, #4082/#4071).
 from src.tools.image import do_edit_image  # noqa: F401
 # Research domain extracted to src/tools/research.py (slice 1, #4082/#4071).

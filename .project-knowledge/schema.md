@@ -30,7 +30,7 @@
 | `vault_items` | id (PK), owner, name, content (encrypted), type | |
 | `feed_groups` | id (PK), owner, name, parent_id (self-referential FK, nested groups) | has_many feeds |
 | `feeds` | id (PK), owner, group_id (FK→feed_groups), title, site_url, feed_url, icon, fetch_interval, last_fetched, error_count, last_error, enabled, sort_order (2026-07-20, drag-to-reorder/move), created_at | has_many articles, belongs_to feed_group |
-| `feed_sync_accounts` | id (PK), owner, service (greader/newsblur/inoreader), credentials (encrypted), sync_enabled, last_synced | |
+| `articles` | id (PK), feed_id, owner, guid, title, url, author, content, summary, image, published_at, fetched_at, is_read, is_starred, reading_time | belongs_to feed |
 
 > **Not a DB table:** Skills are file-based `SKILL.md` files under `data/skills/<category>/<name>/` (YAML frontmatter + markdown body), managed by `SkillsManager` (`services/memory/skills.py`); usage counters in `data/skills/_usage.json`. Owner-scoped via the `owner:` frontmatter field. See [[history]] for the correction note.
 

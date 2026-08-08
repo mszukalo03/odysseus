@@ -28,7 +28,7 @@
 | Shell | ✅ Active | User-facing command execution (admin-gated) |
 | Companion App | ✅ Active | Mobile companion pairing endpoints |
 | Codex / Claude Integration | ✅ Active | External AI code editor bridge |
-| RSS Feed Reader | ✅ Active | RSS/Atom feed reader with AI summaries (incl. YouTube transcript fallback), OPML import/export, 3-pane UI, YouTube channel support, keyboard nav, drag-to-reorder/move, optional auto-refresh (`refresh_due_feeds` scheduled task, off by default) |
+| RSS Feed Reader | ✅ Active | RSS/Atom feed reader with AI summaries (incl. YouTube transcript fallback), OPML import/export, 3-pane UI, YouTube channel support, keyboard nav, drag-to-reorder/move, optional auto-refresh (`refresh_due_feeds` scheduled task, off by default). Four agent tools (`list_rss_feeds`/`get_rss_articles`/`summarize_rss_articles`/`mark_rss_article`, `src/tools/feed.py`) — a second worked example of the small-tools pattern below, alongside `get_home_weather`/`query_ithaca_tile` |
 | Notifications (ntfy) | ✅ Active | Push notification support |
 | Docker Deployment | ✅ Active | Docker Compose with GPU overlays |
 | PWA | ✅ Active | Service worker, manifest.json |

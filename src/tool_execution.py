@@ -627,6 +627,7 @@ async def _execute_tool_block_impl(
         do_manage_skills, do_api_call, do_manage_notes,
         do_manage_calendar,
         do_get_home_weather, do_query_ithaca_tile,
+        do_list_rss_feeds, do_get_rss_articles, do_summarize_rss_articles, do_mark_rss_article,
         do_download_model, do_serve_model, do_list_served_models, do_stop_served_model,
         do_tail_serve_output,
         do_list_downloads, do_cancel_download, do_search_hf_models, do_list_cached_models,
@@ -832,6 +833,18 @@ async def _execute_tool_block_impl(
     elif tool == "query_ithaca_tile":
         desc = "query_ithaca_tile"
         result = await do_query_ithaca_tile(content, owner=owner)
+    elif tool == "list_rss_feeds":
+        desc = "list_rss_feeds"
+        result = await do_list_rss_feeds(content, owner=owner)
+    elif tool == "get_rss_articles":
+        desc = "get_rss_articles"
+        result = await do_get_rss_articles(content, owner=owner)
+    elif tool == "summarize_rss_articles":
+        desc = "summarize_rss_articles"
+        result = await do_summarize_rss_articles(content, owner=owner)
+    elif tool == "mark_rss_article":
+        desc = "mark_rss_article"
+        result = await do_mark_rss_article(content, owner=owner)
     elif tool == "download_model":
         desc = "download_model"
         result = await do_download_model(content, owner=owner)

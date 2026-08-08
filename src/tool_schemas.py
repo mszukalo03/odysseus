@@ -1127,6 +1127,68 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "list_rss_feeds",
+            "description": "List the user's RSS/YouTube feeds and groups, with unread counts. Use before get_rss_articles when you don't already know a feed_id/group_id — call this first to find one, e.g. for 'what's new in my feeds', 'show me my RSS subscriptions'.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_rss_articles",
+            "description": "Get articles from the user's RSS/YouTube feeds, optionally filtered by feed, group, read/starred state, or a search term. Use for 'show unread articles from X', 'what's new in my feeds', 'find articles about Y'. Call list_rss_feeds first if you need a feed_id/group_id.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "feed_id": {"type": "string", "description": "Restrict to one feed, from list_rss_feeds"},
+                    "group_id": {"type": "string", "description": "Restrict to one feed group, from list_rss_feeds"},
+                    "starred": {"type": "boolean", "description": "Only starred articles"},
+                    "read": {"type": "boolean", "description": "true for read only, false for unread only"},
+                    "search": {"type": "string", "description": "Filter by title/content substring"},
+                    "limit": {"type": "integer", "description": "Max articles to return (default 20)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "summarize_rss_articles",
+            "description": "Summarize a single RSS/YouTube article (article_id), or generate a bullet-point digest of a feed group's unread articles (group_id). Provide exactly one of the two — this switches which mode runs, the same way query_ithaca_tile's tile_id does.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "article_id": {"type": "string", "description": "Summarize this one article, from get_rss_articles"},
+                    "group_id": {"type": "string", "description": "Digest this group's unread articles, from list_rss_feeds"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "mark_rss_article",
+            "description": "Mark an RSS/YouTube article read/unread and/or starred/unstarred, e.g. after summarizing or discussing it with the user. Provide at least one of is_read/is_starred.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "article_id": {"type": "string", "description": "The article's id, from get_rss_articles"},
+                    "is_read": {"type": "boolean", "description": "Mark read (true) or unread (false)"},
+                    "is_starred": {"type": "boolean", "description": "Mark starred (true) or unstarred (false)"}
+                },
+                "required": ["article_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_email_accounts",
             "description": "List configured email accounts. Use this before checking mail when the user names a mailbox/account such as Gmail, work, or a custom domain, then pass the returned account name/email/id to the other email tools.",
             "parameters": {

@@ -57,9 +57,9 @@ def _resolve_handle(handle: str, url: str) -> str | None:
             .get("channelMetadataRenderer", {})
             .get("externalId")
         )
-        if not cid and "error" in data.get("alerts", [{}])[0] if isinstance(data.get("alerts"), list) else False:
+        alerts = data.get("alerts")
+        if isinstance(alerts, list) and alerts and "error" in alerts[0]:
             logger.warning("YouTube page %s returned error", url)
-            return None
         if not cid:
             logger.warning("Could not extract channelId from %s", url)
             return None

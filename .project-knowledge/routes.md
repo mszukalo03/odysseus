@@ -102,19 +102,19 @@ Canonically `/api/codex/*` (shared by **all** agent integrations — "codex" nam
 | `DELETE /api/tokens/{id}` | Session | Delete API token |
 | `GET /api/auth/assistant/...` | Session | Personal assistant settings, status, run |
 | `POST /api/tasks/{id}/webhook/{token}` | None | External webhook trigger (token-authenticated) |
-| `GET/POST/PUT/DELETE /api/feeds` | Session | Feed CRUD (list, create, update, delete, groups) |
-| `GET /api/feeds/articles` | Session | List articles with filters (feed_id, group_id, read, starred, search, limit, offset) |
-| `POST /api/feeds/{id}/refresh` | Session | Force refresh a single feed |
-| `POST /api/feeds/refresh-all` | Session | Queue refresh of all feeds (background task) |
-| `POST /api/feeds/articles/{id}/read` | Session | Mark article read/unread |
-| `POST /api/feeds/articles/{id}/star` | Session | Star/unstar article |
-| `POST /api/feeds/articles/read-all` | Session | Mark all articles as read (optionally by feed_id) |
-| `POST /api/feeds/articles/{id}/summarize` | Session | AI-generated article summary |
-| `POST /api/feeds/articles/{id}/full-content` | Session | Extract full article content via trafilatura |
-| `POST /api/feeds/discover` | Session | Discover RSS feeds from a URL |
-| `POST /api/feeds/opml/export` | Session | Export feeds as OPML (returns XML) |
-| `POST /api/feeds/opml/import` | Session | Import feeds from OPML |
-| `POST /api/feeds/groups/{group_id}/summarize` | Session | AI-generated digest of a group's articles |
+| `GET/POST/PUT/DELETE /api/feeds` | Session / `feeds:read`\|`feeds:write` | Feed CRUD (list, create, update, delete, groups) |
+| `GET /api/feeds/articles` | Session / `feeds:read` | List articles with filters (feed_id, group_id, read, starred, search, limit, offset) |
+| `POST /api/feeds/{id}/refresh` | Session / `feeds:write` | Force refresh a single feed |
+| `POST /api/feeds/refresh-all` | Session / `feeds:write` | Queue refresh of all feeds (background task) |
+| `PUT /api/feeds/articles/{id}/read` | Session / `feeds:write` | Mark article read/unread |
+| `PUT /api/feeds/articles/{id}/star` | Session / `feeds:write` | Star/unstar article |
+| `POST /api/feeds/articles/mark-all-read` | Session / `feeds:write` | Mark all articles as read (optionally by feed_id) |
+| `POST /api/feeds/articles/{id}/summarize` | Session / `feeds:read` | AI-generated article summary |
+| `POST /api/feeds/articles/{id}/full-content` | Session / `feeds:read` | Extract full article content via trafilatura |
+| `POST /api/feeds/discover` | Session / `feeds:read` | Discover RSS feeds from a URL |
+| `GET /api/feeds/opml/export` | Session / `feeds:read` | Export feeds as OPML (returns XML) |
+| `POST /api/feeds/opml/import` | Session / `feeds:write` | Import feeds from OPML |
+| `POST /api/feeds/groups/{group_id}/summarize` | Session / `feeds:read` | AI-generated digest of a group's articles |
 | `GET /api/companion/ping/info/models/pair` | Session | Companion app endpoints |
 | `GET /api/ithaca/weather` | Session / `ithaca:read` | Live OpenWeatherMap current + 3-hourly forecast (server-side proxy, 10-min TTL cache; env: OPENWEATHER_API_KEY/LAT/LON/UNITS) — the one persistent built-in tile |
 | `GET /api/ithaca/tiles` | Session / `ithaca:read` | List user-defined tile configs |

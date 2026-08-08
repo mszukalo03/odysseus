@@ -1849,18 +1849,6 @@ class CalendarDeletedEvent(TimestampMixin, Base):
     last_error = Column(Text, nullable=True)
 
 
-class Integration(TimestampMixin, Base):
-    """An external service connection (email, RSS, webhook, etc.)."""
-    __tablename__ = "integrations"
-
-    id     = Column(String, primary_key=True, index=True)
-    owner  = Column(String, nullable=True, index=True)
-    name   = Column(String, nullable=False)
-    type   = Column(String, nullable=False)  # "email", "rss", "webhook"
-    config = Column(JSON, nullable=True)     # type-specific config
-    enabled = Column(Boolean, default=True)
-
-
 class FeedGroup(TimestampMixin, Base):
     __tablename__ = "feed_groups"
 
@@ -1906,19 +1894,6 @@ class Article(TimestampMixin, Base):
     is_read       = Column(Boolean, default=False)
     is_starred    = Column(Boolean, default=False)
     reading_time  = Column(Integer, default=0)
-
-
-class FeedSyncAccount(TimestampMixin, Base):
-    __tablename__ = "feed_sync_accounts"
-
-    id       = Column(String, primary_key=True, index=True)
-    owner    = Column(String, nullable=True, index=True)
-    type     = Column(String, nullable=False)  # miniflux, freshrss, feedly, etc.
-    name     = Column(String, nullable=False)
-    base_url = Column(String, nullable=False, default="")
-    api_key  = Column(String, nullable=True)
-    enabled  = Column(Boolean, default=True)
-
 
 
 
@@ -2083,6 +2058,7 @@ def init_db():
     _migrate_encrypt_endpoint_keys()
     _migrate_add_feed_group_parent_id()
     _migrate_add_feed_sort_order()
+    _migrate_drop_dead_feed_tables()
     _migrate_backfill_task_folders()
 
 
@@ -2126,6 +2102,28 @@ def _migrate_add_feed_group_parent_id():
         conn.commit()
     except Exception as e:
         logging.getLogger(__name__).warning(f"feed_groups parent_id migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _migrate_drop_dead_feed_tables():
+    """Drop integrations/feed_sync_accounts — models removed as dead code
+    (never populated, zero code references outside their own definitions)."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute("DROP TABLE IF EXISTS integrations")
+        conn.execute("DROP TABLE IF EXISTS feed_sync_accounts")
+        conn.commit()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"dead feed table drop migration failed: {e}")
     finally:
         try:
             conn.close()

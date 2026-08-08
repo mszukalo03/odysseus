@@ -175,6 +175,21 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         # so require the phrase to stand alone or carry an update-lookup qualifier.
         ("ithaca_tile", "any updates question", r"\bany\s+(?:new\s+)?updates?\s*(?:[?.!]*$|\b(?:today|available|pending|for\s+(?:me|my)\b))"),
         ("ithaca_tile", "dashboard tile question", r"\b(?:dashboard|ithaca)\s+tile\b|\bflagged\s+for\s+review\b|\bwhat\s+version\s+of\b"),
+
+        # RSS/YouTube feed reader — same rationale as the ithaca_tile block
+        # above: chat mode sends no tools at all, so a missed pattern here
+        # means "any new articles?" gets answered from training data instead
+        # of calling list_rss_feeds/get_rss_articles. Deliberately LAST for
+        # the same reason as the weather/ithaca_tile blocks — first match
+        # wins, so appending here cannot steal an existing category.
+        ("rss", "rss feed mention", r"\brss\s+feeds?\b"),
+        ("rss", "my feeds mention", r"\bmy\s+feeds?\b"),
+        ("rss", "feed subscription mention", r"\bfeed\s+subscriptions?\b"),
+        ("rss", "unread articles question", r"\bunread\s+articles?\b"),
+        ("rss", "new articles question", r"\b(?:new|latest)\s+articles?\b|\bwhat'?s\s+new\s+in\s+my\s+feeds?\b"),
+        ("rss", "mark article read action", r"\bmark\s+(?:that|this|the)\s+article\s+(?:as\s+)?(?:read|unread)\b"),
+        ("rss", "star article action", r"\bstar\s+(?:that|this|the)\s+article\b"),
+        ("rss", "summarize feed action", r"\bsummarize\s+(?:my\s+)?(?:feed|articles?|rss)\b"),
     )
 )
 

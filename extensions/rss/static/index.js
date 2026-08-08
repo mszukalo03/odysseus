@@ -34,10 +34,11 @@ let _totalArticles = 0;
 let _activeFeedId = null;
 let _activeGroupId = null;
 let _activeArticleId = null;
-// List vs. grid display for the article list — same localStorage-backed
-// pattern notes.js uses for its own view toggle. A pure CSS class flip on
-// the workspace root (no re-render of _articleItemHtml), so it can't drift
-// out of sync with what's actually in the DOM.
+// List vs. grid display for the article list. Server-persisted per-user
+// (see _reconcileViewMode/_syncViewModeToServer) so it syncs across
+// devices; localStorage is only an optimistic first-paint cache. A pure
+// CSS class flip on the workspace root (no re-render of _articleItemHtml),
+// so it can't drift out of sync with what's actually in the DOM.
 let _viewMode = (typeof localStorage !== 'undefined' && localStorage.getItem('odysseus-rss-view')) || 'list';
 let _filter = 'unread';
 let _searchQuery = '';
@@ -66,6 +67,37 @@ function _api(path, opts = {}) {
 }
 
 function _el(id) { return document.getElementById(id); }
+
+// Server is the source of truth for view mode (syncs across devices);
+// localStorage is only an optimistic first-paint cache so mount() doesn't
+// flash the wrong layout while the network request in _reconcileViewMode
+// is in flight. Mirrors theme.js's cache-then-reconcile mechanics
+// (_syncToServer / _loadFromServer), with the precedence flipped: server
+// wins on conflict here, not the local cache.
+function _syncViewModeToServer(mode) {
+  try {
+    fetch(`${API_BASE}/api/prefs/rss_view_mode`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ value: mode }),
+    }).catch(e => console.warn('RSS view mode sync failed:', e));
+  } catch (e) { console.warn('RSS view mode sync error:', e); }
+}
+
+async function _reconcileViewMode(root, viewToggleBtn) {
+  try {
+    const res = await fetch(`${API_BASE}/api/prefs/rss_view_mode`, { credentials: 'same-origin' });
+    const data = await res.json();
+    const serverMode = data.value;
+    if ((serverMode === 'grid' || serverMode === 'list') && serverMode !== _viewMode) {
+      _viewMode = serverMode;
+      try { localStorage.setItem('odysseus-rss-view', _viewMode); } catch (_) {}
+      root.classList.toggle('rss-view-grid', _viewMode === 'grid');
+      viewToggleBtn?.classList.toggle('active', _viewMode === 'grid');
+    }
+  } catch (e) { console.warn('RSS view mode load failed:', e); }
+}
 
 function mount(container) {
   const root = document.createElement('div');
@@ -159,6 +191,7 @@ function mount(container) {
   `;
   container.appendChild(root);
   _wireEvents(root);
+  _reconcileViewMode(root, _el('rss-view-toggle-btn'));
 }
 
 function _wireEvents(root) {
@@ -175,6 +208,7 @@ function _wireEvents(root) {
   viewToggleBtn?.addEventListener('click', () => {
     _viewMode = _viewMode === 'grid' ? 'list' : 'grid';
     try { localStorage.setItem('odysseus-rss-view', _viewMode); } catch (_) {}
+    _syncViewModeToServer(_viewMode);
     root.classList.toggle('rss-view-grid', _viewMode === 'grid');
     viewToggleBtn.classList.toggle('active', _viewMode === 'grid');
   });

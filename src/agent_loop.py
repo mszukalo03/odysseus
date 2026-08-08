@@ -500,6 +500,12 @@ _DOMAIN_RULES = {
 - For the user's OWN local weather ("is it raining", "how cold is it", "do I need an umbrella", "what's the weather"), call `get_home_weather`. It already knows their configured location — do not ask which city, and prefer it over `web_search`. Use `web_search` only for a DIFFERENT named place ("weather in Tokyo").
 - For anything backed by one of the user's custom Ithaca dashboard tiles (self-hosted app versions/hosts/update status, or any other data they've built a tile for — "any software updates", "what version of X is running", "which apps are flagged"), call `query_ithaca_tile` with no arguments first to see what tiles exist, then call it again with the matching tile_id. This reads live data from a database the user connected — you cannot know it from training data, so never answer from memory.
 - Both are read-only. get_home_weather takes no arguments; query_ithaca_tile takes an optional tile_id. Answer from the tool result.""",
+    "rss": """\
+## RSS/YouTube feed rules
+- Call `list_rss_feeds` first when you don't already know a feed_id/group_id — it lists the user's feeds and groups with unread counts.
+- Call `get_rss_articles` to read articles, optionally filtered by feed_id/group_id/read/starred/search. This is live data from feeds the user subscribed to — never answer "what's new in my feeds" from training data.
+- Call `summarize_rss_articles` with exactly one of article_id (single article) or group_id (digest of a group's unread articles).
+- Call `mark_rss_article` to mark an article read/unread and/or starred/unstarred, e.g. after discussing it with the user.""",
 }
 
 _DOMAIN_TOOL_MAP = {
@@ -515,6 +521,7 @@ _DOMAIN_TOOL_MAP = {
     "contacts": {"resolve_contact", "manage_contact"},
     "integrations": {"api_call"},
     "ithaca": {"get_home_weather", "query_ithaca_tile"},
+    "rss": {"list_rss_feeds", "get_rss_articles", "summarize_rss_articles", "mark_rss_article"},
 }
 
 _WORKSPACE_TERMINUS_TOOLS = (
@@ -729,6 +736,10 @@ If the user asks for a reminder/alarm before the event, pass `reminder_minutes` 
 `calendar` accepts a name ("Main") or short-id prefix.""",
     "get_home_weather": "- ```get_home_weather``` — Get the user's own home weather (current conditions + upcoming hourly forecast) for whatever city they configured, NOT restricted to any specific named place — queried directly from OpenWeatherMap. No arguments needed; optionally `{\"refresh\": true}` to bypass the cache. Prefer this over web_search for the user's own weather, no matter what city that is.",
     "query_ithaca_tile": "- ```query_ithaca_tile``` — List or run the user's custom Ithaca dashboard tiles, each backed by a live database query. No tile_id lists available tiles; `{\"tile_id\": \"...\"}` runs one and returns its live data.",
+    "list_rss_feeds": "- ```list_rss_feeds``` — List the user's RSS/YouTube feeds and groups with unread counts. No arguments. Call first when you don't already know a feed_id/group_id.",
+    "get_rss_articles": "- ```get_rss_articles``` — Get articles from the user's feeds. Args (JSON, all optional): {\"feed_id\", \"group_id\", \"starred\", \"read\", \"search\", \"limit\"}. Use list_rss_feeds first if you need a feed_id/group_id.",
+    "summarize_rss_articles": "- ```summarize_rss_articles``` — Summarize one article (`{\"article_id\": \"...\"}`) or digest a group's unread articles (`{\"group_id\": \"...\"}`). Provide exactly one.",
+    "mark_rss_article": "- ```mark_rss_article``` — Mark an article read/unread and/or starred/unstarred. Args (JSON): {\"article_id\": \"...\", \"is_read\"?, \"is_starred\"?}. Provide at least one of is_read/is_starred.",
     "create_session": "- ```create_session``` — Create a new chat. Line 1 = chat name, line 2 = model name. Use for background/parallel work.",
     "list_sessions": "- ```list_sessions``` — List chats sorted MOST-RECENT FIRST (the UI calls them 'chats') with clickable chat-title links. Output includes a relative \"last active\" timestamp per row, so the first row is the user's most recent chat. Content = optional filter keyword (matches chat name). When answering, preserve the `[title](#session-id)` links exactly; do not convert them into plain text.",
     "send_to_session": "- ```send_to_session``` — Send a message to another session. Line 1 = session_id, rest = message. Use for orchestrating work across sessions.",
@@ -1405,6 +1416,21 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
            r"\bflagged\s+for\s+review\b",
            r"\bwhat\s+version\s+of\b"):
         domains.add("ithaca")
+    # RSS/YouTube feed reader — same failure shape as the ithaca/api_call
+    # domains above: short questions like "any new articles?" match no other
+    # domain, so a missed pattern here means low_signal=True and the model
+    # answers from training data instead of calling list_rss_feeds/
+    # get_rss_articles/summarize_rss_articles/mark_rss_article.
+    if has(r"\brss\s+feeds?\b",
+           r"\bmy\s+feeds?\b",
+           r"\bfeed\s+subscriptions?\b",
+           r"\bunread\s+articles?\b",
+           r"\b(?:new|latest)\s+articles?\b",
+           r"\bwhat'?s\s+new\s+in\s+my\s+feeds?\b",
+           r"\bmark\s+(?:that|this|the)\s+article\s+(?:as\s+)?(?:read|unread)\b",
+           r"\bstar\s+(?:that|this|the)\s+article\b",
+           r"\bsummarize\s+(?:my\s+)?(?:feed|articles?|rss)\b"):
+        domains.add("rss")
 
     low_signal = not continuation and not domains
     return {

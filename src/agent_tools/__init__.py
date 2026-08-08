@@ -92,6 +92,7 @@ TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "write_fi
              "manage_tokens", "manage_documents", "manage_settings",
              "manage_notes", "manage_calendar",
              "get_home_weather", "query_ithaca_tile",
+             "list_rss_feeds", "get_rss_articles", "summarize_rss_articles", "mark_rss_article",
              "resolve_contact", "manage_contact",
              # Email tool names come from BUILTIN_EMAIL_TOOLS (unioned below)
              # so the fence regex, dispatch, and non-admin blocklist all cover
