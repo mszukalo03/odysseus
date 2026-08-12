@@ -1,15 +1,20 @@
 import asyncio
-import fcntl
 import os
-import pty
 import re
 import shutil
 import sys
-import termios
 import time
 import collections
 from typing import Optional, Callable, Awaitable, Tuple, Dict
+from core.platform_compat import IS_WINDOWS, find_bash
 from src.constants import MAX_OUTPUT_CHARS
+
+if not IS_WINDOWS:
+    # POSIX-only: the sudo-password pty retry (_run_via_pty) needs a real
+    # pty/tty, which these modules don't exist for on Windows.
+    import fcntl
+    import pty
+    import termios
 
 DEFAULT_BASH_TIMEOUT = 60 * 60     # 1 hour
 DEFAULT_PYTHON_TIMEOUT = 60 * 60
@@ -217,6 +222,27 @@ def _redact(text: str, secret: Optional[str]) -> str:
 PROGRESS_INTERVAL_S = 2.0
 PROGRESS_TAIL_LINES = 12
 TMUX_CAPTURE_LINES = 2000
+
+
+async def _create_bash_subprocess(command: str, **kwargs):
+    """Start the agent shell with Bash semantics on every supported OS.
+
+    ``asyncio.create_subprocess_shell`` delegates to ``cmd.exe`` on native
+    Windows.  That contradicts the Bash tool contract and makes POSIX commands
+    such as ``pwd``, ``ls -la``, and ``cat`` unreliable even when the launcher
+    has found Git Bash.  Pass the selected workspace as a structural ``cwd``
+    argument; Git Bash inherits that native Windows directory and exposes it
+    using its normal ``/c/...`` representation.
+    """
+    if IS_WINDOWS:
+        bash = find_bash()
+        if not bash:
+            raise RuntimeError(
+                "Git Bash is required for the Bash tool on Windows; "
+                "install Git for Windows and restart Odysseus"
+            )
+        return await asyncio.create_subprocess_exec(bash, "-c", command, **kwargs)
+    return await asyncio.create_subprocess_shell(command, **kwargs)
 
 
 def _tmux_session_name(session_id: Optional[str]) -> str:
@@ -479,10 +505,46 @@ class BashTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.tool_execution import agent_cwd, _truncate
         from src import sudo_auth
+        if isinstance(content, dict):
+            content = str(content.get("command") or content.get("cmd") or content.get("code") or "")
         progress_cb = ctx.get("progress_cb")
         _subproc_env = ctx.get("subproc_env")
         owner = ctx.get("owner")
+        session_id = ctx.get("session_id")
         cwd = agent_cwd()
+
+        # tmux is a POSIX persistence path. A stray MSYS/Cygwin tmux.exe on
+        # native Windows must not bypass the Git Bash launcher below: the tmux
+        # setup hard-codes /bin/bash and cannot safely consume a native cwd.
+        # It also bypasses the sudo-password handling below — a tmux session
+        # is a real persistent shell, so a `sudo` typed into it prompts in
+        # the pane itself rather than through this one-shot flow.
+        if session_id and not IS_WINDOWS and shutil.which("tmux"):
+            stdout, stderr, rc, timed_out = await _run_tmux_bash(
+                content,
+                session_id=str(session_id),
+                cwd=cwd,
+                env=_subproc_env,
+                timeout=DEFAULT_BASH_TIMEOUT,
+                progress_cb=progress_cb,
+            )
+            if timed_out:
+                return {
+                    "error": f"bash: timed out after {DEFAULT_BASH_TIMEOUT}s — sent Ctrl-C to tmux session",
+                    "exit_code": 124,
+                    "stdout": _truncate(stdout, MAX_OUTPUT_CHARS),
+                    "stderr": _truncate(stderr, MAX_OUTPUT_CHARS),
+                    "tmux_session": _tmux_session_name(str(session_id)),
+                }
+            output = stdout.rstrip()
+            err = stderr.rstrip()
+            if err:
+                output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
+            return {
+                "output": _truncate(output, MAX_OUTPUT_CHARS) or "(no output)",
+                "exit_code": rc or 0,
+                "tmux_session": _tmux_session_name(str(session_id)),
+            }
 
         command = _add_noconfirm_to_garuda_update(content)
         stdin_payload: Optional[bytes] = None
@@ -490,7 +552,8 @@ class BashTool:
 
         # There's no TTY here, so an unattended `sudo` can only ever fail.
         # Ask the browser for the password and feed it in over stdin instead.
-        if _mentions_sudo(command) and not _sudo_is_self_handled(command):
+        # sudo isn't a Windows concept, so this whole detour is POSIX-only.
+        if not IS_WINDOWS and _mentions_sudo(command) and not _sudo_is_self_handled(command):
             if not await _passwordless_sudo_available(_subproc_env, cwd):
                 password = sudo_auth.get_cached(owner)
                 if not password and progress_cb:
@@ -511,14 +574,17 @@ class BashTool:
                 # first sudo, so a chained second one needs its own.
                 stdin_payload = ((password + "\n") * max(1, sudo_count)).encode()
 
-        proc = await asyncio.create_subprocess_shell(
-            command,
-            stdin=asyncio.subprocess.PIPE if stdin_payload is not None else None,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=_subproc_env,
-            cwd=cwd,
-        )
+        try:
+            proc = await _create_bash_subprocess(
+                command,
+                stdin=asyncio.subprocess.PIPE if stdin_payload is not None else None,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=_subproc_env,
+                cwd=cwd,
+            )
+        except RuntimeError as e:
+            return {"error": f"bash: {e}", "exit_code": 1}
         if stdin_payload is not None and proc.stdin is not None:
             try:
                 proc.stdin.write(stdin_payload)
@@ -549,7 +615,8 @@ class BashTool:
         # internally and just failed for lack of a terminal. Get a password
         # and retry the same command attached to a real pty this time, so
         # whatever `sudo` call is buried inside it can prompt on that tty.
-        if rc != 0 and password is None and not timed_out and _looks_like_sudo_tty_failure(output):
+        # POSIX-only, same as the detection above.
+        if not IS_WINDOWS and rc != 0 and password is None and not timed_out and _looks_like_sudo_tty_failure(output):
             retry_password = sudo_auth.get_cached(owner)
             if not retry_password and progress_cb:
                 retry_password = await sudo_auth.request_password(owner, command, progress_cb)
