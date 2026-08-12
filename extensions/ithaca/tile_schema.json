@@ -12,11 +12,14 @@
     "slot": { "type": ["string", "null"] },
     "data_source": {
       "type": "object",
-      "required": ["type", "connection_ref", "query"],
+      "required": ["type", "connection_ref"],
       "properties": {
-        "type": { "type": "string", "enum": ["postgres", "sqlite", "mysql"] },
+        "type": { "type": "string", "enum": ["postgres", "sqlite", "mysql", "http"] },
         "connection_ref": { "type": "string" },
-        "query": { "type": "string" }
+        "query": { "type": ["string", "null"] },
+        "path": { "type": ["string", "null"] },
+        "query_params": { "type": ["object", "null"] },
+        "json_path": { "type": ["string", "null"] }
       }
     },
     "viz": {

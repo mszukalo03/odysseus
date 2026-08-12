@@ -54,15 +54,24 @@ def build_tile_package(tile_id: str) -> dict[str, Any]:
     # postgres for a tile that may have been authored against another
     # dialect.
     hint: dict[str, Any] = {"kind": cfg.data_source.type, "label": cfg.data_source.connection_ref}
-    try:
-        conn = get_connection(cfg.data_source.connection_ref)
-        hint["kind"] = conn.kind
-        hint["label"] = conn.label
-        hint["database"] = conn.database
-    except ExternalDbError:
-        # Connection may have since been deleted — the package is still
-        # exportable, just with a weaker hint (only the stale local id/label).
-        pass
+    if cfg.data_source.type == "http":
+        # An http tile's connection_ref names a WebhookTarget, not an
+        # ExternalDbConnection — same "weaker hint if since deleted" fallback.
+        try:
+            target = get_target(cfg.data_source.connection_ref)
+            hint["label"] = target.label
+        except WebhookActionError:
+            pass
+    else:
+        try:
+            conn = get_connection(cfg.data_source.connection_ref)
+            hint["kind"] = conn.kind
+            hint["label"] = conn.label
+            hint["database"] = conn.database
+        except ExternalDbError:
+            # Connection may have since been deleted — the package is still
+            # exportable, just with a weaker hint (only the stale local id/label).
+            pass
 
     package = cfg.model_dump()
     # The exported connection_ref is a LOCAL id on this instance and carries
@@ -104,10 +113,17 @@ def install_tile_package(
     connection_binding = str(connection_binding or "").strip()
     if not connection_binding:
         raise TilePackagingError("connection_binding is required — pick a local connection for this tile")
-    try:
-        get_connection(connection_binding)  # 404s here if the id doesn't exist locally
-    except ExternalDbError as exc:
-        raise TilePackagingError(str(exc)) from exc
+    data_source_type = (package.get("data_source") or {}).get("type")
+    if data_source_type == "http":
+        try:
+            get_target(connection_binding)  # 404s here if the id doesn't exist locally
+        except WebhookActionError as exc:
+            raise TilePackagingError(str(exc)) from exc
+    else:
+        try:
+            get_connection(connection_binding)  # 404s here if the id doesn't exist locally
+        except ExternalDbError as exc:
+            raise TilePackagingError(str(exc)) from exc
 
     tile = {k: v for k, v in package.items() if k not in ("package_schema_version", "connection_hint", "action_hints")}
     data_source = dict(tile.get("data_source") or {})

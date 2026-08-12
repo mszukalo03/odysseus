@@ -167,10 +167,25 @@ def _run_tile_sync(cfg: TileConfig) -> dict:
     return _shape_rows(cfg, result["columns"], result["rows"])
 
 
+async def _run_tile_async(cfg: TileConfig) -> dict:
+    if cfg.data_source.type == "http":
+        from core.webhook_action import fetch_tile_data
+
+        result = await fetch_tile_data(
+            cfg.data_source.connection_ref,
+            path=cfg.data_source.path,
+            query_params=cfg.data_source.query_params,
+            json_path=cfg.data_source.json_path,
+        )
+        return _shape_rows(cfg, result["columns"], result["rows"])
+    return await asyncio.to_thread(_run_tile_sync, cfg)
+
+
 async def run_tile(tile_id: str, force: bool = False) -> dict:
     """Resolve + run a saved tile config, TTL-cached (see core/ttl_cache.py)
-    per its own refresh_interval_seconds. Raises ExternalDbError on query
-    failure or ValueError if the tile config doesn't exist."""
+    per its own refresh_interval_seconds. Raises ExternalDbError (SQL tiles)
+    or WebhookActionError (http tiles) on fetch failure, or ValueError if the
+    tile config doesn't exist."""
     data = get_tile_config(tile_id)
     if data is None:
         raise ValueError(f"No tile config with id '{tile_id}'")
@@ -180,7 +195,7 @@ async def run_tile(tile_id: str, force: bool = False) -> dict:
         _tile_cache.invalidate(tile_id)
     return await _tile_cache.get(
         tile_id, cfg.refresh_interval_seconds,
-        lambda: asyncio.to_thread(_run_tile_sync, cfg),
+        lambda: _run_tile_async(cfg),
     )
 
 
@@ -188,7 +203,7 @@ async def preview_tile(data: dict) -> dict:
     """Run an *unsaved* draft config for the builder UI — validated, not
     persisted, not cached."""
     cfg = TileConfig.model_validate(data)
-    return await asyncio.to_thread(_run_tile_sync, cfg)
+    return await _run_tile_async(cfg)
 
 
 async def run_tile_action(tile_id: str, action_id: str) -> dict:

@@ -37,21 +37,41 @@ const _SQL_HINTS = {
 };
 
 // Shared by the tile-builder connection picker and the import modal's
-// bind-to-connection picker — was previously duplicated verbatim in both.
-async function _loadConnections(selectEl, selectedId) {
-  try {
-    const r = await fetch('/api/db-connections', { credentials: 'same-origin' });
-    const d = await r.json();
-    const conns = d.connections || [];
-    selectEl.innerHTML = conns.length
-      ? conns.map((c) => `<option value="${_esc(c.id)}" data-kind="${_esc(c.kind || 'postgres')}">${_esc(c.label)} · ${_esc(c.kind || 'postgres')}</option>`).join('')
-      : '<option value="">No connections configured — add one in Settings first</option>';
-    if (selectedId) selectEl.value = selectedId;
-    return conns;
-  } catch (err) {
-    selectEl.innerHTML = '<option value="">Failed to load connections</option>';
-    return [];
-  }
+// bind-to-connection picker. An "http" tile's connection_ref names a
+// WebhookTarget (reused from action buttons, see core/webhook_action.py)
+// rather than an ExternalDbConnection, so the picker offers both, each
+// tagged with its own data-kind for _updateSourceKindUI to branch on.
+async function _loadDataSourceOptions(selectEl, selectedId) {
+  const [dbConns, targets] = await Promise.all([
+    fetch('/api/db-connections', { credentials: 'same-origin' }).then((r) => r.json()).catch(() => ({ connections: [] })),
+    _fetchWebhookTargets(),
+  ]);
+  const options = [
+    ...(dbConns.connections || []).map((c) => ({ id: c.id, label: `${c.label} · ${c.kind || 'postgres'}`, kind: c.kind || 'postgres' })),
+    ...targets.map((t) => ({ id: t.id, label: `${t.label} · http`, kind: 'http' })),
+  ];
+  selectEl.innerHTML = options.length
+    ? options.map((o) => `<option value="${_esc(o.id)}" data-kind="${_esc(o.kind)}">${_esc(o.label)}</option>`).join('')
+    : '<option value="">No connections or endpoints configured — add one in Settings first</option>';
+  if (selectedId) selectEl.value = selectedId;
+  return options;
+}
+
+function _parseQueryParams(text) {
+  const out = {};
+  String(text || '').split('\n').forEach((line) => {
+    const idx = line.indexOf('=');
+    if (idx > 0) {
+      const key = line.slice(0, idx).trim();
+      const value = line.slice(idx + 1).trim();
+      if (key) out[key] = value;
+    }
+  });
+  return Object.keys(out).length ? out : null;
+}
+
+function _formatQueryParams(obj) {
+  return Object.entries(obj || {}).map(([k, v]) => `${k}=${v}`).join('\n');
 }
 
 export function closeTileBuilder() {
@@ -82,19 +102,33 @@ export async function openTileBuilder(onSaved, existingTile = null) {
         </div>
         <div class="settings-row"><label class="settings-label">Title</label>
           <input id="itb-title" class="settings-input" placeholder="e.g. Flagged for Review"></div>
-        <div class="settings-row" style="align-items:flex-start"><label class="settings-label">Context notes</label>
-          <textarea id="itb-context" class="settings-input" rows="4" placeholder="Paste any notes you have about this table/schema (optional)"></textarea></div>
-        <div class="settings-row" style="align-items:flex-start"><label class="settings-label">${_editingId ? 'What to change' : 'What to show'}</label>
-          <textarea id="itb-instruction" class="settings-input" rows="2" placeholder="${_editingId ? 'e.g. Add a filter for status = open, make it a bar chart' : 'e.g. Show me apps flagged for review in a table'}"></textarea></div>
-        <div class="settings-row">
-          <button class="admin-btn-add" id="itb-generate">${_editingId ? 'Regenerate with AI' : 'Generate'}</button>
-          <span id="itb-msg" style="font-size:11px;flex:1;margin-left:8px;"></span>
+        <div id="itb-ai-section">
+          <div class="settings-row" style="align-items:flex-start"><label class="settings-label">Context notes</label>
+            <textarea id="itb-context" class="settings-input" rows="4" placeholder="Paste any notes you have about this table/schema (optional)"></textarea></div>
+          <div class="settings-row" style="align-items:flex-start"><label class="settings-label">${_editingId ? 'What to change' : 'What to show'}</label>
+            <textarea id="itb-instruction" class="settings-input" rows="2" placeholder="${_editingId ? 'e.g. Add a filter for status = open, make it a bar chart' : 'e.g. Show me apps flagged for review in a table'}"></textarea></div>
+          <div class="settings-row">
+            <button class="admin-btn-add" id="itb-generate">${_editingId ? 'Regenerate with AI' : 'Generate'}</button>
+            <span id="itb-msg" style="font-size:11px;flex:1;margin-left:8px;"></span>
+          </div>
+        </div>
+        <div class="settings-row" id="itb-http-continue-row" style="display:none;">
+          <button class="admin-btn-add" id="itb-http-continue">Continue</button>
+          <span id="itb-http-msg" style="font-size:11px;flex:1;margin-left:8px;"></span>
         </div>
         <div id="itb-draft" style="${_editingId ? '' : 'display:none;'}">
           <hr style="border-color:var(--border);margin:10px 0">
           <div class="settings-row"><label class="settings-label">Title</label><input id="itb-d-title" class="settings-input"></div>
-          <div class="settings-row" style="align-items:flex-start"><label class="settings-label">SQL query</label><textarea id="itb-d-query" class="settings-input" rows="4" style="font-family:monospace;font-size:11px;"></textarea></div>
+          <div id="itb-sql-row" class="settings-row" style="align-items:flex-start"><label class="settings-label">SQL query</label><textarea id="itb-d-query" class="settings-input" rows="4" style="font-family:monospace;font-size:11px;"></textarea></div>
           <div id="itb-d-sql-hint" style="font-size:11px;opacity:0.6;margin:-6px 0 8px;"></div>
+          <div id="itb-http-row" style="display:none;">
+            <div class="settings-row"><label class="settings-label">Path</label>
+              <input id="itb-d-path" class="settings-input" placeholder="e.g. /api/dashboards/reactions (appended to the endpoint's URL)"></div>
+            <div class="settings-row"><label class="settings-label">JSON path</label>
+              <input id="itb-d-json-path" class="settings-input" placeholder="optional, e.g. data.items — omit if the response is itself an array"></div>
+            <div class="settings-row" style="align-items:flex-start"><label class="settings-label">Query params</label>
+              <textarea id="itb-d-query-params" class="settings-input" rows="2" placeholder="optional, one per line: key=value"></textarea></div>
+          </div>
           <div class="settings-row"><label class="settings-label">Viz type</label>
             <select id="itb-d-viztype" class="settings-select" style="width:140px;">
               <option value="table">table</option><option value="stat">stat</option>
@@ -127,15 +161,28 @@ export async function openTileBuilder(onSaved, existingTile = null) {
   document.getElementById('itb-close').addEventListener('click', closeTileBuilder);
 
   const connSel = document.getElementById('itb-connection');
-  await _loadConnections(connSel, existingTile?.data_source?.connection_ref);
+  await _loadDataSourceOptions(connSel, existingTile?.data_source?.connection_ref);
 
   function _updateSqlHint() {
     const kind = connSel.selectedOptions[0]?.dataset.kind || 'postgres';
     const hintEl = document.getElementById('itb-d-sql-hint');
     if (hintEl) hintEl.textContent = _SQL_HINTS[kind] || '';
   }
-  connSel.addEventListener('change', _updateSqlHint);
-  _updateSqlHint();
+
+  // AI generation (extensions/ithaca/ai_tile_builder.py) only speaks SQL —
+  // an http source has no schema to introspect or query to write, so it
+  // skips straight to the editable draft via "Continue" instead.
+  function _updateSourceKindUI() {
+    const kind = connSel.selectedOptions[0]?.dataset.kind || 'postgres';
+    const isHttp = kind === 'http';
+    document.getElementById('itb-ai-section').style.display = isHttp ? 'none' : '';
+    document.getElementById('itb-http-continue-row').style.display = isHttp && !_editingId ? '' : 'none';
+    document.getElementById('itb-sql-row').style.display = isHttp ? 'none' : '';
+    document.getElementById('itb-http-row').style.display = isHttp ? '' : 'none';
+    _updateSqlHint();
+  }
+  connSel.addEventListener('change', _updateSourceKindUI);
+  _updateSourceKindUI();
 
   const endpointSel = document.getElementById('itb-action-endpoint');
   const webhookTargets = await _fetchWebhookTargets();
@@ -147,8 +194,29 @@ export async function openTileBuilder(onSaved, existingTile = null) {
     document.getElementById('itb-title').value = existingTile.title || '';
     document.getElementById('itb-d-title').value = existingTile.title || '';
     document.getElementById('itb-d-query').value = existingTile.data_source?.query || '';
+    document.getElementById('itb-d-path').value = existingTile.data_source?.path || '';
+    document.getElementById('itb-d-json-path').value = existingTile.data_source?.json_path || '';
+    document.getElementById('itb-d-query-params').value = _formatQueryParams(existingTile.data_source?.query_params);
     document.getElementById('itb-d-viztype').value = existingTile.viz?.type || 'table';
+    _updateSourceKindUI();
   }
+
+  document.getElementById('itb-http-continue').addEventListener('click', () => {
+    const msg = document.getElementById('itb-http-msg');
+    const title = document.getElementById('itb-title').value.trim();
+    if (!title) { msg.textContent = 'Give the tile a title first'; msg.style.color = 'var(--red)'; return; }
+    _draft = {
+      id: _editingId || _slugify(title),
+      title,
+      data_source: { type: 'http', connection_ref: connSel.value },
+      viz: { type: 'table' },
+    };
+    msg.textContent = '';
+    document.getElementById('itb-draft').style.display = '';
+    document.getElementById('itb-d-title').value = title;
+    document.getElementById('itb-d-viztype').value = 'table';
+    _updateSourceKindUI();
+  });
 
   function _renderActionsList() {
     const listEl = document.getElementById('itb-actions-list');
@@ -242,10 +310,19 @@ export async function openTileBuilder(onSaved, existingTile = null) {
   function _draftFromForm() {
     if (!_draft) return null;
     const kind = connSel.selectedOptions[0]?.dataset.kind || _draft.data_source?.type || 'postgres';
+    const dataSource = { ..._draft.data_source, type: kind, connection_ref: connSel.value };
+    if (kind === 'http') {
+      dataSource.query = null;
+      dataSource.path = document.getElementById('itb-d-path').value.trim() || null;
+      dataSource.json_path = document.getElementById('itb-d-json-path').value.trim() || null;
+      dataSource.query_params = _parseQueryParams(document.getElementById('itb-d-query-params').value);
+    } else {
+      dataSource.query = document.getElementById('itb-d-query').value;
+    }
     return {
       ..._draft,
       title: document.getElementById('itb-d-title').value.trim() || _draft.title,
-      data_source: { ..._draft.data_source, type: kind, connection_ref: connSel.value, query: document.getElementById('itb-d-query').value },
+      data_source: dataSource,
       viz: { ..._draft.viz, type: document.getElementById('itb-d-viztype').value },
       actions: _draftActions,
     };
@@ -361,7 +438,7 @@ export async function openImportTileModal(onImported) {
   document.getElementById('iti-close').addEventListener('click', closeImportTileModal);
 
   const connSel = document.getElementById('iti-connection');
-  const importedConns = await _loadConnections(connSel);
+  const importedConns = await _loadDataSourceOptions(connSel);
 
   const webhookTargets = await _fetchWebhookTargets();
 

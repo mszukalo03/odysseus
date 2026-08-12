@@ -113,6 +113,80 @@ async def run_webhook_action(
         return {"ok": False, "status_code": None, "response_text": "", "error": str(exc)}
 
 
+def _extract_rows(payload: Any, json_path: Optional[str]) -> list[dict]:
+    """Walk `json_path` (dot-separated keys) into a decoded JSON response to
+    find the array of row objects. No json_path means the response body
+    itself must be that array — the common case for a plain REST list
+    endpoint like GET /api/reactions."""
+    node = payload
+    if json_path:
+        for part in json_path.split("."):
+            if not isinstance(node, dict) or part not in node:
+                raise WebhookActionError(f"json_path '{json_path}' not found in response (missing '{part}')")
+            node = node[part]
+    if not isinstance(node, list):
+        where = f" at json_path '{json_path}'" if json_path else ""
+        raise WebhookActionError(f"Response is not a JSON array of objects{where}")
+    return node
+
+
+async def fetch_tile_data(
+    target_id: str, path: Optional[str] = None,
+    query_params: Optional[dict[str, str]] = None,
+    json_path: Optional[str] = None, row_limit: int = 500,
+) -> dict[str, Any]:
+    """GET a configured webhook target for tile *data* — the read-side
+    counterpart to run_webhook_action's fire-and-log action-button use.
+    Reshapes the JSON response into the same {"columns", "rows", "truncated"}
+    contract core/external_db.py's run_readonly_query returns, so
+    extensions/ithaca/tiles.py's _shape_rows treats an HTTP tile identically
+    to a SQL one. Always GETs regardless of the target's configured method —
+    a data source never has a side effect. Raises WebhookActionError on any
+    failure (network, non-2xx, bad JSON shape); unlike run_webhook_action
+    this result is consumed as data rather than shown as a status, so a
+    failure can't be swallowed into an {"ok": false} dict."""
+    target = get_target(target_id)
+
+    url = target.url
+    if path:
+        url = url.rstrip("/") + "/" + path.lstrip("/")
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise WebhookActionError(f"Refusing to call non-HTTP(S) URL: {url!r}")
+
+    headers = _auth_headers(target)
+    timeout = max(1, min(int(target.timeout_seconds or 15), 60))
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(url, headers=headers, params=query_params or None)
+    except httpx.TimeoutException:
+        raise WebhookActionError(f"Timed out after {timeout}s")
+    except httpx.HTTPError as exc:
+        raise WebhookActionError(str(exc)) from exc
+
+    if not resp.is_success:
+        raise WebhookActionError(f"Request failed with status {resp.status_code}: {resp.text[:200]}")
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        raise WebhookActionError(f"Response was not valid JSON: {exc}") from exc
+
+    rows = _extract_rows(payload, json_path)
+    truncated = len(rows) > row_limit
+    rows = rows[:row_limit]
+
+    columns: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise WebhookActionError("Each item in the response array must be a JSON object")
+        for key in row.keys():
+            if key not in columns:
+                columns.append(key)
+    row_lists = [[row.get(c) for c in columns] for row in rows]
+    return {"columns": columns, "rows": row_lists, "truncated": truncated}
+
+
 def test_target(target_id: str) -> dict[str, Any]:
     """Cheap reachability check for the Settings UI's Test button — a plain
     GET/HEAD-ish probe is not always meaningful for a webhook (many only

@@ -110,7 +110,7 @@ def setup() -> APIRouter:
             return await _tiles.run_tile(tile_id, force=refresh)
         except ValueError as exc:
             raise HTTPException(404, str(exc))
-        except ExternalDbError as exc:
+        except (ExternalDbError, WebhookActionError) as exc:
             raise HTTPException(502, str(exc))
 
     @router.post("/tiles/{tile_id}/actions/{action_id}/run")

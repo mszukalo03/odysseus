@@ -25,5 +25,10 @@ def test_data_source_type_literal_matches_json_schema_enum():
 
 
 def test_data_source_type_includes_all_dialect_kinds():
+    # "http" is a deliberate extra: a different primitive (a WebhookTarget
+    # GET, see core/webhook_action.py), not a fourth SQL dialect, so it has
+    # no entry in core/db_dialects.SUPPORTED_KINDS — every *SQL* kind must
+    # still be present, but the tile type set is a superset, not an exact match.
     from core.db_dialects import SUPPORTED_KINDS
-    assert _type_field_literal_values() == set(SUPPORTED_KINDS)
+    assert set(SUPPORTED_KINDS) <= _type_field_literal_values()
+    assert _type_field_literal_values() - set(SUPPORTED_KINDS) == {"http"}

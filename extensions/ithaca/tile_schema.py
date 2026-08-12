@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 SCHEMA_VERSION = 1
 
@@ -43,9 +43,29 @@ class TileDataSource(BaseModel):
     # exported/imported tile package can warn on a mismatch (e.g. imported
     # onto an instance where the same connection_ref now points at a
     # different kind of database).
-    type: Literal["postgres", "sqlite", "mysql"] = "postgres"
+    #
+    # "http" is a different primitive, not a fourth SQL dialect: connection_ref
+    # then names a WebhookTarget (core/database.py, core/webhook_action.py)
+    # instead of an ExternalDbConnection, and the response is fetched with
+    # `fetch_tile_data` rather than run through `query`. It reuses the
+    # WebhookTarget registry already used for tile action buttons so an admin
+    # doesn't configure the same REST API's auth twice.
+    type: Literal["postgres", "sqlite", "mysql", "http"] = "postgres"
     connection_ref: str
-    query: str
+    query: Optional[str] = None
+    # http-only: appended to the WebhookTarget's base URL, plus optional
+    # querystring params and a dotted path (e.g. "data.reactions") into the
+    # JSON response to find the array of row objects — omit json_path when
+    # the response body is itself that array.
+    path: Optional[str] = None
+    query_params: Optional[dict[str, str]] = None
+    json_path: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _query_required_for_sql(self) -> "TileDataSource":
+        if self.type != "http" and not (self.query or "").strip():
+            raise ValueError("query is required for postgres/sqlite/mysql data sources")
+        return self
 
 
 class TileViz(BaseModel):

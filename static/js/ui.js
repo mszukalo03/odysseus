@@ -784,7 +784,9 @@ const _ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '
  * Canonical implementation — other modules should use uiModule.esc() instead of local copies.
  */
 export function esc(s) {
-  return (s || '').replace(/[&<>"']/g, (m) => _ESC_MAP[m]);
+  // Coerce first: callers pass numbers too (e.g. a port, a timeout default)
+  // and `(s || '').replace` throws on those since Number has no .replace.
+  return String(s ?? '').replace(/[&<>"']/g, (m) => _ESC_MAP[m]);
 }
 
 // ── Mobile: suppress synthetic click/mousedown on backdrop ──
