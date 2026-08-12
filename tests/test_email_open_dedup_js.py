@@ -22,7 +22,12 @@ def _extract_between(source: str, signature: str, next_marker: str) -> str:
 
 def test_library_unread_preview_has_one_authoritative_request_and_rollback():
     source = _LIBRARY_JS.read_text(encoding="utf-8")
-    function = _extract_between(source, "async function _toggleCardPreview", "\n/**\n * Wrap a probable signature block")
+    # End marker is the comment immediately after _toggleCardPreview's own
+    # closing brace — not the (much further down) "Wrap a probable signature
+    # block" marker, which on this fork's emailLibrary.js has an unrelated
+    # _loadReadingPane() function (with its own /api/email/read/ call)
+    # sitting in between, so that marker over-captures here.
+    function = _extract_between(source, "async function _toggleCardPreview", "\n// Shared reader-header markup")
 
     assert function.count("/api/email/read/") == 1
     assert "/api/email/mark-read/" not in function
