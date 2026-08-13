@@ -48,6 +48,7 @@
 
 import * as Modals from './modalManager.js';
 import { registerMenuDismiss } from './escMenuStack.js';
+import Split from './workspaceSplit.js';
 
 const _registry = new Map();   // id -> descriptor
 const _routes = new Map();     // route -> id
@@ -517,12 +518,131 @@ export function close(id = _focusedId, { silent = false, fromHistory = false, pu
   // sidebar collapse is booked once for the pair (see _collapseSidebarToRail)
   // and released only when the last pane closes, above — a survivor pane
   // still wants the rail collapsed, so no _restoreSidebar() call here.
+  if (_panes.length <= 1) {
+    // Dropped back to single-pane (or empty) — the split, if any, is over.
+    Split.setSeamActive(false);
+    document.body.classList.remove('workspace-split-chat');
+    const survivor = _mounted.get(_panes[0]);
+    if (survivor) delete survivor.dataset.pane;
+    Split.saveSplitPref(null);
+  }
+}
+
+/** Set data-pane="left"|"right" on the two open panes' containers so the CSS
+ *  split rules (style.css, `body.workspace-split .workspace-surface[data-pane]`)
+ *  know which one is which. No-op / clears the attribute below 2 panes. */
+function _assignPaneSides() {
+  const c0 = _mounted.get(_panes[0]);
+  const c1 = _mounted.get(_panes[1]);
+  if (c0) { if (_panes.length > 1) c0.dataset.pane = 'left'; else delete c0.dataset.pane; }
+  if (c1) c1.dataset.pane = 'right';
 }
 
 /** Close every open pane — "return fully to chat". */
 function _closeAllPanes(opts) {
   for (const id of [..._panes]) close(id, opts);
 }
+
+/**
+ * Open `id` beside whatever's already open, instead of replacing it — the
+ * split-view entry point (Ctrl/Cmd-click on a nav button, or the header split
+ * picker's "Chat"-less options). A pane opened this way is always the
+ * full-canvas page rendering regardless of `id`'s stored display-mode setting
+ * — `_showPageSurface` doesn't consult `displayMode()` at all, only
+ * `open()`/`acquirePageSurface()` do — because a split pane and a floating
+ * popup are two different layout owners; see the module header's "Display
+ * modes" note for why a popup-mode feature stays reachable simultaneously
+ * (it just floats above) rather than being forced into a pane.
+ *
+ * No-op below the mobile breakpoint (falls back to a plain replace-open) —
+ * split view doesn't fit a phone-width screen. Already-open `id` just
+ * focuses it instead of no-op'ing. With two panes already open, the
+ * non-focused one is replaced (keeping whichever the user was just looking
+ * at) — there is no three-pane mode.
+ *
+ * Returns true if a split is now showing, false if it fell back to a plain
+ * open (mobile, or `id` isn't registered).
+ */
+export function openBeside(id) {
+  if (!_registry.has(id)) { console.warn(`Workspace "${id}" is not registered`); return false; }
+  if (Split.isMobile()) { open(id); return false; }
+  if (_isPane(id)) { focusPane(id); return true; }
+
+  if (_panes.length === 0) { open(id, { mode: 'page' }); return false; }
+  if (_panes.length >= 2) {
+    const other = _panes.find((p) => p !== _focusedId);
+    if (other) close(other, { silent: true });
+  }
+
+  const desc = _registry.get(id);
+  const container = _showPageSurface(id, { split: true });
+  if (!container) return false;
+  try { desc.activate && desc.activate({ mode: 'page' }); } catch (err) {
+    console.error(`Workspace "${id}" activate() failed:`, err);
+  }
+  _assignPaneSides();
+  Split.setSeamActive(true);
+  Split.saveSplitPref({ left: _panes[0], right: _panes[1], ratio: Split.currentRatio() });
+  return true;
+}
+
+/**
+ * Open `primaryId` (if not already open) then `partnerId` beside it — what
+ * the header split picker calls when you choose a feature from the menu.
+ */
+export function splitWith(primaryId, partnerId) {
+  if (!_isPane(primaryId)) open(primaryId, { mode: 'page' });
+  return openBeside(partnerId);
+}
+
+/** Drop the non-focused pane; the focused one goes back to full width. */
+export function clearSplit() {
+  if (_panes.length <= 1) return;
+  const other = _panes.find((p) => p !== _focusedId);
+  if (other) close(other, { silent: true });
+}
+
+/** Give `id` (an already-open pane) the URL/title/Escape token, without
+ *  changing which panes are open — clicking the unfocused half of a split. */
+export function focusPane(id) {
+  if (!_isPane(id) || _focusedId === id) return;
+  _focusedId = id;
+  const desc = _registry.get(id);
+  if (desc?.route) {
+    try { history.replaceState({ workspaceId: id }, '', desc.route); } catch (_) {}
+    document.title = desc.title ? `${desc.title} — Odysseus` : document.title;
+  }
+  _syncEscape();
+}
+
+const _isSplitClickModifier = (e) =>
+  e.metaKey || (e.ctrlKey && !/Mac/i.test(navigator.platform || ''));
+
+function _idForNavControl(control) {
+  const railMatch = /^rail-(.+)$/.exec(control.id || '');
+  if (railMatch && _registry.has(railMatch[1])) return railMatch[1];
+  const toolMatch = /^tool-(.+)-btn$/.exec(control.id || '');
+  if (toolMatch && _registry.has(toolMatch[1])) return toolMatch[1];
+  return null;
+}
+
+// Ctrl/Cmd-click a feature's rail/sidebar nav button → open it beside
+// whatever's already open instead of replacing it. Capture-phase on
+// `document` so this runs (and stopPropagation()s) before the button's own
+// click handler — e.g. app.js's rail→sidebar-button relay — fires. Only
+// fires for ids workspaceManager itself owns; a Ctrl-click on any other
+// button (chat list, settings, ...) is untouched.
+document.addEventListener('click', (e) => {
+  if (!_isSplitClickModifier(e)) return;
+  const control = e.target.closest('.icon-rail-btn, [id^="tool-"]');
+  if (!control) return;
+  const id = _idForNavControl(control);
+  if (!id) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (!_panes.length) open(id);
+  else openBeside(id);
+}, true);
 
 /** What a nav button does: open in the configured mode, or close if showing. */
 export function toggle(id) {
@@ -651,5 +771,7 @@ const Workspace = {
   displayMode, setDisplayMode, loadDisplayModes,
   acquirePageSurface, notePopupOpen, noteClosed,
   panes, isSplit,
+  // Split view.
+  openBeside, splitWith, clearSplit, focusPane,
 };
 export default Workspace;
