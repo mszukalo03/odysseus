@@ -808,6 +808,10 @@ app.include_router(setup_compare_routes(session_manager))
 from routes.prefs_routes import setup_prefs_routes
 app.include_router(setup_prefs_routes())
 
+# Per-feature display defaults (page vs popup) for the nav shell
+from routes.display_routes import setup_display_routes
+app.include_router(setup_display_routes())
+
 # Backup (export/import user data)
 from routes.backup_routes import setup_backup_routes
 app.include_router(setup_backup_routes(memory_manager, preset_manager, skills_manager))
@@ -943,6 +947,14 @@ async def serve_tasks(request: Request):
 
 @app.get("/library")
 async def serve_library(request: Request):
+    return await serve_index(request)
+
+@app.get("/editor")
+async def serve_editor(request: Request):
+    """Doc editor deep link. Like the extension nav routes below, this only
+    serves the SPA shell — static/js/documentWorkspace.js decides from the
+    user's display default whether /editor renders as a full-canvas page or
+    normalizes back to '/' and opens the split pane."""
     return await serve_index(request)
 
 # Extension nav routes (e.g. /ithaca, /feeds) — same SPA shell, the extension's

@@ -195,6 +195,20 @@ DEFAULT_SETTINGS = {
         "Newsletters, marketing, automated digests, and FYI-only updates are "
         "NOT urgent."
     ),
+    # Per-feature display default: how a nav-shell feature renders when its
+    # nav button is clicked or its route is deep-linked.
+    #   "page"  — full-canvas workspace surface (Ithaca/RSS's shape today)
+    #   "popup" — floating/docked window via modalManager (the doc editor's
+    #             chat-adjacent split pane; Ithaca/RSS's popOut window)
+    # Read by static/js/workspaceManager.js at boot. A feature id missing from
+    # this map falls back to its descriptor's own `defaultDisplay`, so adding a
+    # new workspace never requires touching settings. Keys are workspace ids,
+    # not extension ids — see FEATURE_DISPLAY_MODES below.
+    "feature_display_modes": {
+        "doc-editor": "popup",
+        "ithaca": "page",
+        "rss": "page",
+    },
     # Keyboard shortcuts (action: key combination)
     "keybinds": {
         "search": "ctrl+k",
@@ -302,6 +316,55 @@ def get_user_setting(key: str, owner: str = "", default: Any = None) -> Any:
         except Exception:
             pass
     return get_setting(key, default)
+
+
+# ── Per-feature display mode (page vs popup) ──
+
+# The only two renderings the nav shell knows how to produce. Anything else is
+# rejected at the API boundary rather than written through, so the frontend can
+# treat a stored value as trustworthy and never needs a fallback branch.
+FEATURE_DISPLAY_MODES = ("page", "popup")
+
+
+def get_feature_display_modes() -> dict:
+    """The full {feature_id: "page"|"popup"} map, defaults merged in.
+
+    Unknown/corrupt entries are dropped rather than raising — a hand-edited
+    settings.json with a typo'd mode should degrade to "this feature has no
+    stored preference" (the descriptor's own default wins) instead of taking
+    the settings API down.
+    """
+    stored = get_setting("feature_display_modes", None)
+    merged = dict(DEFAULT_SETTINGS["feature_display_modes"])
+    if isinstance(stored, dict):
+        for feature_id, mode in stored.items():
+            if isinstance(feature_id, str) and mode in FEATURE_DISPLAY_MODES:
+                merged[feature_id] = mode
+    return merged
+
+
+def get_feature_display_mode(feature_id: str, default: str = "page") -> str:
+    """Resolve one feature's display mode, or `default` if it has no entry."""
+    return get_feature_display_modes().get(feature_id, default)
+
+
+def set_feature_display_mode(feature_id: str, mode: str) -> dict:
+    """Persist one feature's display mode and return the updated full map.
+
+    Writes only the single key so two features being changed concurrently
+    can't clobber each other's choice (the read-modify-write is over the
+    whole settings dict, matching how every other setting is saved).
+    """
+    if mode not in FEATURE_DISPLAY_MODES:
+        raise ValueError(f"display mode must be one of {FEATURE_DISPLAY_MODES}, got {mode!r}")
+    if not feature_id or not isinstance(feature_id, str):
+        raise ValueError("feature_id must be a non-empty string")
+    settings = dict(load_settings())
+    modes = dict(get_feature_display_modes())
+    modes[feature_id] = mode
+    settings["feature_display_modes"] = modes
+    save_settings(settings)
+    return modes
 
 
 # ── Features (data/features.json) ──

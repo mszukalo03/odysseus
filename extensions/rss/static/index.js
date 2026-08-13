@@ -1337,6 +1337,9 @@ const rssWorkspace = {
   route: '/feeds',
   title: 'Feeds',
   surface: 'both',
+  // See the note on Ithaca's descriptor — page by default, popup honored via
+  // the user's `feature_display_modes` setting.
+  defaultDisplay: 'page',
   collapseSidebar: true,
   mount,
   activate,

@@ -33,6 +33,7 @@ import tasksModule from './js/tasks.js?v=20260723tasksbulkfeedback1';
 import calendarModule from './js/calendar.js';
 import notesModule from './js/notes.js';
 import extensionHost from './js/extensionHost.js';
+import documentWorkspace from './js/documentWorkspace.js';
 import adminModule from './js/admin.js?v=20260716openrouter3';
 import settingsModule from './js/settings.js?v=20260722emailfastindex1';
 // Eagerly bind unified minimize/restore behavior across all tool modals.
@@ -2015,30 +2016,30 @@ function initializeEventListeners() {
     return true;
   }
 
+  // The editor is a nav-shell feature now (static/js/documentWorkspace.js), so
+  // its button no longer opens the pane by hand — it toggles the workspace and
+  // lets the shell decide page vs popup from the user's per-feature display
+  // default. The session-materialization that used to live in this handler
+  // moved into the descriptor, because a deep-link to /editor needs it too.
+  documentWorkspace.init({
+    documentModule,
+    sessionModule,
+    // The shell owns the surface; app.js still owns the toolbar button's active
+    // class and the persisted toggle state, so it gets told when visibility
+    // changes regardless of what opened or closed the editor. Looked up per
+    // call because #doc-indicator-btn is shown/hidden as docs come and go.
+    onVisibilityChange: (visible) => {
+      el('overflow-doc-btn')?.classList.toggle('active', visible);
+      el('doc-indicator-btn')?.classList.toggle('active', visible);
+      const st = loadToggleState(); st.doc = visible; saveToggleState(st);
+    },
+  });
   const overflowDocBtn = el('overflow-doc-btn');
   if (overflowDocBtn) {
-    overflowDocBtn.addEventListener('click', async () => {
+    overflowDocBtn.addEventListener('click', () => {
       if (!documentModule) return;
       if (bringOpenDocumentToFrontOnMobile()) return;
-      if (documentModule.isPanelOpen()) {
-        documentModule.closePanel();
-        overflowDocBtn.classList.remove('active');
-        const st = loadToggleState(); st.doc = false; saveToggleState(st);
-      } else {
-        let sessionId = sessionModule.getCurrentSessionId();
-        // If there's a pending "New Chat", materialize it first
-        if (!sessionId && sessionModule.hasPendingChat && sessionModule.hasPendingChat()) {
-          await sessionModule.materializePendingSession();
-          sessionId = sessionModule.getCurrentSessionId();
-        }
-        if (sessionId) {
-          documentModule.loadSessionDocs(sessionId, { forceOpen: true });
-        } else {
-          documentModule.ensureDocPanel();
-        }
-        overflowDocBtn.classList.add('active');
-        const st = loadToggleState(); st.doc = true; saveToggleState(st);
-      }
+      documentWorkspace.toggle();
     });
   }
 

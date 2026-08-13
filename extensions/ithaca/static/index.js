@@ -333,6 +333,12 @@ const ithacaWorkspace = {
   route: '/ithaca',
   title: 'Ithaca',
   surface: 'both',
+  // Falls back to page when the user has no stored `feature_display_modes`
+  // choice for Ithaca — the dashboard is a destination, not something you
+  // glance at beside a chat. Popup still works (the host re-parents this same
+  // DOM into a floating window); nothing here is mode-specific because the
+  // surface owns geometry in both modes.
+  defaultDisplay: 'page',
   collapseSidebar: true,
   mount,
   activate,

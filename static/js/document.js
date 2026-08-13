@@ -4754,6 +4754,29 @@ import { bindMenuDismiss, dismissOrRemove } from './escMenuStack.js';
       });
   }
 
+  // ── Page mode host (see static/js/documentWorkspace.js) ──────────────────
+  //
+  // The editor renders two ways. Popup mode (the historical, default shape) is
+  // a split pane docked beside #chat-container with a drag divider, so the user
+  // can chat while the AI streams into the doc. Page mode is the same pane DOM
+  // parented into the nav shell's full-canvas workspace surface instead —
+  // no chat beside it, so no divider and no `doc-view` body class (that class
+  // exists purely to shrink the chat column to make room).
+  //
+  // Set by the workspace descriptor before it calls openPanel(), cleared when
+  // it unmounts. Everything else in this file — streaming, PDF rendering,
+  // versions, email compose — is parent-agnostic and needs no changes.
+  let _pageHost = null;
+
+  /** @param {HTMLElement|null} host — workspace surface, or null for popup mode. */
+  export function setPageHost(host) {
+    _pageHost = host || null;
+  }
+
+  export function isPageMode() {
+    return !!_pageHost;
+  }
+
   export function openPanel() {
     _closeNotesForDocumentOpen();
     if (isOpen) return;
@@ -4779,7 +4802,10 @@ import { bindMenuDismiss, dismissOrRemove } from './escMenuStack.js';
     _ensureAgentMode();
     _markDocVisibleState(_lastSessionId, 'open');
 
-    document.body.classList.add('doc-view');
+    // `doc-view` shrinks the chat column to make room for the split pane. In
+    // page mode the workspace surface covers chat entirely, so there is
+    // nothing to make room for.
+    if (!_pageHost) document.body.classList.add('doc-view');
 
     // Sync toggle button state
     const toggleBtn = document.getElementById('overflow-doc-btn');
@@ -5068,7 +5094,14 @@ import { bindMenuDismiss, dismissOrRemove } from './escMenuStack.js';
     // If sidebar is on the right, insert before chat-container instead
     const sidebar = document.getElementById('sidebar');
     const isRight = sidebar && sidebar.classList.contains('right-side');
-    if (isRight) {
+    if (_pageHost) {
+      // Page mode: the workspace surface is the pane's parent and gives it its
+      // full size. The divider is deliberately never inserted — there is no
+      // second column to resize against.
+      pane.classList.remove('doc-left');
+      pane.classList.add('doc-editor-page');
+      _pageHost.appendChild(pane);
+    } else if (isRight) {
       pane.classList.add('doc-left');
       container.parentNode.insertBefore(pane, container);
       container.parentNode.insertBefore(divider, container);
@@ -5093,8 +5126,11 @@ import { bindMenuDismiss, dismissOrRemove } from './escMenuStack.js';
       }, { once: true });
     });
 
-    // Wire up divider drag to resize
-    initDividerDrag(divider, pane, isRight);
+    // Wire up divider drag to resize. Page mode never inserts the divider, so
+    // all of its wiring is skipped below — the document-level `pointermove`
+    // listener and the MutationObserver would otherwise be attached once per
+    // open for a control the user can never see, and never torn down.
+    if (!_pageHost) initDividerDrag(divider, pane, isRight);
     // Divider chevron — single button with three modes (the glyph is the
      // same `›` in markup; CSS rotates 180° for the left-pointing variant).
      //   • cursor INSIDE the doc pane  →  collapse  (›, slide back, closes panel)
@@ -5102,7 +5138,7 @@ import { bindMenuDismiss, dismissOrRemove } from './escMenuStack.js';
      //   • already fullscreen          →  unfullscreen (›, points back in)
      // The user can also drag the chevron vertically along the divider to
      // reposition it.
-    const _divCollapse = divider.querySelector('.doc-divider-collapse');
+    const _divCollapse = _pageHost ? null : divider.querySelector('.doc-divider-collapse');
     if (_divCollapse) {
       _divCollapse.addEventListener('mousedown', (e) => e.stopPropagation());
       let _dragging = false;
@@ -11165,6 +11201,10 @@ const documentModule = {
   init,
   openPanel,
   closePanel,
+  // Display-mode switch used by static/js/documentWorkspace.js — see the
+  // `_pageHost` note above openPanel().
+  setPageHost,
+  isPageMode,
   swapSide,
   createDocument,
   newDocument,

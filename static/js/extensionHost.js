@@ -74,9 +74,17 @@ export async function init() {
     console.error('Failed to fetch /api/extensions:', err);
     return;
   }
-  await Promise.all(manifests.map((m) => _loadExtension(m).catch((err) => {
-    console.error(`Extension "${m.id}" failed to initialize:`, err);
-  })));
+  // Per-feature display defaults must be in hand before any route resolves —
+  // resolveInitialRoute() asks Workspace.displayMode() whether a deep-linked
+  // feature renders as a page or a popup, and an unresolved fetch would make
+  // every deep link fall back to the descriptor default. Fetched in parallel
+  // with the extension modules since neither depends on the other.
+  await Promise.all([
+    Workspace.loadDisplayModes(),
+    ...manifests.map((m) => _loadExtension(m).catch((err) => {
+      console.error(`Extension "${m.id}" failed to initialize:`, err);
+    })),
+  ]);
   Workspace.resolveInitialRoute();
 }
 

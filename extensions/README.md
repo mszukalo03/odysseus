@@ -184,13 +184,48 @@ export default {
   route: '/ithaca',
   title: 'Ithaca',
   surface: 'both',          // 'workspace' | 'float' | 'both'
+  defaultDisplay: 'page',   // 'page' | 'popup' — used when the user has no
+                            //   stored choice; see "Display modes" below
   collapseSidebar: true,
   mount(container) { /* build DOM into container, once */ },
-  activate() { /* start timers/refresh */ },
+  activate(ctx) { /* start timers/refresh; ctx.mode is 'page' | 'popup' */ },
   deactivate() { /* stop timers; called on close AND on popOut */ },
   onEscape() { return false; }, // true = you handled it, don't close
 };
 ```
+
+### Display modes (page vs popup)
+
+Every registered feature renders one of two ways, chosen per feature by the
+user rather than hardcoded by the feature:
+
+- **`page`** — full-canvas surface in `#workspace-host` with the feature's real
+  URL pushed onto history. What Ithaca and RSS do by default.
+- **`popup`** — a floating window. Most features get this for free: the host
+  re-parents their already-mounted DOM into a `modalManager` window
+  (`popOut`/`popIn`), so the descriptor needs no popup-specific code.
+
+The stored choice lives in the core settings KV as `feature_display_modes`
+(`src/settings.py`), read/written through `GET|PUT /api/display-modes`
+(`routes/display_routes.py`), and fetched once at boot by
+`Workspace.loadDisplayModes()` before any route resolves. Resolution order for
+a feature id is: **stored setting → descriptor's `defaultDisplay` → `page`**,
+then clamped to whatever `surface` allows — so a feature declaring
+`surface: 'workspace'` can never be forced into a popup by a stale setting.
+
+Change it at runtime with `Workspace.setDisplayMode(id, mode)`; if the feature
+is open it is reopened in the new mode immediately.
+
+**Routes belong to page mode only.** A popup floats over the chat screen, which
+is what `/` already means, so deep-linking a feature that resolves to popup
+opens the popup and normalizes the URL back to `/` instead of leaving a URL
+that wouldn't survive a reload.
+
+If a feature's popup form is a genuinely *different surface* rather than the
+same DOM in a different frame, it opts out of re-parenting by implementing
+`openPopup()` / `closePopup()` on its descriptor and the host delegates to
+those. The doc editor is the one case today: its popup form is a split pane
+docked beside `#chat-container`, not a floating copy of its page.
 
 Rules that make a descriptor portable between a full workspace and a floating
 window (`popOut`/`popIn`):
@@ -226,7 +261,7 @@ window (`popOut`/`popIn`):
 |---|---|---|
 | Ithaca | ✅ extension + workspace | First mover; backend at `extensions/ithaca/backend.py`, frontend at `extensions/ithaca/static/index.js`. Stays in-repo for development but is excluded from packaged Docker/PyInstaller builds by default — see "Discovery roots" above. |
 | RSS reader | ✅ extension + workspace | Backend at `extensions/rss/backend.py` (`setup_feed_routes`), services at `extensions/rss/services/`, frontend at `extensions/rss/static/index.js`. `routes/codex_routes.py` still borrows its router (for the `/api/codex/feeds*` passthrough) via `extension_host.get_router("rss")`, retrieved after `register_all()` runs — see "DB models" below for why the models didn't move too. |
-| Doc editor | Not migrated | `static/js/document.js`'s `doc-panel` registration is already a clean `Modals.register` shape — probably the easiest next conversion. |
+| Doc editor | ✅ workspace (core, not an extension) | Adapter at `static/js/documentWorkspace.js`, route `/editor`. Stays in core rather than becoming an extension — it's wired into chat streaming, email compose and the session lifecycle, none of which have extension hooks. `static/js/document.js` still builds the pane; the adapter only chooses its parent. Defaults to **popup** display (the chat-adjacent split pane), so nothing changed for existing users unless they opt into page mode. |
 
 ## Known gaps (deliberate, not oversights)
 
