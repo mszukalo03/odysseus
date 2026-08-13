@@ -52,10 +52,24 @@ import { registerMenuDismiss } from './escMenuStack.js';
 const _registry = new Map();   // id -> descriptor
 const _routes = new Map();     // route -> id
 const _mounted = new Map();    // id -> container element
-let _activeId = null;
+// Ordered page-mode surfaces currently showing, left-to-right: [] (nothing),
+// [id] (today's single-workspace shape), or [idLeft, idRight] (split view).
+// An ordered array rather than a left/right pair of named slots because the
+// seam, the `data-pane` attribute, and "which id is the other one" are all
+// naturally position-based — see static/js/workspaceSplit.js.
+const _panes = [];
+// Which pane owns the URL, the document title, and gets first refusal on
+// Escape. Always one of _panes' entries, or null when _panes is empty.
+// `active()` returns this — same external meaning `_activeId` used to have
+// in the single-pane era, so callers outside this module don't change.
+let _focusedId = null;
 let _floatingIds = new Set();  // ids currently popped out to a modalManager window
 let _host = null;
 let _unregisterEscape = null;
+
+function _isPane(id) {
+  return _panes.includes(id);
+}
 
 // id -> 'page' | 'popup', from the settings API. Empty until loadDisplayModes()
 // resolves; every read falls back to the descriptor's own default, so a failed
@@ -137,7 +151,7 @@ export async function setDisplayMode(id, mode) {
 
 /** True if `id` is showing in any mode (page, host popup, or own popup). */
 export function isOpen(id) {
-  return _activeId === id || _floatingIds.has(id) || _ownPopupIds.has(id);
+  return _isPane(id) || _floatingIds.has(id) || _ownPopupIds.has(id);
 }
 
 function _ensureHost() {
@@ -203,7 +217,17 @@ export function list() {
 }
 
 export function active() {
-  return _activeId;
+  return _focusedId;
+}
+
+/** Ordered pane ids currently showing as page-mode surfaces (0, 1, or 2). */
+export function panes() {
+  return [..._panes];
+}
+
+/** True once a second pane is open alongside the focused one. */
+export function isSplit() {
+  return _panes.length > 1;
 }
 
 function _mount(desc) {
@@ -257,7 +281,7 @@ export function open(id, { fromRoute = false, replace = false, mode = null } = {
  * it themselves, since only they know whether skipping means "no-op" or
  * "reuse the existing container".
  */
-function _showPageSurface(id, { fromRoute = false, replace = false } = {}) {
+function _showPageSurface(id, { fromRoute = false, replace = false, split = false } = {}) {
   const desc = _registry.get(id);
   if (!desc) return null;
   // Coming from a popup form of the same feature — tear that down first so we
@@ -265,7 +289,15 @@ function _showPageSurface(id, { fromRoute = false, replace = false } = {}) {
   if (_ownPopupIds.has(id)) closePopup(id);
   if (_floatingIds.has(id)) popIn(id);
 
-  if (_activeId && _activeId !== id) close(_activeId, { silent: true });
+  // A plain (non-split) open replaces whatever pane(s) are showing — today's
+  // single-workspace behavior. `split: true` (the split-view entry points,
+  // added in a later commit) keeps the existing pane(s) and adds `id`
+  // alongside — capped at two by whoever calls with `split: true`.
+  if (!split) {
+    for (const existing of [..._panes]) {
+      if (existing !== id) close(existing, { silent: true });
+    }
+  }
 
   const container = _mount(desc);
   _floatingIds.delete(id);
@@ -276,7 +308,7 @@ function _showPageSurface(id, { fromRoute = false, replace = false } = {}) {
   // Exposed so a feature can style or branch on its own rendering without
   // asking the host — `[data-display-mode="popup"] .foo { ... }`.
   container.dataset.displayMode = 'page';
-  _activeId = id;
+  if (!_panes.includes(id)) _panes.push(id);
   if (desc.collapseSidebar) _collapseSidebarToRail();
   _setActiveNav(id, true);
 
@@ -289,18 +321,26 @@ function _showPageSurface(id, { fromRoute = false, replace = false } = {}) {
     }
     document.title = desc.title ? `${desc.title} — Odysseus` : document.title;
   }
-
-  if (_unregisterEscape) _unregisterEscape();
-  _unregisterEscape = registerMenuDismiss(() => close(id));
+  // The pane just shown becomes focused — owns the URL/title/Escape from
+  // here, same as clicking a browser tab focuses it.
+  _focusedId = id;
+  _syncEscape();
 
   return container;
+}
+
+/** (Re)wire the single Escape-dismiss token to the currently focused pane. */
+function _syncEscape() {
+  if (_unregisterEscape) { _unregisterEscape(); _unregisterEscape = null; }
+  if (!_focusedId) return;
+  _unregisterEscape = registerMenuDismiss(() => close(_focusedId));
 }
 
 /** The full-canvas page rendering: show the surface, then activate the feature. */
 function _openPage(id, opts = {}) {
   const desc = _registry.get(id);
   if (!desc) { console.warn(`Workspace "${id}" is not registered`); return; }
-  if (_activeId === id && !_floatingIds.has(id)) return;
+  if (_isPane(id) && !_floatingIds.has(id) && _focusedId === id) return;
   const container = _showPageSurface(id, opts);
   if (!container) return;
   try { desc.activate && desc.activate({ mode: 'page' }); } catch (err) {
@@ -322,11 +362,11 @@ function _openPage(id, opts = {}) {
  * page/popup branch. Idempotent: returns the existing container without
  * re-running mount/nav/route/escape wiring if `id` is already the active page.
  */
-export function acquirePageSurface(id, { force = false, fromRoute = false, replace = false } = {}) {
+export function acquirePageSurface(id, { force = false, fromRoute = false, replace = false, split = false } = {}) {
   if (!_registry.has(id)) return null;
   if (!force && displayMode(id) !== 'page') return null;
-  if (_activeId === id && !_floatingIds.has(id)) return _mounted.get(id) || null;
-  return _showPageSurface(id, { fromRoute, replace });
+  if (_isPane(id) && !_floatingIds.has(id)) return _mounted.get(id) || null;
+  return _showPageSurface(id, { fromRoute, replace, split });
 }
 
 /**
@@ -342,7 +382,7 @@ export function openPopup(id) {
   const desc = _registry.get(id);
   if (!desc) { console.warn(`Workspace "${id}" is not registered`); return; }
   if (_floatingIds.has(id) || _ownPopupIds.has(id)) return;
-  if (_activeId === id) close(id, { silent: true });
+  if (_isPane(id)) close(id, { silent: true });
 
   if (typeof desc.openPopup === 'function') {
     _ownPopupIds.add(id);
@@ -383,7 +423,7 @@ export function closePopup(id) {
 /** Close `id` however it happens to be open. */
 export function closeAny(id) {
   if (_ownPopupIds.has(id) || _floatingIds.has(id)) { closePopup(id); return; }
-  if (_activeId === id) close(id);
+  if (_isPane(id)) close(id);
 }
 
 /**
@@ -397,7 +437,7 @@ export function closeAny(id) {
  */
 export function notePopupOpen(id) {
   if (!_registry.has(id) || _ownPopupIds.has(id)) return;
-  if (_activeId === id && !_floatingIds.has(id)) return;
+  if (_isPane(id) && !_floatingIds.has(id)) return;
   _ownPopupIds.add(id);
   _setActiveNav(id, true);
 }
@@ -414,7 +454,7 @@ export function notePopupOpen(id) {
 export function noteClosed(id) {
   if (_selfClosing.has(id)) return;
   if (_ownPopupIds.delete(id)) { _setActiveNav(id, false); return; }
-  if (_activeId === id) close(id);
+  if (_isPane(id)) close(id);
 }
 
 /**
@@ -425,8 +465,8 @@ export function noteClosed(id) {
  * explicit close via the workspace's own back/close button keeps the default
  * replaceState behavior (today's tested behavior, unchanged).
  */
-export function close(id = _activeId, { silent = false, fromHistory = false, push = false } = {}) {
-  if (!id || _activeId !== id) return;
+export function close(id = _focusedId, { silent = false, fromHistory = false, push = false } = {}) {
+  if (!id || !_isPane(id)) return;
   const desc = _registry.get(id);
   const container = _mounted.get(id);
   // Wrapped so a feature whose own close path (e.g. document.js's
@@ -442,19 +482,46 @@ export function close(id = _activeId, { silent = false, fromHistory = false, pus
   }
   container?.classList.add('hidden');
   container?.classList.remove('workspace-surface-open');
-  _ensureHost().classList.add('hidden');
+  const idx = _panes.indexOf(id);
+  if (idx !== -1) _panes.splice(idx, 1);
   _setActiveNav(id, false);
-  _activeId = null;
-  if (_unregisterEscape) { _unregisterEscape(); _unregisterEscape = null; }
+  const wasFocused = _focusedId === id;
 
-  if (!silent && desc?.route && !fromHistory && window.location.pathname === desc.route) {
-    try {
-      if (push) history.pushState(null, '', '/');
-      else history.replaceState(null, '', '/');
-    } catch (_) {}
+  if (_panes.length === 0) {
+    // Last (or only) pane closing — same teardown as the single-workspace
+    // era: hide the whole host, release the Escape token, go back to '/'.
+    _ensureHost().classList.add('hidden');
+    _focusedId = null;
+    if (_unregisterEscape) { _unregisterEscape(); _unregisterEscape = null; }
+    if (!silent && desc?.route && !fromHistory && window.location.pathname === desc.route) {
+      try {
+        if (push) history.pushState(null, '', '/');
+        else history.replaceState(null, '', '/');
+      } catch (_) {}
+    }
+    if (!silent) document.title = 'Odysseus';
+    _restoreSidebar();
+  } else if (wasFocused) {
+    // A split partner survives — hand it the URL/title/Escape instead of
+    // collapsing to '/'. Skip the URL/title write when this close came from
+    // the browser's own popstate (fromHistory) — the address bar already
+    // moved on its own, and rewriting it here would fight that navigation.
+    _focusedId = _panes[0];
+    const survivorDesc = _registry.get(_focusedId);
+    if (!(silent || fromHistory) && survivorDesc?.route) {
+      try { history.replaceState({ workspaceId: _focusedId }, '', survivorDesc.route); } catch (_) {}
+      document.title = survivorDesc.title ? `${survivorDesc.title} — Odysseus` : document.title;
+    }
+    _syncEscape();
   }
-  if (!silent) document.title = 'Odysseus';
-  _restoreSidebar();
+  // sidebar collapse is booked once for the pair (see _collapseSidebarToRail)
+  // and released only when the last pane closes, above — a survivor pane
+  // still wants the rail collapsed, so no _restoreSidebar() call here.
+}
+
+/** Close every open pane — "return fully to chat". */
+function _closeAllPanes(opts) {
+  for (const id of [..._panes]) close(id, opts);
 }
 
 /** What a nav button does: open in the configured mode, or close if showing. */
@@ -472,7 +539,7 @@ export function popOut(id) {
   if (!desc || desc.surface === 'workspace') return;
   const container = _mount(desc);
   if (!container) return;
-  const wasActive = _activeId === id;
+  const wasActive = _isPane(id);
   if (wasActive) close(id, { silent: true });
 
   container.classList.remove('hidden', 'workspace-surface-open');
@@ -518,49 +585,56 @@ window.addEventListener('popstate', () => {
   const id = _routes.get(path);
   if (id) {
     open(id, { fromRoute: true });
-  } else if (_activeId) {
-    close(_activeId, { fromHistory: true });
+  } else if (_focusedId) {
+    close(_focusedId, { fromHistory: true });
   }
 });
 
-// ── Escape: give the active workspace first refusal (e.g. a nested modal it
-// owns), then close it — unless something floating is still on top. Floating
-// (unmigrated) features aren't workspace-aware yet, so this DOM check is a
-// deliberate bridge until they migrate too (see extensions/README.md).
+// ── Escape: give the FOCUSED pane first refusal (e.g. a nested modal it
+// owns), then close just that pane — unless something floating is still on
+// top. Floating (unmigrated) features aren't workspace-aware yet, so this DOM
+// check is a deliberate bridge until they migrate too (see
+// extensions/README.md). The unfocused split partner (if any) is never asked
+// and never closed by Escape — a single Escape closing two panes at once
+// would be surprising, and the focused pane is by definition where the user
+// is typing/looking.
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape' || !_activeId) return;
-  const desc = _registry.get(_activeId);
+  if (e.key !== 'Escape' || !_focusedId) return;
+  const desc = _registry.get(_focusedId);
   if (desc?.onEscape && desc.onEscape()) { e.stopPropagation(); return; }
   const floating = document.querySelector('.modal:not(.hidden):not(.workspace-float), .notes-pane');
   if (floating) return;
-  close(_activeId);
+  close(_focusedId);
 });
 
-// Returning to the chat via the rail/sidebar chat affordances closes whatever
-// workspace is open — these all land the user on the chat screen, which sits
+// Returning to the chat via the rail/sidebar chat affordances closes every
+// open pane — these all land the user on the chat screen, which sits
 // underneath every workspace. (Moved here from ithaca.js — it's about the
 // chat pane a workspace overlays, not specific to any one feature.)
 document.addEventListener('click', (e) => {
-  if (!_activeId) return;
+  if (!_panes.length) return;
   const backToChat = e.target.closest(
     '#rail-new-session, #rail-chats, #sidebar-new-chat-btn, #sidebar-brand-btn, #chats-section-title'
   );
-  if (backToChat) close(_activeId);
+  if (backToChat) _closeAllPanes();
 }, true);
 
-// Opening any other sidebar/rail tool closes the active workspace — the same
-// idea as "back to chat" above, generalized so every workspace gets it for
-// free instead of hand-rolling it per feature (this used to be RSS-specific
-// code in app.js). `push: true` so the browser Back button still returns to
-// the workspace that just got auto-closed, matching real multi-page
-// navigation — see close()'s `push` option.
+// Opening any other sidebar/rail tool closes every open pane — the same idea
+// as "back to chat" above, generalized so every workspace gets it for free
+// instead of hand-rolling it per feature (this used to be RSS-specific code
+// in app.js). Skipped for a Ctrl/Cmd-click (that gesture means "open beside",
+// not "switch tool" — see the split-entry commit) and for either pane's own
+// nav button. `push: true` so the browser Back button still returns to the
+// pane(s) that just got auto-closed, matching real multi-page navigation —
+// see close()'s `push` option.
 document.addEventListener('click', (e) => {
-  if (!_activeId) return;
+  if (!_panes.length) return;
+  if (e.metaKey || (e.ctrlKey && !/Mac/i.test(navigator.platform || ''))) return;
   const control = e.target.closest('.section-header-flex, .list-item, .icon-rail-btn');
   if (!control) return;
-  if (control.id === `tool-${_activeId}-btn` || control.id === `rail-${_activeId}`) return;
+  if (_panes.some((id) => control.id === `tool-${id}-btn` || control.id === `rail-${id}`)) return;
   if (control.closest('.workspace-surface, .workspace-host')) return;
-  setTimeout(() => close(_activeId, { push: true }), 0);
+  setTimeout(() => _closeAllPanes({ push: true }), 0);
 }, true);
 
 // Resolve a deep-link on initial load once the DOM (and registrants) are ready.
@@ -576,5 +650,6 @@ const Workspace = {
   openPopup, closePopup, closeAny, isOpen,
   displayMode, setDisplayMode, loadDisplayModes,
   acquirePageSurface, notePopupOpen, noteClosed,
+  panes, isSplit,
 };
 export default Workspace;
