@@ -66,6 +66,11 @@ const _displayModes = new Map();
 // _floatingIds which tracks host-owned re-parented ones. Kept apart because
 // closing them takes different paths.
 const _ownPopupIds = new Set();
+// ids where close()/closePopup() is already mid-teardown for this id — guards
+// notePopupOpen/noteClosed against reentering when a feature's own close path
+// (e.g. document.js's closePanel()) fires from *inside* a deactivate()/
+// closePopup() call the shell itself triggered. See notePopupOpen/noteClosed.
+const _selfClosing = new Set();
 
 const _VALID_MODES = new Set(['page', 'popup']);
 
@@ -241,10 +246,20 @@ export function open(id, { fromRoute = false, replace = false, mode = null } = {
   _openPage(id, { fromRoute, replace });
 }
 
-/** The full-canvas page rendering. */
-function _openPage(id, { fromRoute = false, replace = false } = {}) {
+/**
+ * Mount, show, and wire nav/route/escape for `id`'s full-canvas surface —
+ * everything the page rendering does except call `activate()`. Split out of
+ * `_openPage` so a feature's own opening code (not a nav click) can ask the
+ * shell for its surface *before* it renders into it, without the shell
+ * calling back into the feature's `activate()` while that same open is still
+ * in progress (see `acquirePageSurface`). Callers are responsible for the
+ * "already showing" guard — `_openPage` and `acquirePageSurface` each apply
+ * it themselves, since only they know whether skipping means "no-op" or
+ * "reuse the existing container".
+ */
+function _showPageSurface(id, { fromRoute = false, replace = false } = {}) {
   const desc = _registry.get(id);
-  if (_activeId === id && !_floatingIds.has(id)) return;
+  if (!desc) return null;
   // Coming from a popup form of the same feature — tear that down first so we
   // don't end up showing both at once.
   if (_ownPopupIds.has(id)) closePopup(id);
@@ -278,9 +293,40 @@ function _openPage(id, { fromRoute = false, replace = false } = {}) {
   if (_unregisterEscape) _unregisterEscape();
   _unregisterEscape = registerMenuDismiss(() => close(id));
 
+  return container;
+}
+
+/** The full-canvas page rendering: show the surface, then activate the feature. */
+function _openPage(id, opts = {}) {
+  const desc = _registry.get(id);
+  if (!desc) { console.warn(`Workspace "${id}" is not registered`); return; }
+  if (_activeId === id && !_floatingIds.has(id)) return;
+  const container = _showPageSurface(id, opts);
+  if (!container) return;
   try { desc.activate && desc.activate({ mode: 'page' }); } catch (err) {
     console.error(`Workspace "${id}" activate() failed:`, err);
   }
+}
+
+/**
+ * Public: acquire `id`'s page surface directly — mount, show, and wire
+ * nav/route/escape exactly as a normal page open would, but do NOT call the
+ * descriptor's `activate()`. For a feature whose own open path builds its DOM
+ * itself (document.js's `openPanel()` is the motivating case, via
+ * `documentWorkspace.js`'s surface provider) and needs to know "render into a
+ * page host, and which element" before that DOM exists — calling `open()`
+ * instead would call back into the very code that's already running.
+ *
+ * Returns `null` when `id`'s resolved display mode isn't `'page'` and
+ * `force` isn't set — so a caller can use the return value itself as the
+ * page/popup branch. Idempotent: returns the existing container without
+ * re-running mount/nav/route/escape wiring if `id` is already the active page.
+ */
+export function acquirePageSurface(id, { force = false, fromRoute = false, replace = false } = {}) {
+  if (!_registry.has(id)) return null;
+  if (!force && displayMode(id) !== 'page') return null;
+  if (_activeId === id && !_floatingIds.has(id)) return _mounted.get(id) || null;
+  return _showPageSurface(id, { fromRoute, replace });
 }
 
 /**
@@ -318,8 +364,16 @@ export function closePopup(id) {
   if (_ownPopupIds.has(id)) {
     _ownPopupIds.delete(id);
     _setActiveNav(id, false);
-    try { desc.closePopup && desc.closePopup(); } catch (err) {
-      console.error(`Workspace "${id}" closePopup() failed:`, err);
+    // Same reentrancy wrap as close() — desc.closePopup() may call back into
+    // noteClosed(id) (e.g. documentWorkspace's closePopup() calls
+    // closePanel(), which fires the close notifier).
+    _selfClosing.add(id);
+    try {
+      try { desc.closePopup && desc.closePopup(); } catch (err) {
+        console.error(`Workspace "${id}" closePopup() failed:`, err);
+      }
+    } finally {
+      _selfClosing.delete(id);
     }
     return;
   }
@@ -329,6 +383,37 @@ export function closePopup(id) {
 /** Close `id` however it happens to be open. */
 export function closeAny(id) {
   if (_ownPopupIds.has(id) || _floatingIds.has(id)) { closePopup(id); return; }
+  if (_activeId === id) close(id);
+}
+
+/**
+ * A descriptor-owned popup was opened by the feature itself (e.g.
+ * document.js's openPanel() resolving to popup mode via its surface
+ * provider), not through Workspace.openPopup(). Reconciles isOpen()/
+ * toggle()/nav-active state for opens the shell didn't initiate. A no-op
+ * when `openPopup()` already booked this id (the normal path, where the
+ * shell adds to `_ownPopupIds` *before* calling the descriptor) or when `id`
+ * is already the active page — a page isn't a popup regardless of who asks.
+ */
+export function notePopupOpen(id) {
+  if (!_registry.has(id) || _ownPopupIds.has(id)) return;
+  if (_activeId === id && !_floatingIds.has(id)) return;
+  _ownPopupIds.add(id);
+  _setActiveNav(id, true);
+}
+
+/**
+ * A feature tore its own surface down outside the shell's own close()/
+ * closePopup() — e.g. document.js's closePanel() firing its injected close
+ * notifier. Reconciles shell state (nav, URL, sidebar) without calling back
+ * into the feature. Guarded by `_selfClosing` against the reentrant case
+ * where close()/closePopup() is already mid-teardown for this same id and
+ * will finish the job itself once its own deactivate()/closePopup() call
+ * returns.
+ */
+export function noteClosed(id) {
+  if (_selfClosing.has(id)) return;
+  if (_ownPopupIds.delete(id)) { _setActiveNav(id, false); return; }
   if (_activeId === id) close(id);
 }
 
@@ -344,8 +429,16 @@ export function close(id = _activeId, { silent = false, fromHistory = false, pus
   if (!id || _activeId !== id) return;
   const desc = _registry.get(id);
   const container = _mounted.get(id);
-  try { desc?.deactivate && desc.deactivate(); } catch (err) {
-    console.error(`Workspace "${id}" deactivate() failed:`, err);
+  // Wrapped so a feature whose own close path (e.g. document.js's
+  // closePanel()) calls back into `noteClosed(id)` from inside deactivate()
+  // finds it a no-op instead of re-running this same close() reentrantly.
+  _selfClosing.add(id);
+  try {
+    try { desc?.deactivate && desc.deactivate(); } catch (err) {
+      console.error(`Workspace "${id}" deactivate() failed:`, err);
+    }
+  } finally {
+    _selfClosing.delete(id);
   }
   container?.classList.add('hidden');
   container?.classList.remove('workspace-surface-open');
@@ -482,5 +575,6 @@ const Workspace = {
   // Display-mode surface (see the "Display modes" note at the top).
   openPopup, closePopup, closeAny, isOpen,
   displayMode, setDisplayMode, loadDisplayModes,
+  acquirePageSurface, notePopupOpen, noteClosed,
 };
 export default Workspace;
