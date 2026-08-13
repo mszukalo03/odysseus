@@ -9,6 +9,7 @@ import { sortModelIds } from './modelSort.js';
 import { providerLogo } from './providers.js';
 import { isAltGrEvent } from './platform.js';
 import { bindMenuDismiss } from './escMenuStack.js';
+import Workspace from './workspaceManager.js';
 
 let initialized = false;
 let modalEl = null;
@@ -2445,6 +2446,7 @@ function initAll() {
   initShortcuts();
   initAccount();
   initIntegrations();
+  initFeatureDisplaySettings();
   initIthacaSettings();
   initDbConnectionsSettings();
   initWebhookTargetsSettings();
@@ -2458,6 +2460,58 @@ function notifyIntegrationsChanged() {
   try {
     window.dispatchEvent(new CustomEvent('odysseus-integrations-changed'));
   } catch (_) {}
+}
+
+/* ── Per-feature display mode (page vs popup) ──
+   Lists whatever workspaceManager.js has registered (doc editor, Ithaca, RSS,
+   and any future feature with surface:'both') — no hardcoded id/label list
+   here, so a new extension shows up automatically once it registers. Reads
+   and writes go straight through Workspace.displayMode()/setDisplayMode()
+   rather than re-fetching /api/display-modes ourselves: the shell already
+   loaded it at boot, and setDisplayMode() also handles reopening the feature
+   live if it's currently open, which a bare fetch here wouldn't. */
+function initFeatureDisplaySettings() {
+  var list = el('feature-display-list');
+  if (!list) return; // settings modal markup not present (shouldn't happen)
+  var msg = el('set-displayModeMsg');
+  var features = Workspace.list();
+
+  if (!features.length) {
+    list.innerHTML = '<div class="admin-empty">No page/popup-capable features are registered.</div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  features.forEach(function(feature) {
+    var row = document.createElement('div');
+    row.className = 'settings-row';
+    var label = document.createElement('label');
+    label.className = 'settings-label';
+    label.textContent = feature.title;
+    var select = document.createElement('select');
+    select.className = 'settings-select';
+    select.style.width = '200px';
+    select.innerHTML =
+      '<option value="page">Full page</option>' +
+      '<option value="popup">Popup</option>';
+    select.value = Workspace.displayMode(feature.id);
+    select.addEventListener('change', function() {
+      var prev = select.value === 'page' ? 'popup' : 'page';
+      Workspace.setDisplayMode(feature.id, select.value).then(function() {
+        if (msg) {
+          msg.textContent = 'Saved'; msg.style.color = 'var(--fg)';
+          setTimeout(function() { msg.textContent = ''; }, 2000);
+        }
+      }).catch(function(e) {
+        select.value = prev;
+        if (msg) { msg.textContent = 'Failed to save (admin only)'; msg.style.color = 'var(--red)'; }
+        console.error('Failed to set display mode for', feature.id, e);
+      });
+    });
+    row.appendChild(label);
+    row.appendChild(select);
+    list.appendChild(row);
+  });
 }
 
 /* ── Ithaca hub's Weather tile API key ──

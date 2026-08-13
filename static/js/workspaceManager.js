@@ -104,23 +104,28 @@ export async function loadDisplayModes() {
  * Change a feature's display mode and persist it. If the feature is open, it
  * is reopened in the new mode so the change is visible immediately instead of
  * on next launch.
+ *
+ * Persists first, applies locally only on success, and rejects on failure
+ * (bad network, or a 403 from a non-admin in multi-user mode) — a caller like
+ * a Settings UI control needs an honest failure to roll its own state back
+ * to, not a local mode flip that quietly never made it to the server.
  */
 export async function setDisplayMode(id, mode) {
   if (!_VALID_MODES.has(mode)) throw new Error(`Unknown display mode: ${mode}`);
+  const resp = await fetch(`/api/display-modes/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ mode }),
+  });
+  if (!resp.ok) {
+    let detail = '';
+    try { detail = (await resp.json()).detail || ''; } catch (_) {}
+    throw new Error(`Persisting display mode for "${id}" failed: HTTP ${resp.status}${detail ? ` — ${detail}` : ''}`);
+  }
   const wasOpen = isOpen(id);
   if (wasOpen) closeAny(id);
   _displayModes.set(id, mode);
-  try {
-    const resp = await fetch(`/api/display-modes/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ mode }),
-    });
-    if (!resp.ok) console.error(`Persisting display mode for "${id}" failed: HTTP ${resp.status}`);
-  } catch (err) {
-    console.error(`Persisting display mode for "${id}" failed:`, err);
-  }
   if (wasOpen) open(id);
   return mode;
 }
@@ -177,6 +182,19 @@ export function register(descriptor) {
 
 export function isRegistered(id) {
   return _registry.has(id);
+}
+
+/**
+ * Every registered feature that has a real page/popup choice to make —
+ * i.e. `surface: 'both'` (the only value `displayMode()` doesn't clamp to a
+ * single fixed mode). Used by the Settings UI to build the per-feature
+ * display list without hardcoding ids/labels there; a feature only needs a
+ * `title` to show up correctly.
+ */
+export function list() {
+  return [..._registry.values()]
+    .filter((d) => (d.surface || 'both') === 'both')
+    .map((d) => ({ id: d.id, title: d.title || d.id }));
 }
 
 export function active() {
@@ -459,7 +477,7 @@ export function resolveInitialRoute() {
 }
 
 const Workspace = {
-  register, isRegistered, open, close, toggle, popOut, popIn, navigate, active,
+  register, isRegistered, list, open, close, toggle, popOut, popIn, navigate, active,
   resolveInitialRoute,
   // Display-mode surface (see the "Display modes" note at the top).
   openPopup, closePopup, closeAny, isOpen,
