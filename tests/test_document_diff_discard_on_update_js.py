@@ -16,34 +16,19 @@ when the AI creates a NEW document (the issue's own repro), ``streamDocOpen`` re
 ``activeDocId`` first, so a guard only in ``handleDocUpdate`` would fire too late and
 still overwrite the new doc. Kept as a static source check because document.js is
 browser-coupled and not importable in pytest.
+
+Uses tests/helpers/document_js_sources.py so this survives either function
+moving out of document.js into an extracted sibling module.
 """
 
-from pathlib import Path
+from tests.helpers.document_js_sources import combined_document_module_source, function_body
 
-ROOT = Path(__file__).resolve().parents[1]
-DOC_JS = (ROOT / "static/js/document.js").read_text()
+DOC_JS = combined_document_module_source()
 
 GUARD = "if (_diffModeActive) exitDiffMode(true);"
 
-
-def _function_body(src: str, signature: str) -> str:
-    """Return the full text of a JS function, brace-matched from its signature."""
-    start = src.index(signature)
-    depth = 0
-    i = src.index("{", start)
-    while i < len(src):
-        if src[i] == "{":
-            depth += 1
-        elif src[i] == "}":
-            depth -= 1
-            if depth == 0:
-                return src[start : i + 1]
-        i += 1
-    raise AssertionError(f"unbalanced braces after {signature!r}")
-
-
-HANDLE_DOC_UPDATE = _function_body(DOC_JS, "export function handleDocUpdate(data)")
-STREAM_DOC_OPEN = _function_body(DOC_JS, "export function streamDocOpen(title, language)")
+HANDLE_DOC_UPDATE = function_body("handleDocUpdate")
+STREAM_DOC_OPEN = function_body("streamDocOpen")
 
 
 def test_handle_doc_update_discards_pending_diff():

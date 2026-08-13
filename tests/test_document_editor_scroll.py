@@ -6,13 +6,19 @@ overflow-hidden element. Long wrapped lines add another wrinkle: the textarea
 can have more visual rows than logical newline rows, so the gutter rows must
 match the textarea's measured row heights. Keep these as static checks because
 document.js is browser-coupled and not importable in pytest.
+
+Searches document.js AND its extracted siblings (see
+tests/helpers/document_js_sources.py) rather than document.js alone, so
+moving _lineNumberContentEl/_measureLineNumberHeights into a
+documentHighlight.js-style module doesn't require touching this file.
 """
 
 from pathlib import Path
 
+from tests.helpers.document_js_sources import combined_document_module_source
 
 ROOT = Path(__file__).resolve().parents[1]
-DOC_JS = (ROOT / "static/js/document.js").read_text(encoding="utf-8")
+DOC_JS = combined_document_module_source()
 STYLE_CSS = (ROOT / "static/style.css").read_text(encoding="utf-8")
 
 
