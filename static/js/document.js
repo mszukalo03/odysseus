@@ -4777,9 +4777,63 @@ import { bindMenuDismiss, dismissOrRemove } from './escMenuStack.js';
     return !!_pageHost;
   }
 
+  // ── Surface provider (see static/js/documentWorkspace.js) ────────────────
+  //
+  // openPanel() is the single choke point every open path funnels through —
+  // the toolbar button, boot restore, session select, /doc, AI streaming,
+  // email compose, and the library all eventually call it. Only the toolbar
+  // button went through the nav shell (Workspace.open('doc-editor')), so
+  // every other path built the popup pane regardless of the user's page/popup
+  // setting and left the shell's nav/route/isOpen state out of sync.
+  //
+  // Fix: openPanel() itself asks a provider function — injected by
+  // documentWorkspace.js, which is the only thing that knows about the shell
+  // — for its surface, once, at the very start of every open. The provider
+  // returns a page-mode host element (and this file behaves exactly as it
+  // already does when `_pageHost` is set) or null for popup mode, after first
+  // registering the popup with the shell so isOpen()/toggle()/nav-active
+  // state stay correct even for opens the shell didn't initiate.
+  let _surfaceProvider = null;
+  // Defensive reentrancy guard, not currently load-bearing: neither of
+  // documentWorkspace.js's providers (Workspace.acquirePageSurface — which
+  // deliberately never calls the descriptor's activate() — and
+  // Workspace.notePopupOpen) call back into document.js, so today's call
+  // graph can't recurse through here. Kept anyway so a future provider that
+  // *does* trigger a nested open synchronously degrades to reusing the
+  // already-resolved `_pageHost` instead of re-entering.
+  let _resolvingSurface = false;
+
+  /**
+   * @param {null|() => HTMLElement|null} fn — called at the top of every
+   *   openPanel(); returns the page host to render into, or null to render
+   *   the popup split pane. Pass null to remove the provider (falls back to
+   *   whatever setPageHost() was last called with — the pre-provider
+   *   behavior — which is what the module's own default state does).
+   */
+  export function setSurfaceProvider(fn) {
+    _surfaceProvider = typeof fn === 'function' ? fn : null;
+  }
+
+  let _onClosed = null;
+
+  /**
+   * @param {null|() => void} fn — called at the end of closePanel() (both a
+   *   real close and a "down"-direction minimize) so the shell can reconcile
+   *   its own state for a close it didn't initiate itself.
+   */
+  export function setClosedNotifier(fn) {
+    _onClosed = typeof fn === 'function' ? fn : null;
+  }
+
   export function openPanel() {
     _closeNotesForDocumentOpen();
     if (isOpen) return;
+    if (_surfaceProvider && !_resolvingSurface) {
+      _resolvingSurface = true;
+      try { _pageHost = _surfaceProvider() || null; }
+      catch (err) { console.error('Doc editor surface provider failed:', err); _pageHost = null; }
+      finally { _resolvingSurface = false; }
+    }
     // Clear any pane/divider still sliding out from a just-fired close so we
     // don't end up with two #doc-editor-pane nodes (and a stale close stripping
     // doc-view). Paired with the isOpen guard in _finishClose above.
@@ -6937,6 +6991,12 @@ import { bindMenuDismiss, dismissOrRemove } from './escMenuStack.js';
       return;
     }
     isOpen = false;
+    // Tell the shell this close wasn't necessarily its own doing (e.g. the
+    // pane's own X/hide button, not Workspace.close('doc-editor')) so its
+    // nav-active/URL/sidebar state stays in sync. Also covers a "down"
+    // (minimize) close in page mode — there's no page-surface equivalent of
+    // "minimized", so the shell treats it the same as a real close.
+    try { _onClosed && _onClosed(); } catch (err) { console.error('Doc editor close notifier failed:', err); }
     // On touch, closing the doc should leave the keyboard DOWN. The tap blurs
     // the textarea (keyboard starts down), but a stray refocus during teardown
     // (the view behind regaining focus, etc.) was bouncing it back up. Blur any
@@ -11205,6 +11265,10 @@ const documentModule = {
   // `_pageHost` note above openPanel().
   setPageHost,
   isPageMode,
+  // Surface provider / close notifier — see the "Surface provider" note
+  // above openPanel(). Also used by documentWorkspace.js.
+  setSurfaceProvider,
+  setClosedNotifier,
   swapSide,
   createDocument,
   newDocument,

@@ -19,8 +19,12 @@
 //   page            — the same pane parented into the full-canvas workspace
 //                     surface, rendering like Ithaca and RSS.
 //
-// Both modes call the same document.js entry points; `setPageHost()` is the
-// only switch between them.
+// Both modes call the same document.js entry points. Which surface a given
+// open lands on is decided by `_surface()` below — document.js's injected
+// "surface provider", asked once at the top of every openPanel() call,
+// regardless of whether the shell or the editor itself initiated that open.
+// `setPageHost()` still exists as the lower-level switch `_surface()` and
+// `activate()` both drive.
 
 import Workspace from './workspaceManager.js';
 
@@ -46,8 +50,33 @@ async function _openContent() {
     await _sessions.materializePendingSession();
     sessionId = _sessions.getCurrentSessionId();
   }
-  if (sessionId) _doc.loadSessionDocs(sessionId, { forceOpen: true });
+  if (sessionId) _doc.loadSessionDocs(sessionId);
   else _doc.ensureDocPanel();
+}
+
+/**
+ * document.js's injected surface provider (see the "Surface provider" note
+ * above openPanel() in document.js). Called at the top of EVERY openPanel()
+ * — not just opens the shell itself initiated — which is what makes the
+ * editor honor its page/popup setting from every entry point (boot restore,
+ * /doc, AI streaming, email compose, the library, ...), not only the toolbar
+ * button.
+ *
+ * Page mode: ask the shell for the page surface directly. `acquirePageSurface`
+ * mounts/shows/wires nav+route+escape exactly like a normal open would, but
+ * does NOT call this descriptor's own activate() — avoiding a call back into
+ * the very openPanel() this function is being called from.
+ * Popup mode: tell the shell a popup just opened (so isOpen()/toggle()/
+ * nav-active state is correct even though the shell didn't initiate this
+ * open) and return null so document.js builds the split pane.
+ */
+function _surface() {
+  if (Workspace.displayMode(ID) === 'page') {
+    const container = Workspace.acquirePageSurface(ID);
+    if (container) { _container = container; return container; }
+  }
+  Workspace.notePopupOpen(ID);
+  return null;
 }
 
 function _notify(visible) {
@@ -133,6 +162,10 @@ export function init({ documentModule, sessionModule, onVisibilityChange } = {})
   _doc = documentModule || null;
   _sessions = sessionModule || null;
   _onVisibility = onVisibilityChange || null;
+  _doc?.setSurfaceProvider(_surface);
+  // document.js's own close path (the pane's X/hide button, not
+  // Workspace.close('doc-editor')) needs to tell the shell it happened.
+  _doc?.setClosedNotifier(() => Workspace.noteClosed(ID));
   Workspace.register(descriptor);
 }
 
