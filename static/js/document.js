@@ -4938,6 +4938,12 @@ import {
       pane.addEventListener('pointercancel', () => { _kbBtn = null; }, true);
     }
     pane.innerHTML = DOC_PANE_TEMPLATE;
+    // The split affordance only makes sense in page mode — a popup pane has
+    // no workspace surface for the picker's `closest('.workspace-surface')`
+    // lookup to find, and a floating window splitting itself isn't a
+    // supported layout (see workspaceManager.js's "Display modes" note).
+    const _splitBtn = pane.querySelector('#doc-split-btn');
+    if (_splitBtn) _splitBtn.style.display = _pageHost ? '' : 'none';
 
     // Consolidate into a SINGLE action bar: move Undo + the type picker out of
     // the top header into the bottom footer (left side, next to Close) so a

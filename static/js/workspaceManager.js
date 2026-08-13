@@ -47,7 +47,7 @@
 // that wouldn't survive a reload.
 
 import * as Modals from './modalManager.js';
-import { registerMenuDismiss } from './escMenuStack.js';
+import { registerMenuDismiss, bindMenuDismiss } from './escMenuStack.js';
 import Split from './workspaceSplit.js';
 
 const _registry = new Map();   // id -> descriptor
@@ -643,6 +643,57 @@ document.addEventListener('click', (e) => {
   if (!_panes.length) open(id);
   else openBeside(id);
 }, true);
+
+/**
+ * Host-injected split affordance — a single delegated handler rather than
+ * per-feature header markup. Ithaca and RSS build their own headers inside
+ * their own `mount()`, and the doc editor's lives in its pane template, so
+ * putting the trigger's *behavior* here means every feature only needs one
+ * `<button data-ws-split>` in its own markup (no JS) to get a working picker;
+ * a future extension gets it the same way. Dismissed via bindMenuDismiss —
+ * the same outside-click/Escape teardown every other menu in this app uses
+ * (there is no shared menu-builder component to reuse instead).
+ */
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-ws-split]');
+  if (!btn) return;
+  const surface = btn.closest('.workspace-surface, .modal.workspace-float');
+  const id = surface?.dataset.workspaceId;
+  if (!id) return;
+  e.preventDefault();
+  e.stopPropagation();
+  _openSplitPicker(btn, id);
+}, true);
+
+function _openSplitPicker(anchorBtn, primaryId) {
+  document.querySelector('.ws-split-picker')?._dismiss?.();
+
+  const options = list().filter((f) => f.id !== primaryId && !_isPane(f.id));
+  if (!options.length) return;
+
+  const menu = document.createElement('div');
+  menu.className = 'ws-split-picker ctx-popup';
+  menu.innerHTML = options.map((f) =>
+    `<div class="dropdown-item-compact" data-split-target="${f.id}">Split with ${f.title}</div>`
+  ).join('');
+  document.body.appendChild(menu);
+
+  const rect = anchorBtn.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.top = `${rect.bottom + 4}px`;
+  // Keep the menu on-screen if the button sits near the right edge.
+  const maxLeft = window.innerWidth - menu.offsetWidth - 8;
+  menu.style.left = `${Math.min(rect.left, Math.max(8, maxLeft))}px`;
+
+  menu.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-split-target]');
+    if (!item) return;
+    splitWith(primaryId, item.dataset.splitTarget);
+    menu._dismiss?.();
+  });
+
+  bindMenuDismiss(menu, () => menu.remove(), (ev) => !menu.contains(ev.target) && ev.target !== anchorBtn);
+}
 
 /** What a nav button does: open in the configured mode, or close if showing. */
 export function toggle(id) {
