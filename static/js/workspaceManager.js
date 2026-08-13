@@ -72,6 +72,15 @@ function _isPane(id) {
   return _panes.includes(id);
 }
 
+// Sentinel partner id meaning "the chat layer" — chat is not a registered
+// workspace (it's the base layer under #workspace-host), so it can't go
+// through the normal _registry/_mounted machinery every real pane does.
+// Handled as a separate boolean (_chatPartner) rather than a fake _panes
+// entry, since _showPageSurface/_mount/_setActiveNav/etc. all assume a real
+// descriptor exists for anything in _panes.
+export const CHAT_PANE = '__chat__';
+let _chatPartner = false;
+
 // id -> 'page' | 'popup', from the settings API. Empty until loadDisplayModes()
 // resolves; every read falls back to the descriptor's own default, so a failed
 // or slow fetch just means "everyone uses their built-in default" rather than
@@ -228,7 +237,7 @@ export function panes() {
 
 /** True once a second pane is open alongside the focused one. */
 export function isSplit() {
-  return _panes.length > 1;
+  return _panes.length > 1 || _chatPartner;
 }
 
 function _mount(desc) {
@@ -520,6 +529,7 @@ export function close(id = _focusedId, { silent = false, fromHistory = false, pu
   // still wants the rail collapsed, so no _restoreSidebar() call here.
   if (_panes.length <= 1) {
     // Dropped back to single-pane (or empty) — the split, if any, is over.
+    _chatPartner = false;
     Split.setSeamActive(false);
     document.body.classList.remove('workspace-split-chat');
     const survivor = _mounted.get(_panes[0]);
@@ -534,7 +544,7 @@ export function close(id = _focusedId, { silent = false, fromHistory = false, pu
 function _assignPaneSides() {
   const c0 = _mounted.get(_panes[0]);
   const c1 = _mounted.get(_panes[1]);
-  if (c0) { if (_panes.length > 1) c0.dataset.pane = 'left'; else delete c0.dataset.pane; }
+  if (c0) { if (_panes.length > 1 || _chatPartner) c0.dataset.pane = 'left'; else delete c0.dataset.pane; }
   if (c1) c1.dataset.pane = 'right';
 }
 
@@ -580,6 +590,9 @@ export function openBeside(id) {
   try { desc.activate && desc.activate({ mode: 'page' }); } catch (err) {
     console.error(`Workspace "${id}" activate() failed:`, err);
   }
+  // A real second pane replaces chat as the partner, if that's what was here.
+  _chatPartner = false;
+  document.body.classList.remove('workspace-split-chat');
   _assignPaneSides();
   Split.setSeamActive(true);
   Split.saveSplitPref({ left: _panes[0], right: _panes[1], ratio: Split.currentRatio() });
@@ -587,16 +600,56 @@ export function openBeside(id) {
 }
 
 /**
+ * Split `id` with the chat layer instead of another feature — chat isn't a
+ * registered workspace (it's the base layer under #workspace-host), so this
+ * is a lighter path than openBeside(): `id` stays the only real pane, and
+ * `body.workspace-split-chat` (style.css) caps #chat-container's width to
+ * the left half instead of a second `.workspace-surface` occupying it.
+ */
+export function splitWithChat(id) {
+  if (!_registry.has(id)) { console.warn(`Workspace "${id}" is not registered`); return false; }
+  if (Split.isMobile()) { open(id); return false; }
+  if (!_isPane(id)) {
+    open(id, { mode: 'page' });
+    if (!_isPane(id)) return false; // resolved to popup — no page surface to split
+  } else if (_panes.length > 1) {
+    // Chat replaces whatever feature partner was here.
+    const other = _panes.find((p) => p !== id);
+    if (other) close(other, { silent: true });
+  }
+  _chatPartner = true;
+  document.body.classList.add('workspace-split-chat');
+  _assignPaneSides();
+  Split.setSeamActive(true);
+  Split.saveSplitPref({ left: id, right: CHAT_PANE, ratio: Split.currentRatio() });
+  return true;
+}
+
+/**
  * Open `primaryId` (if not already open) then `partnerId` beside it — what
- * the header split picker calls when you choose a feature from the menu.
+ * the header split picker calls when you choose an entry from the menu.
+ * `partnerId === CHAT_PANE` (the picker's "Chat" option) routes to
+ * splitWithChat() instead, since chat isn't openBeside()-able like a
+ * registered feature is.
  */
 export function splitWith(primaryId, partnerId) {
+  if (partnerId === CHAT_PANE) return splitWithChat(primaryId);
   if (!_isPane(primaryId)) open(primaryId, { mode: 'page' });
   return openBeside(partnerId);
 }
 
-/** Drop the non-focused pane; the focused one goes back to full width. */
+/** Drop the split partner (another feature, or chat); the remaining pane
+ *  goes back to full width. */
 export function clearSplit() {
+  if (_chatPartner) {
+    _chatPartner = false;
+    document.body.classList.remove('workspace-split-chat');
+    Split.setSeamActive(false);
+    const survivor = _mounted.get(_panes[0]);
+    if (survivor) delete survivor.dataset.pane;
+    Split.saveSplitPref(null);
+    return;
+  }
   if (_panes.length <= 1) return;
   const other = _panes.find((p) => p !== _focusedId);
   if (other) close(other, { silent: true });
@@ -669,6 +722,9 @@ function _openSplitPicker(anchorBtn, primaryId) {
   document.querySelector('.ws-split-picker')?._dismiss?.();
 
   const options = list().filter((f) => f.id !== primaryId && !_isPane(f.id));
+  // "Chat" is always offered (unless it's already the partner) — it's the
+  // base layer under every workspace, not something that can be "not open".
+  if (!_chatPartner) options.unshift({ id: CHAT_PANE, title: 'Chat' });
   if (!options.length) return;
 
   const menu = document.createElement('div');
@@ -809,9 +865,27 @@ document.addEventListener('click', (e) => {
 }, true);
 
 // Resolve a deep-link on initial load once the DOM (and registrants) are ready.
+/**
+ * Resolve a deep-link, then — if it matches a saved split layout — restore
+ * the split too. Landing on '/' never resurrects a split (only a deep-link
+ * into one of its two ids does): a reload of the plain chat screen shouldn't
+ * silently bring back two workspaces the user may have already closed.
+ */
 export function resolveInitialRoute() {
   const id = _routes.get(window.location.pathname);
-  if (id) open(id, { fromRoute: true });
+  if (!id) return;
+  open(id, { fromRoute: true });
+  if (Split.isMobile()) return;
+  const pref = Split.loadSplitPref();
+  if (!pref || (pref.left !== id && pref.right !== id)) return;
+  const partnerId = pref.left === id ? pref.right : pref.left;
+  if (partnerId === CHAT_PANE) splitWithChat(id);
+  else if (_registry.has(partnerId)) openBeside(partnerId);
+  else return;
+  // openBeside()/splitWithChat() focus whichever pane they just added — but
+  // the user deep-linked to `id` specifically, so give it back the URL/title
+  // rather than silently landing on the partner's route.
+  focusPane(id);
 }
 
 const Workspace = {
@@ -823,6 +897,6 @@ const Workspace = {
   acquirePageSurface, notePopupOpen, noteClosed,
   panes, isSplit,
   // Split view.
-  openBeside, splitWith, clearSplit, focusPane,
+  openBeside, splitWith, splitWithChat, clearSplit, focusPane, CHAT_PANE,
 };
 export default Workspace;
