@@ -43295,3 +43295,53 @@ td.ithaca-tile-col-json { white-space: normal; }
   left: 0;
   z-index: auto;
 }
+
+/* ── Dual-pane split view (static/js/workspaceManager.js + workspaceSplit.js) ──
+   Two `.workspace-surface[data-pane]` elements share the area right of the
+   rail/sidebar, divided at --ws-split-x (a viewport x, published by
+   workspaceSplit.js). Geometry only — which two features occupy left/right,
+   and chat-as-the-right-pane, are the JS module's job. The `.ithaca-screen`/
+   `.rss-workspace` inner-root rule above already makes both features render
+   correctly at whatever size their surface ends up — no extra rule needed
+   for them here. */
+body.workspace-split .workspace-surface[data-pane="left"] {
+  right: calc(100% - var(--ws-split-x));
+}
+body.workspace-split .workspace-surface[data-pane="right"] {
+  left: var(--ws-split-x);
+  right: 0;
+  border-left: 1px solid var(--border);
+}
+
+#workspace-split-seam {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  z-index: 95; /* above workspace surfaces (90), below docked-window pins (150+) */
+  cursor: col-resize;
+  touch-action: none;
+  background: linear-gradient(to right, transparent 0 4px,
+      color-mix(in srgb, var(--fg) 14%, transparent) 4px 6px, transparent 6px 10px);
+}
+body.workspace-split-resizing #workspace-split-seam,
+#workspace-split-seam:hover {
+  background: linear-gradient(to right, transparent 0 3px,
+      color-mix(in srgb, var(--accent, var(--red)) 40%, transparent) 3px 7px, transparent 7px 10px);
+}
+
+/* Chat as the split partner: shrink the chat column to the left pane's width
+   instead of hiding half of it behind the right-pane surface — same idea as
+   body.doc-view's chat margin, generalized to the split's live seam x. */
+body.workspace-split-chat #chat-container {
+  max-width: calc(var(--ws-split-x) - var(--icon-rail-w, 48px) - var(--sidebar-w, 0px));
+}
+
+@media (max-width: 768px) {
+  body.workspace-split .workspace-surface[data-pane] {
+    left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px));
+    right: 0;
+    border-left: none;
+  }
+  #workspace-split-seam { display: none !important; }
+}
