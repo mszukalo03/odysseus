@@ -117,8 +117,15 @@ The largest and most central subsystem. Chat submission → backend SSE → prog
 
 | Module | Responsibility |
 |---|---|
-| **`document.js`** | Tabbed document editor, AI edit suggestions, Markdown/HTML/CSV editing, document streaming (`streamDocOpen`/`streamDocDelta`), and panel state. |
+| **`document.js`** | Tabbed document editor core: doc store/tabs, panel open/close, email compose, PDF form pane, AI edit suggestions, diff-mode review, document streaming (`streamDocOpen`/`streamDocDelta`), version history, export/import. Delegates the pieces below to sibling modules — same extraction pattern as `documentLibrary.js`. |
 | **`documentLibrary.js`** | Document library modal. |
+| **`documentWorkspace.js`** | Nav-shell adapter registering the editor as a workspace (`static/js/workspaceManager.js`) — chooses page vs. popup surface per the user's display-mode setting. |
+| **`documentCsv.js`** | CSV parse/serialize for the CSV table preview. |
+| **`documentDiffAlgo.js`** | Pure line-level diff algorithms (LCS diff, chunking, streaming-edit diff) used by diff-mode review and the streaming animation. |
+| **`documentPaneTemplate.js`** | The editor pane's static HTML shell (`DOC_PANE_TEMPLATE`). |
+| **`documentSelection.js`** | "Pin text as chat context" selection tracking and overlays. |
+| **`documentMdToolbar.js`** | Markdown formatting toolbar (bold/italic/link/heading/list, overflow menu). |
+| **`documentHighlight.js`** | Syntax highlighting, the line-number gutter, and in-document find rendering. |
 | **`editor/`** | Gallery image editor canvas modules: layers, brush, inpaint, crop, filters, state, history panel, top-bar wiring, canvas coordinate helpers, and AI model runners for inpainting/background-removal. |
 
 ---
