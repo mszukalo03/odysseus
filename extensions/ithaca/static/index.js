@@ -138,7 +138,7 @@ function mount(container) {
   screen.className = 'ithaca-screen ithaca-screen-open';
   screen.id = 'ithaca-screen';
   screen.innerHTML = `
-    <div class="ithaca-header">
+    <div class="ithaca-header" data-ws-popup-header>
       <button class="ithaca-back-btn" id="ithaca-back-btn" title="Back to chat">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
         <span>Chat</span>
@@ -162,7 +162,7 @@ function mount(container) {
     <div class="ithaca-grid">${weatherTile}</div>`;
   container.appendChild(screen);
 
-  screen.querySelector('#ithaca-back-btn')?.addEventListener('click', () => Workspace.close('ithaca'));
+  screen.querySelector('#ithaca-back-btn')?.addEventListener('click', () => Workspace.closeAny('ithaca'));
   screen.querySelector('#ithaca-weather-refresh')?.addEventListener('click', () => _loadWeather(true));
   screen.querySelector('#ithaca-add-tile-btn')?.addEventListener('click', () => openTileBuilder(() => _loadUserTiles()));
   screen.querySelector('#ithaca-import-tile-btn')?.addEventListener('click', () => openImportTileModal(() => _loadUserTiles()));

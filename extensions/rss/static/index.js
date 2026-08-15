@@ -104,7 +104,7 @@ function mount(container) {
   root.className = `rss-workspace rss-workspace-open${_viewMode === 'grid' ? ' rss-view-grid' : ''}`;
   root.id = 'rss-workspace';
   root.innerHTML = `
-    <div class="rss-pane-header">
+    <div class="rss-pane-header" data-ws-popup-header>
       <h4 class="rss-pane-title">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2.5px;margin-right:6px">
           <path d="M4 11a9 9 0 0 1 9 9"/>
@@ -204,7 +204,7 @@ function _wireEvents(root) {
   _el('rss-add-group-btn')?.addEventListener('click', () => _promptCreateGroup(null));
   _el('rss-close-btn')?.addEventListener('click', (e) => {
     e.preventDefault();
-    Workspace.close('rss');
+    Workspace.closeAny('rss');
   });
   const viewToggleBtn = _el('rss-view-toggle-btn');
   viewToggleBtn?.classList.toggle('active', _viewMode === 'grid');

@@ -49,6 +49,7 @@
 import * as Modals from './modalManager.js';
 import { registerMenuDismiss, bindMenuDismiss } from './escMenuStack.js';
 import Split from './workspaceSplit.js';
+import { makeWindowDraggable } from './windowDrag.js';
 
 const _registry = new Map();   // id -> descriptor
 const _routes = new Map();     // route -> id
@@ -544,7 +545,11 @@ export function close(id = _focusedId, { silent = false, fromHistory = false, pu
 function _assignPaneSides() {
   const c0 = _mounted.get(_panes[0]);
   const c1 = _mounted.get(_panes[1]);
-  if (c0) { if (_panes.length > 1 || _chatPartner) c0.dataset.pane = 'left'; else delete c0.dataset.pane; }
+  if (c0) {
+    if (_chatPartner) c0.dataset.pane = 'right';
+    else if (_panes.length > 1) c0.dataset.pane = 'left';
+    else delete c0.dataset.pane;
+  }
   if (c1) c1.dataset.pane = 'right';
 }
 
@@ -772,10 +777,22 @@ export function popOut(id) {
   container.classList.remove('hidden', 'workspace-surface-open');
   container.classList.add('modal', 'workspace-float');
   container.dataset.displayMode = 'popup';
+  // modalManager keys every lookup (register/minimize/restore, the
+  // outside-click-to-minimize scan) off document.getElementById(id) — without
+  // this, those all silently no-op for a re-parented feature (its content has
+  // no id of its own).
+  container.id = id;
   document.body.appendChild(container);
   _floatingIds.add(id);
 
   _setActiveNav(id, true);
+
+  // A feature marks its own popup drag handle with data-ws-popup-header (RSS:
+  // .rss-pane-header, Ithaca: .ithaca-header) — same "one attribute, no JS"
+  // convention as data-ws-split. No-op for a feature without one instead of
+  // erroring, so this stays optional for future extensions.
+  const headerEl = container.querySelector('[data-ws-popup-header]');
+  if (headerEl) makeWindowDraggable(container, { content: container, header: headerEl });
 
   Modals.register(id, {
     label: desc.title || id,
@@ -785,13 +802,32 @@ export function popOut(id) {
   try { desc.activate && desc.activate({ mode: 'popup' }); } catch (_) {}
 }
 
+// Inline styles makeWindowDraggable/makeWindowResizable (windowDrag.js,
+// windowResize.js) set directly on the dragged element — here that's the
+// container itself (RSS/Ithaca have no separate .modal-content wrapper), so
+// popping back into page-mode layout must strip them or the container
+// carries stale fixed positioning back into the page. Mirrors modalManager's
+// own _clearEmailSplitAfterMinimize cleanup pattern.
+const _DRAG_RESIZE_STYLE_PROPS = [
+  'position', 'left', 'top', 'transform', 'margin',
+  'width', 'height', 'max-width', 'max-height', 'animation',
+];
+function _clearDragResizeStyles(el) {
+  if (!el) return;
+  _DRAG_RESIZE_STYLE_PROPS.forEach((prop) => el.style.removeProperty(prop));
+}
+
 /** Reverse of popOut — re-parent back into the workspace host. */
 export function popIn(id) {
   const desc = _registry.get(id);
   const container = _mounted.get(id);
   if (!desc || !container || !_floatingIds.has(id)) return;
   Modals.unregister(id);
+  _clearDragResizeStyles(container);
+  const headerEl = container.querySelector('[data-ws-popup-header]');
+  if (headerEl) { headerEl.style.removeProperty('cursor'); headerEl.style.removeProperty('user-select'); }
   container.classList.remove('modal', 'workspace-float');
+  container.removeAttribute('id');
   container.classList.add('hidden');
   _ensureHost().appendChild(container);
   _floatingIds.delete(id);
