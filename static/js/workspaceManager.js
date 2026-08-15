@@ -826,7 +826,11 @@ export function popIn(id) {
   _clearDragResizeStyles(container);
   const headerEl = container.querySelector('[data-ws-popup-header]');
   if (headerEl) { headerEl.style.removeProperty('cursor'); headerEl.style.removeProperty('user-select'); }
-  container.classList.remove('modal', 'workspace-float');
+  // Modals.unregister() only drops modalManager's own state — it never
+  // touches the DOM. A container that was minimized before being closed must
+  // shed modal-minimized itself, or the next popOut() reuses this same
+  // element still carrying the class's display:none.
+  container.classList.remove('modal', 'workspace-float', 'modal-minimized');
   container.removeAttribute('id');
   container.classList.add('hidden');
   _ensureHost().appendChild(container);

@@ -139,7 +139,7 @@ function mount(container) {
   screen.id = 'ithaca-screen';
   screen.innerHTML = `
     <div class="ithaca-header" data-ws-popup-header>
-      <button class="ithaca-back-btn" id="ithaca-back-btn" title="Back to chat">
+      <button class="ithaca-back-btn" id="ithaca-back-btn" data-action="close" title="Back to chat">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
         <span>Chat</span>
       </button>
