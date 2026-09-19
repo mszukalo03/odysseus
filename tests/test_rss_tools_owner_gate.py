@@ -163,6 +163,10 @@ async def test_execute_tool_block_dispatches_by_name(monkeypatch):
     monkeypatch.setattr(rss_backend, "_list_groups", lambda db, owner: {"groups": []})
 
     from src.agent_tools import ToolBlock, execute_tool_block
-    desc, result = await execute_tool_block(ToolBlock("list_rss_feeds", "{}"))
+    from src.tool_execution import NO_TOOL_SECURITY_CONTEXT
+    desc, result = await execute_tool_block(
+        ToolBlock("list_rss_feeds", "{}"),
+        security_context=NO_TOOL_SECURITY_CONTEXT,
+    )
     assert desc == "list_rss_feeds"
     assert result["exit_code"] == 0

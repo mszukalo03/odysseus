@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/odysseus-wordmark.png" alt="Odysseus" width="238">
+  <img src="assets/branding/odysseus-wordmark.png" alt="Odysseus" width="238">
 </p>
 
 <p align="center">
@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> ·
-  <a href="docs/setup.md">Setup Guide</a> ·
+  <a href="website/setup.md">Setup Guide</a> ·
   <a href="CONTRIBUTING.md">Contributing</a> ·
   <a href="ROADMAP.md">Roadmap</a>
 </p>
@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/odysseus-browser.jpg" alt="Odysseus interface">
+  <img src="assets/branding/odysseus-browser.jpg" alt="Odysseus interface">
 </p>
 
 ---
@@ -36,9 +36,9 @@ ODYSSEUS_BUNDLE_EXTENSIONS=true docker compose up -d --build
 
 Open `http://localhost:7000` when the containers are healthy. The first admin password is printed in `docker compose logs odysseus`.
 
-`ODYSSEUS_BUNDLE_EXTENSIONS=true` includes the RSS reader and Ithaca dashboard shown above — omit it for a minimal image with neither; see [docs/extensions.md](docs/extensions.md) for what that flag does and how to install/remove extensions afterward.
+`ODYSSEUS_BUNDLE_EXTENSIONS=true` includes the RSS reader and Ithaca dashboard shown above — omit it for a minimal image with neither; see [website/extensions.md](website/extensions.md) for what that flag does and how to install/remove extensions afterward.
 
-Native installs, GPU notes, Windows/macOS instructions, HTTPS, and configuration live in the [setup guide](docs/setup.md).
+Native installs, GPU notes, Windows/macOS instructions, HTTPS, and configuration live in the [setup guide](website/setup.md).
 
 ## Features
 
@@ -46,7 +46,7 @@ Native installs, GPU notes, Windows/macOS instructions, HTTPS, and configuration
 - **Cookbook** — hardware-aware model recommendations, downloads, and vLLM/llama.cpp serving, with llama.cpp auto-detection.
 - **Deep Research** — multi-step web research with source reading, category-aware formatting, and report generation.
 - **RSS Feed Reader** — 3-pane feed reader with nested groups, AI summaries, full-content extraction, OPML import/export, and YouTube channel support.
-- **Extensions** — optional features (RSS, a home-hub dashboard) that ship separately from the base app, installable from a URL or a local build flag — see [docs/extensions.md](docs/extensions.md).
+- **Extensions** — optional features (RSS, a home-hub dashboard) that ship separately from the base app, installable from a URL or a local build flag — see [website/extensions.md](website/extensions.md).
 - **Compare** — blind side-by-side model testing and synthesis.
 - **Documents** — writing-first editor with AI edits, suggestions, Markdown, HTML, CSV, and syntax highlighting.
 - **Email** — IMAP/SMTP inbox with triage, tags, summaries, reminders, and reply drafts.
@@ -55,7 +55,7 @@ Native installs, GPU notes, Windows/macOS instructions, HTTPS, and configuration
 
 ## Demo
 
-A full hover-to-play tour lives on the landing page: [`docs/index.html`](docs/index.html).
+A full hover-to-play tour lives on the [Odysseus landing page](https://odysseus-dev.github.io/odysseus/). Its source lives under [`website/`](website/).
 
 ## Contributing
 
@@ -63,15 +63,20 @@ Help is welcome. The best entry points are fresh-install testing, provider setup
 
 ## Security
 
-Odysseus is a self-hosted workspace with powerful local tools. Keep auth enabled, keep private data out of Git, and do not expose raw model/service ports publicly. Deployment details are in the [setup guide](docs/setup.md#security-notes).
+Odysseus is a self-hosted workspace with powerful local tools. Keep auth enabled, keep private data out of Git, and do not expose raw model/service ports publicly.
+
+- Keep `AUTH_ENABLED=true` for any network-accessible deployment.
+- Keep `LOCALHOST_BYPASS=false` outside local development.
+
+Deployment details are in the [setup guide](website/setup.md#security-notes).
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=odysseus-dev%2Fodysseus&type=date&legend=top-left">
+<a href="https://star-history.dera.page/#odysseus-dev/odysseus&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=odysseus-dev/odysseus&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=odysseus-dev/odysseus&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=odysseus-dev/odysseus&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=odysseus-dev/odysseus&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=odysseus-dev/odysseus&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=odysseus-dev/odysseus&type=date&legend=top-left" />
  </picture>
 </a>
 

@@ -122,3 +122,74 @@ async def test_invalidate_forces_refetch_even_if_still_fresh():
     assert await cache.get("k", 999, fetch) == 1
     cache.invalidate("k")
     assert await cache.get("k", 999, fetch) == 2
+
+
+async def test_owner_cancellation_wakes_waiters_and_allows_retry():
+    cache = TTLCache()
+    key = "cancelled-owner"
+    fetch_started = asyncio.Event()
+
+    async def blocked_fetch():
+        fetch_started.set()
+        await asyncio.Event().wait()
+
+    owner = asyncio.create_task(cache.get(key, 60, blocked_fetch))
+    await fetch_started.wait()
+
+    async def unexpected_fetch():
+        pytest.fail("a waiter must share the owner's fetch")
+
+    waiter = asyncio.create_task(cache.get(key, 60, unexpected_fetch))
+    await asyncio.sleep(0)
+
+    owner.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await owner
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(waiter, timeout=1)
+
+    assert key not in cache._pending
+
+    async def retry_fetch():
+        return "fresh"
+
+    result = await asyncio.wait_for(cache.get(key, 60, retry_fetch), timeout=1)
+    assert result == "fresh"
+
+
+async def test_waiter_cancellation_does_not_cancel_shared_fetch():
+    cache = TTLCache()
+    key = "cancelled-waiter"
+    fetch_started = asyncio.Event()
+    release_fetch = asyncio.Event()
+
+    async def blocked_fetch():
+        fetch_started.set()
+        await release_fetch.wait()
+        return "shared"
+
+    owner = asyncio.create_task(cache.get(key, 60, blocked_fetch))
+    await fetch_started.wait()
+
+    async def unexpected_fetch():
+        pytest.fail("a waiter must share the owner's fetch")
+
+    waiter = asyncio.create_task(cache.get(key, 60, unexpected_fetch))
+    await asyncio.sleep(0)
+    waiter.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+
+    pending = cache._pending[key]
+    assert not pending.cancelled()
+    assert not owner.done()
+
+    release_fetch.set()
+    assert await asyncio.wait_for(owner, timeout=1) == "shared"
+    assert key not in cache._pending
+
+    async def cache_miss():
+        pytest.fail("the successful owner result should be cached")
+
+    assert await cache.get(key, 60, cache_miss) == "shared"

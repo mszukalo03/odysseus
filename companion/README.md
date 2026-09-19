@@ -31,4 +31,4 @@ The pairing/scoping rules live in small, tested units (`token_owner`,
 list/string, defaulting to `COMPANION_SCOPE` ("chat") when omitted — used by
 the Argos browser extension (`extensions/argos/backend.py`) to mint a token
 scoped for both `chat` and `argos:ask` in one call. See
-[`../docs/argos.md`](../docs/argos.md).
+[`../website/argos.md`](../website/argos.md).

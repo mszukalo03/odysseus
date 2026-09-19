@@ -191,6 +191,10 @@ async def test_execute_tool_block_dispatches_by_name(monkeypatch):
     monkeypatch.setattr(weather, "_fetch_weather", fake_fetch)
 
     from src.agent_tools import ToolBlock, execute_tool_block
-    desc, result = await execute_tool_block(ToolBlock("get_home_weather", "{}"))
+    from src.tool_execution import NO_TOOL_SECURITY_CONTEXT
+    desc, result = await execute_tool_block(
+        ToolBlock("get_home_weather", "{}"),
+        security_context=NO_TOOL_SECURITY_CONTEXT,
+    )
     assert desc == "get_home_weather"
     assert result["exit_code"] == 0

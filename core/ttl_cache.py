@@ -49,17 +49,22 @@ class TTLCache:
                 pending = fut
                 owner = True
         if not owner:
-            return await pending
+            # A cancelled waiter must not cancel the shared Future for the
+            # owner and every other waiter.
+            return await asyncio.shield(pending)
         try:
             val = await fetch()
             async with self._lock:
                 self._entries[key] = (time.monotonic() + ttl, val)
-                self._pending.pop(key, None)
             pending.set_result(val)
             return val
+        except asyncio.CancelledError:
+            # Cancellation is a BaseException on supported Python versions,
+            # so it bypasses the Exception handler below. Wake all current
+            # waiters while allowing a later caller to retry the fetch.
+            pending.cancel()
+            raise
         except Exception as e:
-            async with self._lock:
-                self._pending.pop(key, None)
             pending.set_exception(e)
             # Mark the exception "retrieved" on the owner's own future: if no
             # other caller ever awaits `pending` (the common case — most
@@ -68,6 +73,11 @@ class TTLCache:
             # it — a real waiter awaiting `pending` still raises normally.
             pending.exception()
             raise
+        finally:
+            # Keep this cleanup synchronous so a second cancellation cannot
+            # interrupt it and leave a permanently pending Future behind.
+            if self._pending.get(key) is pending:
+                self._pending.pop(key, None)
 
     def invalidate(self, key: Optional[Hashable] = None) -> None:
         """Drop one cached entry, or every entry if `key` is None. Does not

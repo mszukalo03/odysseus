@@ -181,10 +181,17 @@ def setup_mcp_routes(mcp_manager: McpManager):
         if transport == "http" and not url:
             raise HTTPException(400, "url is required for HTTP transport")
 
-        # Parse JSON fields
-        try:
-            parsed_args = json.loads(args) if args else []
-        except json.JSONDecodeError:
+        # Parse JSON fields. args is not defaulted on a parse failure: an
+        # unparseable value is silently discarded downstream (stdio spawns
+        # with an empty argv), so the caller must be told instead.
+        if args:
+            try:
+                parsed_args = json.loads(args)
+            except json.JSONDecodeError:
+                raise HTTPException(400, "args must be valid JSON, e.g. [\"-y\", \"pkg\"]")
+            if not isinstance(parsed_args, list):
+                raise HTTPException(400, "args must be a JSON array, e.g. [\"-y\", \"pkg\"]")
+        else:
             parsed_args = []
         try:
             parsed_env = json.loads(env) if env else {}
@@ -475,7 +482,7 @@ def setup_mcp_routes(mcp_manager: McpManager):
                 return RedirectResponse(auth_url)
             else:
                 # Remote device — show paste-back page
-                return HTMLResponse(_oauth_authorize_page(auth_url, server_id, host, redirect_uri))
+                return HTMLResponse(_oauth_authorize_page(auth_url, server_id, redirect_uri))
         finally:
             db.close()
 
@@ -612,15 +619,13 @@ def setup_mcp_routes(mcp_manager: McpManager):
 def _oauth_authorize_page(
     auth_url: str,
     server_id: str,
-    host: str,
-    redirect_uri: str = "http://localhost:7000/api/mcp/oauth/callback",
+    redirect_uri: str,
 ) -> str:
     """Page with Google sign-in link and URL paste-back form for remote access."""
-    # Escape values interpolated into the page: `host` comes from the request
-    # Host header and `server_id` from the OAuth state — neither is trusted.
+    # Escape values interpolated into the page: `server_id` comes from the OAuth
+    # state and is not trusted.
     auth_url = html.escape(auth_url, quote=True)
     server_id = html.escape(server_id, quote=True)
-    host = html.escape(host, quote=True)
     redirect_uri = html.escape(redirect_uri, quote=True)
     return f"""<!DOCTYPE html>
 <html><head>
@@ -664,7 +669,15 @@ def _oauth_authorize_page(
   </div>
   <a class="auth-link" href="{auth_url}" target="_blank" rel="noopener">Sign in with Google</a>
   <div class="divider"></div>
-  <form method="POST" action="http://{host}/api/mcp/oauth/exchange/{server_id}">
+  <!-- Relative action: the browser resolves it against the origin this page was
+       served from, so the form follows the user through any proxy without the
+       app having to know the scheme or the host. An absolute http:// action is
+       blocked as mixed content on exactly the HTTPS deployments that need
+       paste-back, and request.url.scheme cannot be trusted to spot them —
+       uvicorn only honours X-Forwarded-Proto from a peer in
+       --forwarded-allow-ips, which defaults to 127.0.0.1 and excludes a proxy
+       arriving over the Docker bridge. -->
+  <form method="POST" action="/api/mcp/oauth/exchange/{server_id}">
     <p>Paste the URL from your browser after signing in:</p>
     <input type="text" name="callback_url" placeholder="{redirect_uri}?code=..." required>
     <br><button type="submit">Connect</button>
