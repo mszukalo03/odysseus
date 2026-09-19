@@ -1,0 +1,19 @@
+{
+  "id": "argos",
+  "name": "Argos",
+  "version": "1.0.0",
+  "description": "Browser companion — ask your Odysseus about the page you're on",
+  "enabled_by_default": false,
+  "backend": { "module": "extensions.argos.backend", "setup": "setup" },
+  "scopes": ["argos:ask"],
+  "nav": {
+    "id": "argos",
+    "label": "Argos",
+    "route": "/argos",
+    "section": "tools",
+    "order": 40,
+    "surface": "both",
+    "admin_only": false
+  },
+  "frontend": { "entry": "static/index.js", "css": "static/argos.css" }
+}

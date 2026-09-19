@@ -12,6 +12,9 @@ packaged up so you can host your own and share them between instances.
 > Looking for how to use Ithaca specifically (connecting a database,
 > building/AI-generating tiles, arranging the dashboard)? See
 > [`ithaca.md`](ithaca.md).
+>
+> Looking for the Chrome/Brave browser companion (ask your Odysseus about the
+> page you're on)? See [`argos.md`](argos.md).
 
 ## The short version
 

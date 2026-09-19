@@ -143,6 +143,13 @@ app.add_middleware(
         "X-Requested-With",
         "X-TZ-Offset",
     ],
+    # Starlette's CORSMiddleware hides every response header from
+    # cross-origin JS unless it's listed here — a plain allow_headers entry
+    # only covers the request side. Without this, /api/chat_stream's
+    # X-Odysseus-Run-Id header (needed to pair a stream with
+    # /api/chat/stop/{session_id}) silently reads as null for any
+    # cross-origin caller, e.g. the Argos browser extension.
+    expose_headers=["X-Odysseus-Run-Id"],
 )
 
 # ========= RESPONSE COMPRESSION (gzip) =========

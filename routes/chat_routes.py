@@ -905,6 +905,8 @@ def setup_chat_routes(
         incognito = str(form_data.get("incognito", "")).lower() == "true"
         plan_mode = str(form_data.get("plan_mode") or (body or {}).get("plan_mode") or "").lower() == "true"
         chat_mode = str(form_data.get("mode", "")).lower()  # 'chat' or 'agent'
+        # Untrusted-context callers (browser extension): pin plain chat.
+        no_tools = str(form_data.get("no_tools") or "").lower() == "true"
         # Workspace: confine the agent's file/shell tools to this folder.
         workspace, workspace_rejected = _resolve_request_workspace(
             request, form_data.get("workspace")
@@ -1123,6 +1125,16 @@ def setup_chat_routes(
             if get_session_mode(session) == 'research_pending':
                 do_research = True
                 logger.info(f"Session {session} in research_pending — auto-triggering research")
+
+        # No agent tools, research, plan mode or workspace while
+        # attacker-controlled page text is in context. Pinned here, after every
+        # auto-escalation site (:914/:958/:969/:973/:1078/:1089/:1097), so no
+        # intent heuristic can promote this turn to a tool-bearing agent loop.
+        if no_tools:
+            chat_mode = "chat"
+            plan_mode = False
+            workspace = ""
+            do_research = False
 
         att_ids = []
         if body and isinstance(body.get("attachments"), list):

@@ -80,12 +80,30 @@ def find_admin_user() -> str | None:
     return next(iter(users), None)
 
 
-def mint_token(owner: str, name: str = "companion") -> tuple[str, str]:
-    """Create a chat-scoped API token row and return (token_id, raw_token).
+def _normalize_scopes(scopes) -> str:
+    """Coerce a scope list/string into the comma-joined form the ApiToken row
+    stores. Falls back to COMPANION_SCOPE when nothing usable is given, so a
+    minted token is never scopeless."""
+    if not scopes:
+        return COMPANION_SCOPE
+    if isinstance(scopes, str):
+        parts = scopes.split(",")
+    else:
+        parts = list(scopes)
+    cleaned = [str(s).strip() for s in parts if str(s).strip()]
+    return ",".join(cleaned) if cleaned else COMPANION_SCOPE
+
+
+def mint_token(owner: str, name: str = "companion", scopes=None) -> tuple[str, str]:
+    """Create an API token row and return (token_id, raw_token).
 
     The raw token is returned ONCE -- only its bcrypt hash + an 8-char prefix
     are persisted. Mirrors routes/api_token_routes.py so cookie- and
     companion-minted tokens are indistinguishable to the auth middleware.
+
+    `scopes` defaults to COMPANION_SCOPE ("chat"). Callers that need extra
+    scopes -- e.g. the Argos browser extension, which needs both "chat" to
+    drive /api/chat_stream and "argos:ask" for its own routes -- pass a list.
     """
     from core.database import get_db_session, ApiToken
 
@@ -100,7 +118,7 @@ def mint_token(owner: str, name: str = "companion") -> tuple[str, str]:
             name=name,
             token_hash=token_hash,
             token_prefix=raw_token[:8],
-            scopes=COMPANION_SCOPE,
+            scopes=_normalize_scopes(scopes),
             is_active=True,
         ))
     return token_id, raw_token

@@ -262,6 +262,21 @@ window (`popOut`/`popIn`):
 | Ithaca | ✅ extension + workspace | First mover; backend at `extensions/ithaca/backend.py`, frontend at `extensions/ithaca/static/index.js`. Stays in-repo for development but is excluded from packaged Docker/PyInstaller builds by default — see "Discovery roots" above. |
 | RSS reader | ✅ extension + workspace | Backend at `extensions/rss/backend.py` (`setup_feed_routes`), services at `extensions/rss/services/`, frontend at `extensions/rss/static/index.js`. `routes/codex_routes.py` still borrows its router (for the `/api/codex/feeds*` passthrough) via `extension_host.get_router("rss")`, retrieved after `register_all()` runs — see "DB models" below for why the models didn't move too. |
 | Doc editor | ✅ workspace (core, not an extension) | Adapter at `static/js/documentWorkspace.js`, route `/editor`. Stays in core rather than becoming an extension — it's wired into chat streaming, email compose and the session lifecycle, none of which have extension hooks. `static/js/document.js` still builds the pane; the adapter only chooses its parent. Defaults to **popup** display (the chat-adjacent split pane), so nothing changed for existing users unless they opt into page mode. |
+| Argos (browser companion) | ✅ extension + workspace | Backend at `extensions/argos/backend.py` (pairing + page-context injection only — it never proxies a chat turn, see the module docstring). Frontend at `extensions/argos/static/index.js` is just a pairing screen; the actual Manifest V3 Chrome/Brave extension lives in `extensions/argos/browser/`, a **sibling of `static/`** so it's never mounted/served (see below). `enabled_by_default: false` since it mints credentials — an admin opts in. Docs: [`docs/argos.md`](../docs/argos.md). |
+
+## Non-`static/` subdirectories aren't served
+
+`Extension.static_dir` only ever points at `<extension>/static/`
+(`src/extension_host.py`) — that's the one directory mounted at
+`/ext/<id>/`. A sibling directory is invisible to the loader and to the web
+server by construction, which Argos uses deliberately:
+`extensions/argos/browser/` holds the actual Chrome/Brave Manifest V3
+extension source (loaded via the browser's own "Load unpacked", or
+downloaded as a zip from an admin-only backend route) and must never be
+reachable over HTTP or imported as part of the SPA. If a future extension
+needs non-static private files of its own, this is the pattern: keep them
+out of `static/` and reach them via `Path(__file__).resolve().parent` in
+`backend.py`, not a manifest field.
 
 ## Known gaps (deliberate, not oversights)
 

@@ -26,3 +26,9 @@ works on the next request without a restart.
 The pairing/scoping rules live in small, tested units (`token_owner`,
 `owner_can_see`, `mint_pairing_token`, `pairing.*`) — see
 `tests/test_companion_readonly.py` and `tests/test_companion_pairing.py`.
+
+`pairing.mint_token(owner, name, scopes=None)` takes an optional `scopes`
+list/string, defaulting to `COMPANION_SCOPE` ("chat") when omitted — used by
+the Argos browser extension (`extensions/argos/backend.py`) to mint a token
+scoped for both `chat` and `argos:ask` in one call. See
+[`../docs/argos.md`](../docs/argos.md).

@@ -1,0 +1,123 @@
+/* extensions/argos/static/argos.css — pairing-screen layout.
+   Mirrors the .ithaca-screen structural pattern (static/style.css) so the
+   workspace behaves consistently in page and popup surfaces; scoped under
+   its own .argos-* prefix rather than sharing ithaca's classes. */
+
+.argos-screen {
+  display: none;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px));
+  z-index: 90;
+  background: var(--bg, var(--panel));
+  flex-direction: column;
+  overflow: hidden;
+}
+.argos-screen-open { display: flex; }
+
+.argos-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+.argos-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.argos-header-sub {
+  font-size: 0.72rem;
+  opacity: 0.5;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.argos-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.argos-back-btn:hover { background: var(--input-bg, rgba(128, 128, 128, 0.12)); }
+
+.argos-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  max-width: 640px;
+}
+
+.argos-intro {
+  opacity: 0.8;
+  line-height: 1.5;
+  margin: 0 0 18px;
+}
+
+.argos-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 14px;
+  background: var(--panel);
+}
+.argos-card h3 { margin: 0 0 6px; font-size: 0.9rem; }
+.argos-card p { margin: 0 0 10px; opacity: 0.8; line-height: 1.5; font-size: 0.85rem; }
+.argos-card code {
+  background: color-mix(in srgb, var(--border) 40%, transparent);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.argos-primary-btn, .argos-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--accent, var(--red));
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.argos-primary-btn:hover, .argos-download-btn:hover { opacity: 0.9; }
+.argos-primary-btn:disabled { opacity: 0.5; cursor: default; }
+
+.argos-token-box { margin-top: 12px; }
+.argos-token-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.argos-token-row code {
+  flex: 1;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding: 6px 8px;
+}
+
+.argos-error { color: var(--red); font-size: 0.85rem; margin-top: 8px; }
+
+.argos-hint {
+  opacity: 0.6;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
