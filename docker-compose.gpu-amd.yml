@@ -12,6 +12,12 @@
 # host's numeric render group id when needed. See docker/gpu.amd.yml for details.
 services:
   odysseus:
+    # Fork: always build this checkout. Upstream's compose pulls
+    # ghcr.io/odysseus-dev/odysseus:latest, which is upstream's code without
+    # this fork's features; pull_policy: build keeps compose from swapping it in.
+    # ODYSSEUS_IMAGE only names the locally built image.
+    image: ${ODYSSEUS_IMAGE:-odysseus-fork:local}
+    pull_policy: build
     build:
       context: .
       args:

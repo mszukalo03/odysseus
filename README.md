@@ -38,6 +38,8 @@ Open `http://localhost:7000` when the containers are healthy. The first admin pa
 
 `ODYSSEUS_BUNDLE_EXTENSIONS=true` includes the RSS reader and Ithaca dashboard shown above — omit it for a minimal image with neither; see [website/extensions.md](website/extensions.md) for what that flag does and how to install/remove extensions afterward.
 
+This fork's compose files always build from this checkout (`pull_policy: build`) rather than pulling upstream's `ghcr.io/odysseus-dev/odysseus` image, which lacks the fork's features.
+
 Native installs, GPU notes, Windows/macOS instructions, HTTPS, and configuration live in the [setup guide](website/setup.md).
 
 ## Features
