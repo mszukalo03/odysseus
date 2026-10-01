@@ -2280,10 +2280,22 @@ async def action_ping_notes(owner: str, **kwargs) -> Tuple[str, bool]:
                 body = "\n\n".join(p for p in body_parts if p) or title
                 try:
                     from routes.note_routes import dispatch_reminder
-                    await dispatch_reminder(
+                    from src.settings import load_settings as _load_settings
+                    result = await dispatch_reminder(
                         title=title, note_body=body, note_id=n.id,
                         owner=n.owner or owner or "",
-                    )
+                    ) or {}
+                    # A failed push (ntfy down, SMTP error) is otherwise
+                    # silent. Leave the note unmarked so the next tick, still
+                    # inside the window, retries it.
+                    channel = (_load_settings().get("reminder_channel") or "browser").strip().lower()
+                    if (channel in ("email", "ntfy", "webhook")
+                            and not result.get(f"{channel}_sent") and not result.get("skipped")):
+                        logger.warning(
+                            "ping_notes: %s delivery failed for %r: %s", channel, title,
+                            result.get(f"{channel}_error") or "no error detail",
+                        )
+                        continue
                     cache[n.id] = now.isoformat()
                     sent.append(title)
                     if repeating:

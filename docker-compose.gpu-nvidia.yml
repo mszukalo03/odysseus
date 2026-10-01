@@ -214,6 +214,11 @@ services:
       - ntfy-cache:/var/cache/ntfy
     environment:
       - NTFY_BASE_URL=${NTFY_BASE_URL:-http://localhost:8091}
+      # Persist the message cache in the volume so a phone that briefly lost
+      # its connection (Doze, VPN reconnect) or a container restart still
+      # gets missed notifications when it reconnects.
+      - NTFY_CACHE_FILE=/var/cache/ntfy/cache.db
+      - NTFY_CACHE_DURATION=${NTFY_CACHE_DURATION:-48h}
     restart: unless-stopped
 
 volumes:

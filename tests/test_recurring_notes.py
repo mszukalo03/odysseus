@@ -72,22 +72,25 @@ def notes_db(tmp_path, monkeypatch):
     monkeypatch.setattr(cdb, "SessionLocal", factory)
     monkeypatch.setattr(builtin_actions, "DATA_DIR", str(tmp_path))
     monkeypatch.setenv("ODYSSEUS_TIMEZONE", "America/Toronto")
+    import src.settings as st
+    monkeypatch.setattr(st, "load_settings", lambda: {"reminder_channel": "ntfy"})
     sent = []
+    outcome = {"ntfy_sent": True}
 
     async def fake_dispatch(**kw):
         sent.append(kw["title"])
-        return {}
+        return dict(outcome)
 
     import routes.note_routes as nr
     monkeypatch.setattr(nr, "dispatch_reminder", fake_dispatch)
-    return factory, sent
+    return factory, sent, outcome
 
 
 def test_scanner_fires_and_advances_repeating_notes(notes_db):
     from core.database import Note
     from src.builtin_actions import action_ping_notes
 
-    factory, sent = notes_db
+    factory, sent, _ = notes_db
     now = datetime.now(timezone.utc)
     db = factory()
     db.add_all([
@@ -111,3 +114,27 @@ def test_scanner_fires_and_advances_repeating_notes(notes_db):
         nxt = datetime.fromisoformat(rows[nid].replace("Z", "+00:00"))
         assert now < nxt <= now + timedelta(days=7, hours=1)
     assert rows["once"] == "2026-01-06T19:15:00.000Z"
+
+
+def test_failed_push_is_retried_not_advanced(notes_db, caplog):
+    from core.database import Note
+    from src.builtin_actions import TaskNoop, action_ping_notes
+
+    factory, sent, outcome = notes_db
+    outcome.update(ntfy_sent=False, ntfy_error="host does not resolve")
+    due = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    db = factory()
+    db.add(Note(id="due", owner="u", title="Reminder: Seminar", repeat="weekly", due_date=due))
+    db.commit()
+    db.close()
+
+    with pytest.raises(TaskNoop):
+        asyncio.run(action_ping_notes(owner="u"))
+    assert "ntfy delivery failed" in caplog.text and "host does not resolve" in caplog.text
+
+    outcome.update(ntfy_sent=True)          # next tick: ntfy is back
+    msg, ok = asyncio.run(action_ping_notes(owner="u"))
+    assert ok and sent == ["Reminder: Seminar", "Reminder: Seminar"]
+    db = factory()
+    assert db.query(Note).one().due_date != due
+    db.close()
