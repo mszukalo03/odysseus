@@ -1022,6 +1022,21 @@ async def action_summarize_emails(owner: str, **kwargs) -> Tuple[str, bool]:
         return str(e), False
 
 
+async def action_seminar_abstracts(owner: str, **kwargs) -> Tuple[str, bool]:
+    """File forwarded seminar abstract emails into that week's seminar event."""
+    from src.seminar_abstracts import SeminarSetupError, run
+    try:
+        result = await run(owner, kwargs.get("prompt") or "")
+    except SeminarSetupError as e:
+        raise TaskNoop(f"seminar abstracts: {e}")
+    except Exception as e:
+        logger.exception("seminar_abstracts action failed")
+        return str(e), False
+    if not result:
+        raise TaskNoop("seminar abstracts: no new announcement emails")
+    return result, True
+
+
 async def action_refresh_due_feeds(owner: str, **kwargs) -> Tuple[str, bool]:
     """Refresh any RSS feed whose fetch_interval has elapsed since last_fetched."""
     try:
@@ -2210,14 +2225,26 @@ async def action_ping_notes(owner: str, **kwargs) -> Tuple[str, bool]:
             reping_cutoff = now - _td(minutes=REPING_MIN)
             seen_ids = set()
             sent = []
+            # Repeating notes are rolled forward here as well as in the
+            # browser, so they keep firing when no tab is open (ntfy/email).
+            from src.recurring_notes import next_due as _next_due
+            advanced = 0
 
             for n in notes:
                 seen_ids.add(n.id)
                 due = _parse_due(n.due_date)
                 if not due:
                     continue
+                repeating = (n.repeat or "none") != "none"
                 # Inside the ±5min window?
                 if abs((due - now).total_seconds()) > window.total_seconds():
+                    # Missed (server down, or skipped as recently pinged):
+                    # move a repeating note to its next slot without firing.
+                    if repeating and due < now - window:
+                        nxt = _next_due(n.due_date, n.repeat, now)
+                        if nxt:
+                            n.due_date = nxt
+                            advanced += 1
                     continue
                 # Recently pinged? Skip.
                 last = cache.get(n.id)
@@ -2259,8 +2286,16 @@ async def action_ping_notes(owner: str, **kwargs) -> Tuple[str, bool]:
                     )
                     cache[n.id] = now.isoformat()
                     sent.append(title)
+                    if repeating:
+                        nxt = _next_due(n.due_date, n.repeat, now)
+                        if nxt:
+                            n.due_date = nxt
+                            advanced += 1
                 except Exception as e:
                     logger.warning(f"ping_notes: dispatch failed for {n.id}: {e}")
+
+            if advanced:
+                db.commit()
 
             # Prune cache entries for notes that no longer exist.
             for stale in [k for k in cache if k not in seen_ids]:
@@ -3451,6 +3486,7 @@ BUILTIN_ACTIONS = {
     "check_email_urgency": action_check_email_urgency,
     "cookbook_serve": action_cookbook_serve,
     "refresh_due_feeds": action_refresh_due_feeds,
+    "seminar_abstracts": action_seminar_abstracts,
     # ping_notes removed from the registry — runs only inside `_note_pings_loop`.
 }
 
@@ -3473,4 +3509,5 @@ BUILTIN_ACTION_INFO = {
     "audit_skills": "Audit unaudited skills after enough new skills are added: test, narrow metadata, self-edit/retry, optional teacher rewrite, tag duplicates/trivial skills, and publish/draft using the auto-approve threshold.",
     "check_email_urgency": "Scan unread emails hourly, tag urgent/reply-soon/newsletter/marketing/spam, and send a reminder when a new email needs a fast reply.",
     "refresh_due_feeds": "Auto-refresh RSS feeds whose refresh interval has elapsed",
+    "seminar_abstracts": "Summarise forwarded seminar abstract emails into that week's seminar event (with DOI + full-email links). Config: JSON in the prompt, e.g. {\"event\": \"Seminar\", \"calendar\": \"MSc\"}",
 }

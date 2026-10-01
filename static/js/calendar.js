@@ -566,6 +566,19 @@ function _showEventMoreMenu(ev, anchor) {
   dropdown.style.visibility = '';
   closeMenu = bindMenuDismiss(dropdown, () => dropdown.remove(), (ev2) => !dropdown.contains(ev2.target) && ev2.target !== anchor);}
 
+// Map a simple event RRULE onto the Notes repeat vocabulary so the reminder
+// recurs with the event. Rules Notes can't express (INTERVAL, several BYDAYs)
+// keep a one-shot reminder.
+function _reminderRepeatForRrule(rrule) {
+  const parts = {};
+  String(rrule || '').toUpperCase().split(';').forEach(p => {
+    const [k, v] = p.split('=');
+    if (k && v) parts[k.trim()] = v.trim();
+  });
+  if (!parts.FREQ || (parts.INTERVAL && parts.INTERVAL !== '1') || parts.BYDAY) return 'none';
+  return { DAILY: 'daily', WEEKLY: 'weekly', MONTHLY: 'monthly', YEARLY: 'yearly' }[parts.FREQ] || 'none';
+}
+
 async function _createEventReminder(ev, dueDate) {
   // Store the reminder as an absolute UTC instant (with the Z suffix) so the
   // notification poller fires at the right wall-clock moment regardless of:
@@ -589,6 +602,7 @@ async function _createEventReminder(ev, dueDate) {
     items: [{ text, done: false, checked: false }],
     label: 'calendar',
     due_date: iso,
+    repeat: _reminderRepeatForRrule(ev.rrule),
     source: 'calendar',
     // Persist the EVENT'S absolute start so the notification body can be
     // computed live at fire time ("Starts in 5 min") instead of using a
@@ -1900,6 +1914,7 @@ function _dayDetailHTML(dateStr) {
             <div class="cal-event-name">${_e(ev.summary)}</div>
             <div class="cal-event-time">${_fmtDate(date)} · ${t}</div>
             ${ev.location ? `<div class="cal-event-loc">${_locHTML(ev.location)}</div>` : ''}
+            ${_descLinksHTML(ev.description)}
           </div>
           <button class="cal-event-more" data-uid="${_e(ev.uid)}" title="More">${_moreIcon}</button>
         </div>`;
@@ -1912,7 +1927,7 @@ function _dayDetailHTML(dateStr) {
   else evs.forEach(ev => {
     const t = ev.all_day ? 'All day' : _fmtTime(ev.dtstart) + ' – ' + _fmtTime(ev.dtend);
     const _bgStyle = _calItemBgStyle(ev);
-    h += `<div class="cal-event-item${_bgStyle ? ' cal-event-item-bg' : ''}" data-uid="${_e(ev.uid)}"${_bgStyle ? ` style="${_bgStyle}"` : ''}><div class="cal-event-dot" style="background:${_calColor(ev)}"></div><div class="cal-event-info"><div class="cal-event-name">${_e(ev.summary)}</div><div class="cal-event-time">${t}</div>${ev.location ? `<div class="cal-event-loc">${_locHTML(ev.location)}</div>` : ''}</div><button class="cal-event-more" data-uid="${_e(ev.uid)}" title="More">${_moreIcon}</button></div>`;
+    h += `<div class="cal-event-item${_bgStyle ? ' cal-event-item-bg' : ''}" data-uid="${_e(ev.uid)}"${_bgStyle ? ` style="${_bgStyle}"` : ''}><div class="cal-event-dot" style="background:${_calColor(ev)}"></div><div class="cal-event-info"><div class="cal-event-name">${_e(ev.summary)}</div><div class="cal-event-time">${t}</div>${ev.location ? `<div class="cal-event-loc">${_locHTML(ev.location)}</div>` : ''}${_descLinksHTML(ev.description)}</div><button class="cal-event-more" data-uid="${_e(ev.uid)}" title="More">${_moreIcon}</button></div>`;
   });
   return h + '</div>';
 }
@@ -3199,7 +3214,7 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
           remindAt = new Date(eventStart.getTime() - parseInt(remindVal) * 60 * 1000);
         }
         if (remindAt && remindAt > new Date()) {
-          await _createEventReminder({ summary, dtstart: payload.dtstart, all_day: isAD, location: payload.location }, remindAt);
+          await _createEventReminder({ summary, dtstart: payload.dtstart, all_day: isAD, location: payload.location, rrule: payload.rrule }, remindAt);
         }
       }
       _selectedDay = dv; _render();
@@ -3446,6 +3461,27 @@ function _locHTML(loc) {
   // No URL — link the whole thing to OpenStreetMap.
   const mapUrl = 'https://www.openstreetmap.org/search?query=' + encodeURIComponent(loc);
   return `<a href="${mapUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation();" title="Open in OpenStreetMap">${_e(loc)}</a>`;
+}
+
+// Links found in an event description, rendered as a compact row
+// (e.g. "Full email · DOI" on seminar events filled from an abstract email).
+function _descLinksHTML(desc) {
+  const urls = String(desc || '').match(/https?:\/\/[^\s<>"']+|#email=[^\s<>"']+/gi);
+  if (!urls) return '';
+  const seen = new Set();
+  const links = [];
+  for (let url of urls) {
+    url = url.replace(/[.,;)\]]+$/, '');
+    if (seen.has(url)) continue;
+    seen.add(url);
+    let label;
+    if (url.includes('#email=')) label = 'Full email';
+    else if (/^https?:\/\/(dx\.)?doi\.org\//i.test(url)) label = 'DOI';
+    else { try { label = new URL(url).hostname.replace(/^www\./, ''); } catch { label = 'Link'; } }
+    const newTab = url.startsWith('#') ? '' : ' target="_blank" rel="noopener"';
+    links.push(`<a href="${_e(url)}"${newTab} title="${_e(url)}" onclick="event.stopPropagation();">${_e(label)}</a>`);
+  }
+  return `<div class="cal-event-loc cal-event-links">${links.join(' · ')}</div>`;
 }
 
 // ── Open / Close ──
