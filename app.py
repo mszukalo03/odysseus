@@ -1108,6 +1108,12 @@ async def _startup_event():
             _db.close()
     except Exception as e:
         logger.debug(f"Incognito purge skipped: {e}")
+    # Register an external STT/TTS gateway from ODYSSEUS_SPEECH_* env vars.
+    try:
+        from src.speech_bootstrap import ensure_speech_gateway
+        ensure_speech_gateway()
+    except Exception as e:
+        logger.warning(f"Speech gateway setup from env failed: {e}")
     # Strong refs to fire-and-forget startup tasks. Without this, Python may
     # GC tasks created with `asyncio.create_task(...)` before they finish.
     _startup_tasks: list[asyncio.Task] = getattr(app.state, "_startup_tasks", [])

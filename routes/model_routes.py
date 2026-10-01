@@ -597,7 +597,7 @@ def _is_ollama_base(base_url: str) -> bool:
 
 # Prefixes/substrings for models that are NOT chat-completions-capable
 _NON_CHAT_PREFIXES = (
-    "dall-e", "tts-", "whisper", "text-embedding", "embedding",
+    "dall-e", "tts-", "stt-", "whisper", "text-embedding", "embedding",
     "davinci", "babbage", "moderation", "omni-moderation",
     "sora", "gpt-image", "chatgpt-image",
     # embedding / retrieval / non-chat models (common across providers)
