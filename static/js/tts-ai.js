@@ -69,8 +69,14 @@ class AITTSManager {
     }
 
     extractPlainText(content) {
-        // Strip <think>/<thinking> blocks (model reasoning)
-        let cleaned = content.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '');
+        // Strip <think>/<thinking> blocks (model reasoning). The opening tag may
+        // carry attributes (chat.js stamps <think time="12">), and mid-stream
+        // the block is still open, so also drop an unclosed block to the end
+        // and anything before a stray closing tag whose opener was never sent.
+        let cleaned = content
+            .replace(/<think(?:ing)?(?:\s[^>]*)?>[\s\S]*?<\/think(?:ing)?>/gi, '')
+            .replace(/<think(?:ing)?(?:\s[^>]*)?>[\s\S]*$/i, '')
+            .replace(/^[\s\S]*<\/think(?:ing)?>/i, '');
 
         // Create a temporary div to parse HTML/markdown
         const temp = document.createElement('div');
