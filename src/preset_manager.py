@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +140,8 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
         enabled: bool = True,
         inject_prefix: str = "",
         inject_suffix: str = "",
+        workspace: str = "",
+        mcp_servers: Optional[List[str]] = None,
     ) -> bool:
         """Update the custom preset"""
         self.presets["custom"] = {
@@ -151,6 +153,8 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
             "inject_prefix": inject_prefix,
             "inject_suffix": inject_suffix,
             "enabled": enabled,
+            "workspace": (workspace or "").strip(),
+            "mcp_servers": [s.strip() for s in (mcp_servers or []) if s and s.strip()],
         }
         return self.save(self.presets)
     

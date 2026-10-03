@@ -1019,6 +1019,15 @@ def setup_chat_routes(
         workspace, workspace_rejected = _resolve_request_workspace(
             request, form_data.get("workspace")
         )
+        # Persona binding: a preset can carry its own workspace and MCP server
+        # allowlist. A workspace picked explicitly in the request wins.
+        _binding = getattr(chat_handler, "preset_binding", None)
+        _preset_workspace, _preset_mcp_servers = _binding(preset_id) if _binding else ("", [])
+        if not workspace and not workspace_rejected and _preset_workspace:
+            workspace, workspace_rejected = _resolve_request_workspace(request, _preset_workspace)
+        # CLAUDE.md / AGENTS.md of the workspace -- only under a trusted root.
+        from src.workspace_instructions import load_workspace_instructions
+        _workspace_instructions = load_workspace_instructions(workspace) if workspace else ""
         # Plan mode is a modifier on agent mode — it only makes sense with tools.
         if plan_mode:
             chat_mode = "agent"
@@ -1381,6 +1390,7 @@ def setup_chat_routes(
             compare_mode=compare_mode,
             webhook_manager=webhook_manager,
             use_enhanced_message=True,
+            workspace_instructions=_workspace_instructions,
             # Skills index only ships when the model can actually call
             # manage_skills (agent mode). In plain chat or incognito the
             # index would be useless / unwanted noise.
@@ -1490,6 +1500,11 @@ def setup_chat_routes(
 
         # Build disabled-tools set from frontend toggles + user privileges
         disabled_tools = set()
+        if _preset_mcp_servers:
+            from src.tool_execution import get_mcp_manager as _get_mcp_manager
+            _persona_mcp = _get_mcp_manager()
+            if _persona_mcp:
+                disabled_tools.update(_persona_mcp.tool_names_outside(_preset_mcp_servers))
         # Minting is admin-only, so every owner-keyed check below answers
         # "admin" for a token. Cap it at the non-admin policy instead.
         # stream_agent_loop repeats this from delegated_credential.

@@ -567,6 +567,24 @@ class McpManager:
             logger.error(f"Failed to reconnect builtin MCP server {name}: {e}")
             return False
 
+    def tool_names_outside(self, allowed) -> Set[str]:
+        """Qualified names (``mcp__{id}__{tool}``) of tools on servers NOT in ``allowed``.
+
+        ``allowed`` holds server ids or display names (case-insensitive). Used
+        for persona-level MCP allowlists. Built-in Python servers are Odysseus
+        features rather than external MCP servers, so they are never hidden here.
+        """
+        wanted = {str(a).strip().lower() for a in (allowed or []) if str(a).strip()}
+        blocked: Set[str] = set()
+        for server_id, tools in self._tools.items():
+            if self.is_builtin(server_id):
+                continue
+            name = str(self._connections.get(server_id, {}).get("name", server_id)).lower()
+            if server_id.lower() in wanted or name in wanted:
+                continue
+            blocked.update(f"mcp__{server_id}__{tool['name']}" for tool in tools)
+        return blocked
+
     def get_all_openai_schemas(self, disabled_map: Optional[Dict[str, set]] = None) -> List[Dict]:
         """Return all MCP tools in OpenAI function-calling format.
 

@@ -112,6 +112,18 @@ class ChatHandler:
         logger.info(f"Preset {preset_id}: temp={temperature}, max_tokens={max_tokens}")
         return temperature, max_tokens, preset_system_prompt, character_name
 
+    def preset_binding(self, preset_id: Optional[str]) -> tuple:
+        """Returns (workspace, mcp_servers) a persona is bound to; ("", []) if none.
+
+        Disabled or unknown presets bind nothing, same as validate_and_extract_preset.
+        """
+        preset = self.preset_manager.presets.get(preset_id) if preset_id else None
+        if not isinstance(preset, dict) or preset.get("enabled") is False:
+            return "", []
+        workspace = str(preset.get("workspace") or "").strip()
+        servers = [str(s).strip() for s in (preset.get("mcp_servers") or []) if str(s).strip()]
+        return workspace, servers
+
     def enhance_message_if_needed(self, message: str) -> str:
         """CoT enhancement disabled — modern models reason natively."""
         return message

@@ -21,6 +21,8 @@ class UserTemplateRequest(BaseModel):
     system_prompt: str = Field("", max_length=10000)
     temperature: float = Field(1.0, ge=0.0, le=2.0)
     max_tokens: int = Field(0, ge=0, le=65536)
+    workspace: str = Field("", max_length=1024)
+    mcp_servers: List[str] = Field(default_factory=list, max_length=50)
 
 
 def setup_preset_routes(preset_manager) -> APIRouter:
@@ -41,6 +43,8 @@ def setup_preset_routes(preset_manager) -> APIRouter:
                 preset_update.enabled,
                 preset_update.inject_prefix,
                 preset_update.inject_suffix,
+                workspace=preset_update.workspace,
+                mcp_servers=preset_update.mcp_servers,
             )
             if success:
                 return {"success": True, "message": "Custom preset updated"}

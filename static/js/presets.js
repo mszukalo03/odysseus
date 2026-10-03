@@ -211,6 +211,7 @@ function initNameDropdown() {
       const tokensValue = document.getElementById('tokens-value');
       if (nameInput) nameInput.value = '';
       if (promptInput) promptInput.value = '';
+      _writeBindingInputs(null);
       const nameRow = document.getElementById('char-name-row');
       if (nameRow) nameRow.style.display = '';
       if (tempInput) { tempInput.value = 1.0; if (tempValue) tempValue.textContent = '1.0'; tempInput.dispatchEvent(new Event('input')); }
@@ -268,6 +269,27 @@ function initNameDropdown() {
   }
 }
 
+// Persona binding: the workspace folder and MCP server allowlist a persona
+// carries (applied server-side when the persona is active; see
+// ChatHandler.preset_binding). Kept on templates and on the custom preset.
+function _readBindingInputs() {
+  const ws = document.getElementById('custom-workspace');
+  const mcp = document.getElementById('custom-mcp-servers');
+  return {
+    workspace: ws ? ws.value.trim() : '',
+    mcp_servers: mcp ? mcp.value.split(',').map(s => s.trim()).filter(Boolean) : [],
+  };
+}
+
+function _writeBindingInputs(src) {
+  const ws = document.getElementById('custom-workspace');
+  const mcp = document.getElementById('custom-mcp-servers');
+  if (ws) ws.value = (src && src.workspace) || '';
+  if (mcp) mcp.value = ((src && src.mcp_servers) || []).join(', ');
+  const box = document.getElementById('char-binding');
+  if (box) box.open = !!(src && (src.workspace || (src.mcp_servers || []).length));
+}
+
 function _tryLoadTemplate(name) {
   if (!name) return;
   // Check user templates first, then built-in
@@ -280,6 +302,7 @@ function _tryLoadTemplate(name) {
       const tempInput = document.getElementById('custom-temperature');
       const tempValue = document.getElementById('temp-value');
       if (promptInput) promptInput.value = builtin.prompt;
+      _writeBindingInputs(null);
       if (tempInput && builtin.temperature != null) {
         tempInput.value = builtin.temperature;
         if (tempValue) tempValue.textContent = parseFloat(builtin.temperature).toFixed(1);
@@ -295,6 +318,7 @@ function _tryLoadTemplate(name) {
   const tokensInput = document.getElementById('custom-max-tokens');
   const tokensValue = document.getElementById('tokens-value');
   if (promptInput) promptInput.value = tmpl.system_prompt || '';
+  _writeBindingInputs(tmpl);
   if (tempInput) {
     tempInput.value = tmpl.temperature ?? 1.0;
     if (tempValue) tempValue.textContent = parseFloat(tempInput.value).toFixed(1);
@@ -468,6 +492,7 @@ function initSaveAsTemplate() {
       system_prompt: promptInput ? promptInput.value : '',
       temperature: tempInput ? parseFloat(tempInput.value) : 1.0,
       max_tokens: _rawTk > 8192 ? 0 : _rawTk,
+      ..._readBindingInputs(),
     };
 
     try {
@@ -788,6 +813,7 @@ export async function saveCustomPreset(showToast, showError) {
     system_prompt: system_prompt,
     inject_prefix: _prefixInput ? _prefixInput.value : '',
     inject_suffix: _suffixInput ? _suffixInput.value : '',
+    ...(_isInjectStart ? { workspace: '', mcp_servers: [] } : _readBindingInputs()),
   };
 
   try {
@@ -842,6 +868,8 @@ export async function saveCustomPreset(showToast, showError) {
           system_prompt: system_prompt ?? '',
           temperature: config.temperature,
           max_tokens: config.max_tokens,
+          workspace: config.workspace || '',
+          mcp_servers: config.mcp_servers || [],
         }
         const ENDPOINT = `${API_BASE}/api/presets/templates`;
 
