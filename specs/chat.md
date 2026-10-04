@@ -90,6 +90,8 @@ remain server-side enforcement owners.
 
 `allow_bash` and `allow_web_search` can be read from the JSON request body for browser chat posts that do not submit traditional form fields.
 
+`thinking` (form or JSON body) sets a per-request thinking level: `off`, `low`, `medium` or `high`; empty or `auto` changes nothing. When absent, the active persona's `thinking` default applies. The level is passed as `reasoning` to `stream_llm` (chat mode, via `stream_llm_with_fallback`) and to `stream_agent_loop` (every round, plus the direct-reply path), and `src/reasoning_control.py` maps it onto each provider's own field: `chat_template_kwargs.enable_thinking` for self-hosted OpenAI-compatible servers (llama.cpp, vLLM, SGLang), `think` for Ollama, `reasoning_effort` for OpenAI-hosted reasoning models, Gemini and Mistral, and `reasoning` for OpenRouter. Anthropic and other providers are left unchanged. The keyword is only passed when a level is set, so requests without one are byte-identical to before.
+
 Web search tools are per-turn explicit opt-in. Either `allow_web_search=true`
 or `use_web=true` can enable `web_search`/`web_fetch`, but an explicit
 `allow_web_search=false` wins over `use_web=true` and keeps those tools

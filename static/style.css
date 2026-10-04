@@ -10936,6 +10936,58 @@ details a:hover {
   width: 100%;
 }
 
+/* ── Thinking level control (composer, js/thinkingControl.js) ── */
+.thinking-level-btn .thinking-level-label {
+  font-size: 11px;
+  margin-left: 2px;
+}
+.thinking-level-btn .thinking-level-label:empty {
+  display: none;
+}
+.thinking-level-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 200px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.thinking-level-menu[hidden] {
+  display: none;
+}
+.thinking-level-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 10px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--fg);
+  opacity: 0.75;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.thinking-level-item:hover,
+.thinking-level-item:focus-visible {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.thinking-level-item.active {
+  opacity: 1;
+  background: color-mix(in srgb, var(--fg) 9%, transparent);
+}
+.thinking-level-hint {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
 .char-prompt-wrap {
   position: relative;
 }

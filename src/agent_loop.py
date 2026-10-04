@@ -3556,6 +3556,7 @@ async def stream_agent_loop(
     _is_teacher_run: bool = False,
     history_session=None,
     defer_context_shaping: bool = False,
+    reasoning: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming agent loop generator.
 
@@ -3808,6 +3809,7 @@ async def stream_agent_loop(
                 fallback_on_empty=fallback_on_empty,
                 candidate_request_factory=_direct_candidate_request,
                 candidate_route_descriptors=route_descriptors,
+                **({"reasoning": reasoning} if reasoning else {}),
             ):
                 if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                     try:
@@ -5082,6 +5084,7 @@ async def stream_agent_loop(
             fallback_on_empty=fallback_on_empty,
             candidate_request_factory=_candidate_request,
             candidate_route_descriptors=_candidate_route_descriptors,
+            **({"reasoning": reasoning} if reasoning else {}),
         ):
             if not _round_first_event_logged:
                 _round_first_event_logged = True

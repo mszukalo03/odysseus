@@ -14,6 +14,7 @@ import { addAITTSButton } from './tts-ai.js';
 import markdownModule from './markdown.js';
 import spinnerModule from './spinner.js';
 import presetsModule from './presets.js';
+import thinkingControl from './thinkingControl.js';
 import fileHandlerModule from './fileHandler.js';
 import searchModule from './search.js';
 import documentModule from './document.js';
@@ -1932,6 +1933,12 @@ import { loadPanel } from './panels.js';
       }
       if (presetsModule.getSelectedPreset()) {
         fd.append('preset_id', presetsModule.getSelectedPreset());
+      }
+      // Thinking level (composer menu); omitted for Auto so the persona or
+      // model default applies.
+      const _thinking = thinkingControl.requestValue();
+      if (_thinking) {
+        fd.append('thinking', _thinking);
       }
 
 

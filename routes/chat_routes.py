@@ -1008,6 +1008,9 @@ def setup_chat_routes(
         incognito = str(form_data.get("incognito", "")).lower() == "true"
         plan_mode = str(form_data.get("plan_mode") or (body or {}).get("plan_mode") or "").lower() == "true"
         chat_mode = str(form_data.get("mode", "")).lower()  # 'chat' or 'agent'
+        # Thinking level from the composer (auto/off/low/medium/high). Resolved
+        # against the persona default further down; auto changes nothing.
+        _thinking_request = form_data.get("thinking") or (body or {}).get("thinking")
         # Untrusted-context callers (browser extension): pin plain chat.
         no_tools = str(form_data.get("no_tools") or "").lower() == "true"
         tool_approval_id = (
@@ -1035,6 +1038,14 @@ def setup_chat_routes(
         _persona_options = _persona_opts_fn(preset_id) if callable(_persona_opts_fn) else {}
         if not isinstance(_persona_options, dict):
             _persona_options = {}
+        from src.reasoning_control import normalize_level as _normalize_thinking
+        _thinking_level = (
+            _normalize_thinking(_thinking_request)
+            or _normalize_thinking(_persona_options.get("thinking"))
+        )
+        # Only passed when set, so callers/fakes that predate thinking control
+        # see exactly the old keyword arguments.
+        _thinking_kwargs = {"reasoning": _thinking_level} if _thinking_level else {}
         if not workspace and not workspace_rejected and _preset_workspace:
             workspace, workspace_rejected = _resolve_request_workspace(request, _preset_workspace)
         # CLAUDE.md / AGENTS.md of the workspace -- only under a trusted root.
@@ -2027,6 +2038,7 @@ def setup_chat_routes(
                         fallback_on_empty=_foreground_policy.fallback_on_empty,
                         candidate_request_factory=_chat_request_factory,
                         candidate_route_descriptors=_foreground_route_descriptors,
+                        **_thinking_kwargs,
                     ):
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:
@@ -2422,6 +2434,7 @@ def setup_chat_routes(
                             else None
                         ),
                         forced_tools=_forced_tools,
+                        **_thinking_kwargs,
                         uploaded_files=ctx.uploaded_files,
                         defer_context_shaping=_foreground_policy.enabled,
                         external_untrusted_context_seen=external_untrusted_context_seen,
