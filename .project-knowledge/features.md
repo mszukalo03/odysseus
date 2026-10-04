@@ -41,6 +41,13 @@
 - **Backup & Restore** — `scripts/odysseus-backup` CLI: snapshot/list/verify/restore `data/` safely while the app is running. Secrets are included in the tarball (it's a full data backup, not sanitized); restore requires explicit confirmation since it replaces `data/`. See [[history]]. *(docs: `docs/backup-restore.md`)*
 - **Agent Migration (spec/tooling, not yet wired into the UI)** — scriptable, source-neutral manifest builder (`scripts/agent_migration_manifest.py`) for importing another AI agent's memories/skills/conversations/archives into Odysseus, including recognizing ChatGPT `conversations.json` exports. See [[integrations]]. *(docs: `docs/agent-migration.md`)*
 
+### Vault personas, thinking, voice (2026-10)
+- **Workspace personas**: a persona binds a folder (e.g. `/vaults/omegaV2/thesis`) and loads its `ODYSSEUS.md`/`AGENTS.md`/`CLAUDE.md` chain as project instructions (trusted roots only). Persona fields: workspace, MCP allowlist, thinking default, max agent steps. File tools and allowlisted MCP tools are always offered; vault-root paths resolve inside the workspace; the step-budget guard ends every turn with an answer. Docs: `website/workspace-instructions.md`.
+- **Thinking control**: composer bulb menu (Auto/Off/Low/Medium/High) → `thinking` form field → provider-specific fields via `src/reasoning_control.py`.
+- **Live voice mode**: headset button / `/voice` / Alt+Shift+V; VAD → STT → chat with `voice=true` → streamed TTS → listen again, barge-in. Local speech server used only for local-model chats (`src/speech_routing.py`). Docs: `website/voice-mode.md`.
+- **Workspace search**: persona "Index for search" tags chunks with the workspace; retrieval in that persona's chats is limited to its folder and hidden elsewhere.
+- **Eval**: `scripts/vault_eval.py` + a YAML question file.
+
 ## Maintainer / Contributor Tooling
 
 > Not user-facing features — internal scripts for repo maintainers.
