@@ -63,6 +63,17 @@ DEFAULT_SETTINGS = {
     "stt_provider": "disabled",
     "stt_model": "base",
     "stt_language": "",
+    # Optional speech server next to a local model, used only when the chat's
+    # model endpoint shares its host; falls back to the providers above
+    # (src/speech_routing.py). Empty = off.
+    "stt_provider_local": "",
+    "stt_model_local": "",
+    "tts_provider_local": "",
+    "tts_model_local": "",
+    "tts_voice_local": "",
+    # Style instructions added to live voice-mode turns; empty = built-in
+    # default (src/voice_prompt.py).
+    "voice_mode_prompt": "",
     "search_provider": "searxng",
     # Default fallback chain — when the primary provider fails or
     # rate-limits, we try DuckDuckGo next. Free, no API key required, so

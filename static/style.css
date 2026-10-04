@@ -10936,6 +10936,131 @@ details a:hover {
   width: 100%;
 }
 
+/* ── Live voice mode bar (js/voiceMode.js) ── */
+.voice-mode-bar {
+  position: fixed;
+  left: 50%;
+  top: 56px;
+  transform: translateX(-50%);
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  color: var(--fg);
+  font-size: 13px;
+  max-width: calc(100vw - 32px);
+}
+.voice-mode-bar[hidden] {
+  display: none;
+}
+.voice-mode-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fg);
+  opacity: 0.35;
+  flex: none;
+}
+.voice-mode-bar[data-state="listening"] .voice-mode-dot,
+.voice-mode-bar[data-state="hearing"] .voice-mode-dot {
+  background: var(--accent);
+  opacity: 1;
+  animation: voice-mode-pulse 1.4s ease-in-out infinite;
+}
+.voice-mode-bar[data-state="speaking"] .voice-mode-dot {
+  background: var(--accent);
+  opacity: 0.8;
+}
+@keyframes voice-mode-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.5); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-mode-bar .voice-mode-dot { animation: none !important; }
+}
+.voice-mode-icon {
+  display: flex;
+  opacity: 0.7;
+}
+.voice-mode-label {
+  min-width: 96px;
+  white-space: nowrap;
+}
+.voice-mode-meter {
+  width: 64px;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  overflow: hidden;
+}
+.voice-mode-meter-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.05s linear;
+}
+.voice-mode-gear,
+.voice-mode-end {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+}
+.voice-mode-gear {
+  border: none;
+  padding: 4px;
+  opacity: 0.7;
+}
+.voice-mode-gear:hover,
+.voice-mode-end:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  opacity: 1;
+}
+.voice-mode-settings {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 280px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.voice-mode-settings[hidden] {
+  display: none;
+}
+.voice-mode-settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.voice-mode-settings label.voice-mode-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.voice-mode-hint {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
 /* ── Thinking level control (composer, js/thinkingControl.js) ── */
 .thinking-level-btn .thinking-level-label {
   font-size: 11px;

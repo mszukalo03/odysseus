@@ -270,6 +270,7 @@ class ChatProcessor:
         time_filter: Optional[str] = None,
         preset_system_prompt: Optional[str] = None,
         protect_preset_prompt: bool = False,
+        voice_prompt: Optional[str] = None,
         owner: Optional[str] = None,
         character_name: Optional[str] = None,
         agent_mode: bool = False,
@@ -312,6 +313,8 @@ class ChatProcessor:
             "role": "system",
             "content": UNTRUSTED_CONTEXT_POLICY,
         })
+        if voice_prompt:
+            preface.append({"role": "system", "content": voice_prompt})
 
         # Memory: core pinned facts + relevant pinned/extended recall.
         self._last_used_memories = []  # track what was injected

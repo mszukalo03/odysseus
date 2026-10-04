@@ -116,7 +116,8 @@ class STTService:
 
     # ── API endpoint ──
 
-    def _transcribe_api(self, audio_bytes: bytes, endpoint_id: str, model: str, language: str = "") -> Optional[str]:
+    def _transcribe_api(self, audio_bytes: bytes, endpoint_id: str, model: str, language: str = "",
+                        connect_timeout: Optional[float] = None) -> Optional[str]:
         from src.database import SessionLocal, ModelEndpoint
 
         db = SessionLocal()
@@ -141,7 +142,8 @@ class STTService:
             data["language"] = language
 
         try:
-            r = httpx.post(url, headers=headers, files=files, data=data, timeout=60)
+            timeout = httpx.Timeout(60, connect=connect_timeout) if connect_timeout else 60
+            r = httpx.post(url, headers=headers, files=files, data=data, timeout=timeout)
             r.raise_for_status()
             result = r.json()
             text = result.get("text", "")
@@ -153,12 +155,18 @@ class STTService:
 
     # ── Public interface ──
 
-    def transcribe(self, audio_bytes: bytes) -> Optional[str]:
+    def transcribe(self, audio_bytes: bytes, override: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """Transcribe with the configured provider.
+
+        ``override`` (see src/speech_routing.py) can swap in another provider,
+        model and connect timeout for this call; None keeps the settings.
+        """
         settings = self._load_settings()
         if settings.get("stt_enabled") is False:
             return None
-        provider = settings["stt_provider"]
-        model = settings["stt_model"]
+        override = override or {}
+        provider = override.get("provider") or settings["stt_provider"]
+        model = override.get("model") or settings["stt_model"]
         language = settings.get("stt_language", "")
 
         if provider in ("disabled", "browser"):
@@ -168,6 +176,9 @@ class STTService:
             return self._transcribe_local(audio_bytes, language)
         elif provider.startswith("endpoint:"):
             endpoint_id = provider.split(":", 1)[1]
+            if override.get("connect_timeout"):
+                return self._transcribe_api(audio_bytes, endpoint_id, model, language,
+                                            connect_timeout=override["connect_timeout"])
             return self._transcribe_api(audio_bytes, endpoint_id, model, language)
         else:
             logger.error(f"Unknown STT provider: {provider}")

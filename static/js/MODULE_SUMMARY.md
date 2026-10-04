@@ -68,6 +68,7 @@ The largest and most central subsystem. Chat submission → backend SSE → prog
 | **`assistant.js`** | Assistant/persona behaviors and message styling helpers. |
 | **`tts-ai.js`** | AI text-to-speech manager, enqueueing, streaming TTS, and playback button injection. |
 | **`voiceRecorder.js`** | Voice recording from the composer microphone. |
+| **`voiceMode.js`** | Live voice mode: energy VAD on the mic, server transcription, auto-send with `voice=true`, streamed TTS reply, re-listen on `odysseus:chat-stream-end` / TTS `queuedrained`, barge-in. Composer headset button, `/voice`, Alt+Shift+V. See `website/voice-mode.md`. |
 | **`thinkingControl.js`** | Composer Thinking menu (Auto/Off/Low/Medium/High), persisted in toggle state; `chat.js` sends it as the `thinking` form field (omitted for Auto). |
 | **`fileHandler.js`** | Attachment picker, paste/drop handling, upload, attachment strip rendering, pending-file management. |
 | **`codeRunner.js`** | Client-side execution affordances for code blocks returned by the model. |
@@ -192,10 +193,15 @@ Server responds with SSE stream
         ├── Lines starting with "event:" set next-error state
         └── Lines starting with "data:" carry JSON payloads
 
+Delta payloads with `"thinking": true` are reasoning text (rendered in the live
+thinking box). When a stream finishes (any outcome) chat.js dispatches the DOM
+event `odysseus:chat-stream-end` ({sessionId}).
+
 JSON events are dispatched by "type":
   delta              → streamingRenderer → markdown → live reply text
   agent_prep         → update spinner label
   tool_start         → finalize text bubble; create agent-thread node with wave animation
+                       (also dispatches DOM event `odysseus:agent-tool-start`)
   tool_progress      → append/update live stdout/stderr tail
   tool_output        → mark node done/failed, render output, diffs, screenshots
   agent_step         → finalize tool thread; create new msg-continuation bubble

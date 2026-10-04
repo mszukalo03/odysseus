@@ -26,8 +26,30 @@ class AITTSManager {
         this._streamResetFn = null;
         this._streamDebounceTimer = null;
 
+        // Tunables live voice mode (voiceMode.js) adjusts while it runs; the
+        // defaults keep normal read-aloud exactly as before.
+        this.minSentenceChars = 15;   // shorter streamed sentences are skipped
+        this.earlyFlush = false;      // speak a long first clause before its full stop
+        this.prefetch = false;        // synthesize the next queued item while one plays
+        this.modelEndpointId = null;  // chat's endpoint, for speech routing on the server
+        this._inflight = new Map();   // cacheKey -> pending synthesis promise
+        this._listeners = {};         // 'playbackstart' | 'queuedrained' | 'stopped'
+
         // Check if TTS service is available
         this.checkAvailability();
+    }
+
+    on(event, fn) {
+        (this._listeners[event] = this._listeners[event] || []).push(fn);
+        return () => {
+            this._listeners[event] = (this._listeners[event] || []).filter(f => f !== fn);
+        };
+    }
+
+    _emit(event) {
+        for (const fn of (this._listeners[event] || []).slice()) {
+            try { fn(); } catch (e) { console.warn('TTS listener error:', e); }
+        }
     }
 
     async checkAvailability() {
@@ -134,19 +156,31 @@ class AITTSManager {
         if (this.cache.has(cacheKey)) {
             return this.cache.get(cacheKey);
         }
+        // A prefetch for the same text may already be on the wire.
+        if (this._inflight.has(cacheKey)) {
+            return this._inflight.get(cacheKey);
+        }
+        const pending = this._synthesizeRemote(plainText, cacheKey, onProgress);
+        this._inflight.set(cacheKey, pending);
+        try {
+            return await pending;
+        } finally {
+            this._inflight.delete(cacheKey);
+        }
+    }
 
+    async _synthesizeRemote(plainText, cacheKey, onProgress) {
         try {
             if (onProgress) onProgress('synthesizing');
 
+            const body = { text: plainText, format: 'audio' };
+            if (this.modelEndpointId) body.model_endpoint_id = this.modelEndpointId;
             const response = await fetch('/api/tts/synthesize', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    text: plainText,
-                    format: 'audio'
-                })
+                body: JSON.stringify(body)
             });
 
             if (!response.ok) {
@@ -213,6 +247,7 @@ class AITTSManager {
             if (voice) utterance.voice = voice;
             utterance.rate = this.playbackSpeed;
 
+            utterance.onstart = () => this._emit('playbackstart');
             utterance.onend = () => {
                 this.isPlaying = false;
                 resolve();
@@ -253,6 +288,7 @@ class AITTSManager {
             this.currentAudio = null;
             this.isPlaying = false;
         }
+        this._emit('stopped');
     }
 
     /**
@@ -272,6 +308,11 @@ class AITTSManager {
 
         while (this._queue.length > 0) {
             const item = this._queue[0];
+            // Synthesize the next item while this one plays, so sentences
+            // follow each other without a gap (voice mode turns this on).
+            if (this.prefetch && !this.useBrowserTTS && this._queue[1]) {
+                this.synthesize(this._queue[1].text).catch(() => {});
+            }
             try {
                 await this._playQueueItem(item);
             } catch (err) {
@@ -284,6 +325,7 @@ class AITTSManager {
         }
 
         this._processing = false;
+        this._emit('queuedrained');
     }
 
     async _playQueueItem(item) {
@@ -340,6 +382,7 @@ class AITTSManager {
                     };
                     audio.play().then(() => {
                         this.isPlaying = true;
+                        this._emit('playbackstart');
                     }).catch(reject);
                 });
             }
@@ -393,12 +436,20 @@ class AITTSManager {
             }
         }
 
+        // Voice mode: speak a long opening clause at its comma instead of
+        // waiting for the full stop, to cut time-to-first-audio.
+        if (sentences.length === 0 && this.earlyFlush && this._streamSentencesSent === 0
+            && current.length >= 60) {
+            var cut = Math.max(current.lastIndexOf(', '), current.lastIndexOf('; '));
+            if (cut >= 40) sentences.push(current.substring(0, cut + 1).trim());
+        }
+
         if (sentences.length === 0) return;
 
         var advancedChars = 0;
         for (var j = 0; j < sentences.length; j++) {
             var sentence = sentences[j];
-            if (sentence.length < 15) {
+            if (sentence.length < this.minSentenceChars) {
                 advancedChars += sentence.length + 1;
                 continue;
             }
@@ -445,7 +496,7 @@ class AITTSManager {
         if (!plainText) return;
 
         var remaining = plainText.substring(this._streamSentencesSent).trim();
-        if (remaining.length >= 15) {
+        if (remaining.length >= this.minSentenceChars) {
             var btn = this._streamButton || this._createPlaceholderButton();
             var resetFn = this._streamResetFn || function() {};
             this.enqueue(remaining, btn, resetFn);

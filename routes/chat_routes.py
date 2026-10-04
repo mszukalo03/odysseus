@@ -1011,6 +1011,8 @@ def setup_chat_routes(
         # Thinking level from the composer (auto/off/low/medium/high). Resolved
         # against the persona default further down; auto changes nothing.
         _thinking_request = form_data.get("thinking") or (body or {}).get("thinking")
+        # Live voice mode (static/js/voiceMode.js): spoken replies.
+        _voice_mode = str(form_data.get("voice") or (body or {}).get("voice") or "").lower() == "true"
         # Untrusted-context callers (browser extension): pin plain chat.
         no_tools = str(form_data.get("no_tools") or "").lower() == "true"
         tool_approval_id = (
@@ -1041,6 +1043,9 @@ def setup_chat_routes(
         from src.reasoning_control import normalize_level as _normalize_thinking
         _thinking_level = (
             _normalize_thinking(_thinking_request)
+            # A spoken turn wants a fast reply: thinking off unless the
+            # composer picked a level explicitly.
+            or ("off" if _voice_mode else None)
             or _normalize_thinking(_persona_options.get("thinking"))
         )
         # Only passed when set, so callers/fakes that predate thinking control
@@ -1414,6 +1419,7 @@ def setup_chat_routes(
             webhook_manager=webhook_manager,
             use_enhanced_message=True,
             workspace_instructions=_workspace_instructions,
+            voice_mode=_voice_mode,
             # Skills index only ships when the model can actually call
             # manage_skills (agent mode). In plain chat or incognito the
             # index would be useless / unwanted noise.
