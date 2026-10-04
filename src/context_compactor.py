@@ -238,11 +238,16 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
 
     # Separate system messages from conversation.
     # Messages marked _protected (e.g. active document) are never trimmed.
+    # ``_protected == "lead"`` (a workspace's project instructions riding with
+    # the persona prompt) also keeps its place at the very front.
+    lead_msgs = []
     system_msgs = []
     protected_msgs = []
     convo_msgs = []
     for msg in messages:
-        if msg.get("_protected"):
+        if msg.get("_protected") == "lead":
+            lead_msgs.append(msg)
+        elif msg.get("_protected"):
             protected_msgs.append(msg)
         elif msg.get("role") == "system":
             system_msgs.append(msg)
@@ -250,8 +255,14 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
             convo_msgs.append(msg)
 
     # Protected messages count toward budget but are never dropped
-    protected_tokens = estimate_tokens(protected_msgs)
+    protected_tokens = estimate_tokens(lead_msgs + protected_msgs)
     budget -= protected_tokens
+    if lead_msgs and protected_tokens > (context_length - reserve_tokens) // 2:
+        logger.warning(
+            "Protected instructions use %s of %s budget tokens (ctx=%s); "
+            "the model has little room left for the conversation",
+            protected_tokens, context_length - reserve_tokens, context_length,
+        )
 
     # Priority: keep first system msg (preset prompt), drop others (memory, RAG, memo).
     # Exception: a research-spinoff primer (the seeded report that grounds a
@@ -276,7 +287,7 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
                 result.append(msg)
             else:
                 break
-        return _sanitize_tool_messages(result + protected_msgs + convo_msgs)
+        return _sanitize_tool_messages(lead_msgs + result + protected_msgs + convo_msgs)
 
     # Still too big — truncate the first system message (but keep more than 500 chars)
     if essential_system:
@@ -287,7 +298,7 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
             essential_system[0] = truncated_system
             trimmed = essential_system + convo_msgs
             if estimate_tokens(trimmed) <= budget:
-                return _sanitize_tool_messages(essential_system + protected_msgs + convo_msgs)
+                return _sanitize_tool_messages(lead_msgs + essential_system + protected_msgs + convo_msgs)
 
     # Still too big — drop older conversation turns BUT always keep the current
     # user turn. If a pasted message alone exceeds the model context, truncate
@@ -295,6 +306,13 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
     # model appears to "ignore" large pastes because it never receives them.
     # Hermes-style: recent context matters more than old context.
     PROTECT_RECENT = 10
+    # The user's actual request must survive too. In an agent turn the last
+    # message is a tool result, so "keep the current turn" alone would let a
+    # long tool exchange push the question itself out of the window.
+    # Only matters when the current turn isn't the user's own message.
+    question = None
+    if convo_msgs and _latest_user_request(convo_msgs[-1:]) is None:
+        question = _latest_user_request(convo_msgs[:-1])
     current_msg = convo_msgs[-1:] if convo_msgs else []
     prior_convo = convo_msgs[:-1] if convo_msgs else []
     if len(prior_convo) >= PROTECT_RECENT:
@@ -309,15 +327,47 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
             prior_convo.pop(0)
         convo_msgs = prior_convo + current_msg
 
+    if question is not None and not any(m is question for m in convo_msgs):
+        convo_msgs = _reinsert_in_order(question, convo_msgs, messages)
+        # Make room for it by dropping the oldest messages that followed it,
+        # never the current turn.
+        while (len(convo_msgs) > 2
+               and estimate_tokens(essential_system + protected_msgs + convo_msgs) > budget):
+            idx = next(i for i, m in enumerate(convo_msgs) if m is question)
+            if idx + 1 >= len(convo_msgs) - 1:
+                break
+            convo_msgs.pop(idx + 1)
+
     # If the current message itself is too large, shrink only that message.
     if current_msg and estimate_tokens(essential_system + protected_msgs + convo_msgs) > budget:
         prefix = essential_system + protected_msgs + convo_msgs[:-1]
         available_for_current = max(64, budget - estimate_tokens(prefix))
         convo_msgs[-1] = _truncate_message_to_token_budget(convo_msgs[-1], available_for_current)
 
-    result = _sanitize_tool_messages(essential_system + protected_msgs + convo_msgs)
+    result = _sanitize_tool_messages(lead_msgs + essential_system + protected_msgs + convo_msgs)
     logger.info(f"Trimmed to {estimate_tokens(result)} tokens ({len(result)} messages)")
     return result
+
+
+def _latest_user_request(messages: List[Dict]) -> Optional[Dict]:
+    """The newest user-authored message (not injected untrusted context)."""
+    for msg in reversed(messages):
+        if msg.get("role") != "user":
+            continue
+        if (msg.get("metadata") or {}).get("trusted") is False:
+            continue
+        return msg
+    return None
+
+
+def _reinsert_in_order(msg: Dict, kept: List[Dict], original: List[Dict]) -> List[Dict]:
+    """Put ``msg`` back into ``kept`` at its original relative position."""
+    order = {id(m): i for i, m in enumerate(original)}
+    target = order.get(id(msg), -1)
+    for i, m in enumerate(kept):
+        if order.get(id(m), -1) > target:
+            return kept[:i] + [msg] + kept[i:]
+    return kept[:-1] + [msg] + kept[-1:] if kept else [msg]
 
 
 async def maybe_compact(

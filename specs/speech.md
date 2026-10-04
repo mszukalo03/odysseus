@@ -105,6 +105,14 @@ Microphone audio, uploaded audio, endpoint transcripts, and assistant text sent 
 
 TTS cached audio can contain sensitive assistant text rendered as speech. The cache is global, has no owner partition or TTL, and is served inline/base64 by POST responses without a dedicated generated-file route.
 
+## Live Voice Mode And Local Speech Routing
+
+`static/js/voiceMode.js` runs a hands-free loop: energy VAD on a Web Audio analyser, `MediaRecorder` per utterance, `/api/stt/transcribe`, auto-send with `voice=true`, streaming TTS of the reply, then re-listen when the stream ends and the TTS queue drains (`AITTSManager` now emits `playbackstart`, `queuedrained` and `stopped`). Barge-in stops TTS and aborts the stream. While active it raises `AITTSManager` voice tunables (`autoPlay`, `minSentenceChars` 2, `earlyFlush`, `prefetch`) and restores them on exit. User docs: `website/voice-mode.md`.
+
+For a `voice=true` chat request the route adds the voice-style system message from `src/voice_prompt.py` (setting `voice_mode_prompt` overrides it) and defaults the thinking level to off unless the request names one.
+
+Both speech routes run synthesis/transcription in the threadpool and accept an optional chat model endpoint (`model_endpoint_id`: id or base URL). `src/speech_routing.py` tries the optional `stt_provider_local` / `tts_provider_local` pair first (1.5 s connect timeout) when that endpoint shares a host with the local speech endpoint, then the default provider. With the local settings empty, behavior is unchanged. `ensure_local_speech()` in `src/speech_bootstrap.py` seeds them from `ODYSSEUS_SPEECH_LOCAL_*`.
+
 ## Degraded Behavior
 
 - Optional local speech packages may be absent.

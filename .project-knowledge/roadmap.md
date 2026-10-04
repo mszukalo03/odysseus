@@ -5,7 +5,7 @@
 
 ## Current Goal
 
-Sidebar categorization and the Email 3-pane redesign are committed and pushed (`b205f82`, `236ef91`). Two follow-up polish rounds since: 2026-07-25 (icon-rail collapse, Theme layout overflow, new-mail pulse banner) and 2026-07-26 (folder-badge readability, modal font-family, reader action row down to 4 icon-only buttons with a consolidated Reply dropdown). 2026-07-27/28: agent shell execution is now actually reliable — `sudo` prompts for a password in the UI and feeds it over stdin (with a real-pty fallback for wrapper scripts like `garuda-update` that call sudo internally), shell tools use the real `HOME`, `tool_progress` SSE events reach the browser, `bash`/`python` are unconditionally available instead of depending on keyword matching against a downed ChromaDB, and pty output is stripped of ANSI escape codes. The systemd service is confirmed installed, enabled, and running (`systemctl status odysseus-ui`). See Active TODOs below for what's still open. See [[sessions]] and [[history]] for the full write-up.
+Vault personas, thinking control, live voice and workspace search (2026-10-04). Branches `fix/vault-persona` → `feat/thinking-control` → `feat/voice-mode` → `feat/workspace-rag` (stacked on `dev`): personas that bind an Obsidian vault side now answer instead of exploring to the step cap (`src/agent_budget.py`, protected instructions in trimming, answer-first project rules, `ODYSSEUS.md` lean manuals, grep count, vault-root path fallback); per-chat thinking level (`src/reasoning_control.py`); hands-free voice mode (`static/js/voiceMode.js`, local-speech routing); workspace-scoped retrieval. Not yet pushed or deployed to the XPS. Vault-side plan and status: `personal/10-projects/software/odysseus/readme.md`.
 
 ---
 

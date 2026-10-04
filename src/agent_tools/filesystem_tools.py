@@ -17,6 +17,26 @@ _CODENAV_SKIP_DIRS = frozenset({
 })
 _CODENAV_MAX_HITS = 200
 _CODENAV_MAX_LINE = 400
+
+# Upper bound on matches tallied by grep's count mode.
+_CODENAV_MAX_COUNT = 20_000
+
+
+def _format_grep_counts(lines, pattern: str, cap: int) -> str:
+    """Per-file match counts from ``file:line:text`` grep output, plus a total."""
+    import re as _re
+    counts: Dict[str, int] = {}
+    for ln in lines:
+        m = _re.match(r"^(.*?):(\d+):", ln)
+        path = m.group(1) if m else ln
+        counts[path] = counts.get(path, 0) + 1
+    total = sum(counts.values())
+    rows = [f"{n}\t{path}" for path, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+    head = f"{total} matching lines for {pattern!r} in {len(counts)} file(s)"
+    if total >= cap:
+        head += f" (stopped counting at {cap})"
+    return head + "\n" + "\n".join(rows)
+
 _GREP_TIMEOUT_SECONDS = 20
 _GREP_STDERR_PREFIX = 20_000
 
@@ -803,6 +823,12 @@ class GrepTool:
         except (TypeError, ValueError):
             max_hits = _CODENAV_MAX_HITS
         max_hits = max(1, min(max_hits, _CODENAV_MAX_HITS))
+        # count mode: tally matches per file instead of listing them, so a model
+        # can answer "how many rows/entries" exactly. It scans past the listing
+        # cap (matches aren't returned, only counted).
+        count_only = bool(args.get("count"))
+        if count_only:
+            max_hits = _CODENAV_MAX_COUNT
         try:
             root = _resolve_search_root(str(args.get("path", "")))
         except ValueError as e:
@@ -1115,7 +1141,11 @@ class GrepTool:
         if err:
             return {"error": err, "exit_code": 1}
         if not lines:
+            if count_only:
+                return {"output": f"0 matches for {pattern!r} under {root}", "exit_code": 0}
             return {"output": f"No matches for {pattern!r} under {root}", "exit_code": 0}
+        if count_only:
+            return {"output": _format_grep_counts(lines, pattern, max_hits), "exit_code": 0}
         out = "\n".join(ln[:_CODENAV_MAX_LINE] for ln in lines)
         if len(lines) >= max_hits:
             out += f"\n... [capped at {max_hits} matches]"

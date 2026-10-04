@@ -115,3 +115,69 @@ def ensure_speech_gateway(session_factory=None) -> dict:
         ", ".join(changed) or "nothing, already configured",
     )
     return {"configured": True, "endpoint_id": ep_id, "created": created, "seeded": changed}
+
+
+DEFAULT_LOCAL_NAME = "Local speech"
+
+
+def ensure_local_speech(session_factory=None) -> dict:
+    """Apply ODYSSEUS_SPEECH_LOCAL_* env vars: the optional speech server that
+    runs next to a local model (see src/speech_routing.py).
+
+        ODYSSEUS_SPEECH_LOCAL_BASE_URL=http://pc.tailnet:8000/v1
+        ODYSSEUS_SPEECH_LOCAL_API_KEY=...            (optional)
+        ODYSSEUS_STT_LOCAL_MODEL=Systran/faster-whisper-large-v3-turbo
+        ODYSSEUS_TTS_LOCAL_MODEL=speaches-ai/Kokoro-82M-v1.0-ONNX
+        ODYSSEUS_TTS_LOCAL_VOICE=af_heart
+
+    Seeds ``stt_provider_local`` / ``tts_provider_local`` (and their model /
+    voice) only while they are unset, like the main gateway seeding.
+    """
+    base_url = _env("ODYSSEUS_SPEECH_LOCAL_BASE_URL").rstrip("/")
+    if not base_url:
+        return {"configured": False}
+
+    from src.settings import load_settings, save_settings
+
+    if session_factory is None:
+        from core.database import SessionLocal as session_factory
+
+    db = session_factory()
+    try:
+        ep, created = _find_or_create_endpoint(
+            db,
+            base_url,
+            _env("ODYSSEUS_SPEECH_LOCAL_API_KEY"),
+            _env("ODYSSEUS_SPEECH_LOCAL_NAME", DEFAULT_LOCAL_NAME),
+        )
+        ep_id = ep.id
+    finally:
+        db.close()
+
+    provider = f"endpoint:{ep_id}"
+    settings = dict(load_settings())
+    changed = []
+    if not settings.get("stt_provider_local"):
+        settings["stt_provider_local"] = provider
+        model = _env("ODYSSEUS_STT_LOCAL_MODEL")
+        if model:
+            settings["stt_model_local"] = model
+        changed.append("stt")
+    if not settings.get("tts_provider_local"):
+        settings["tts_provider_local"] = provider
+        model = _env("ODYSSEUS_TTS_LOCAL_MODEL")
+        if model:
+            settings["tts_model_local"] = model
+        voice = _env("ODYSSEUS_TTS_LOCAL_VOICE")
+        if voice:
+            settings["tts_voice_local"] = voice
+        changed.append("tts")
+    if changed:
+        save_settings(settings)
+
+    logger.info(
+        "Local speech %s at %s (%s); seeded: %s",
+        ep_id, base_url, "registered" if created else "existing",
+        ", ".join(changed) or "nothing, already configured",
+    )
+    return {"configured": True, "endpoint_id": ep_id, "created": created, "seeded": changed}

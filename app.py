@@ -1114,6 +1114,11 @@ async def _startup_event():
         ensure_speech_gateway()
     except Exception as e:
         logger.warning(f"Speech gateway setup from env failed: {e}")
+    try:
+        from src.speech_bootstrap import ensure_local_speech
+        ensure_local_speech()
+    except Exception as e:
+        logger.warning(f"Local speech setup from env failed: {e}")
     # Strong refs to fire-and-forget startup tasks. Without this, Python may
     # GC tasks created with `asyncio.create_task(...)` before they finish.
     _startup_tasks: list[asyncio.Task] = getattr(app.state, "_startup_tasks", [])

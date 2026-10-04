@@ -63,6 +63,17 @@ DEFAULT_SETTINGS = {
     "stt_provider": "disabled",
     "stt_model": "base",
     "stt_language": "",
+    # Optional speech server next to a local model, used only when the chat's
+    # model endpoint shares its host; falls back to the providers above
+    # (src/speech_routing.py). Empty = off.
+    "stt_provider_local": "",
+    "stt_model_local": "",
+    "tts_provider_local": "",
+    "tts_model_local": "",
+    "tts_voice_local": "",
+    # Style instructions added to live voice-mode turns; empty = built-in
+    # default (src/voice_prompt.py).
+    "voice_mode_prompt": "",
     "search_provider": "searxng",
     # Default fallback chain — when the primary provider fails or
     # rate-limits, we try DuckDuckGo next. Free, no API key required, so
@@ -124,6 +135,9 @@ DEFAULT_SETTINGS = {
     "research_run_timeout_seconds": 1800,
     "agent_max_tool_calls": 0,
     "agent_max_rounds": 20,  # per-message agent step cap (clamped 1..200)
+    # At the step cap (or tool budget), spend one last tool-free round on an
+    # answer instead of stopping silently (src/agent_budget.py).
+    "agent_answer_on_cap": True,
     # Soft input-token budget for the agent loop. The DEFAULT value (6000) is the
     # "auto" sentinel: it means "scale the budget to the model's context window"
     # (#1230) — so long-context models aren't capped at 6000. Set ANY OTHER value

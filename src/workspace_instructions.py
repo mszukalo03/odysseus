@@ -1,4 +1,4 @@
-"""Project instruction files for agent workspaces (CLAUDE.md / AGENTS.md).
+"""Project instruction files for agent workspaces (ODYSSEUS.md / AGENTS.md / CLAUDE.md).
 
 When an agent chat is bound to a workspace folder, Odysseus can load the
 instruction files that tools like Claude Code and Codex read: one per
@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 
 TRUSTED_ROOTS_ENV = "ODYSSEUS_TRUSTED_INSTRUCTION_ROOTS"
 # Checked in this order in every directory; the first one present wins.
-INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md")
+# ODYSSEUS.md lets a folder give Odysseus its own (usually leaner) manual while
+# Claude Code keeps reading CLAUDE.md and Codex AGENTS.md from the same folder.
+INSTRUCTION_FILENAMES = ("ODYSSEUS.md", "AGENTS.md", "CLAUDE.md")
 MAX_IMPORT_DEPTH = 4
 MAX_TOTAL_CHARS = 60_000
 
@@ -182,7 +184,8 @@ def load_workspace_instructions(workspace: Optional[str]) -> str:
             "## Project instructions\n"
             f"The active workspace `{os.path.realpath(workspace)}` ships its own instruction files. "
             "Follow them for all work in this workspace; when they conflict with general "
-            "defaults, these win. File paths in them are relative to the file they appear in.\n\n"
+            "defaults, these win. Relative file paths in them are relative to the folder of the file they "
+            "appear in; tool paths are relative to the workspace.\n\n"
             + "\n\n".join(sections)
         )
         if len(rendered) > MAX_TOTAL_CHARS:

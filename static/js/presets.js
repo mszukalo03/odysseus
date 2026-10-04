@@ -275,10 +275,51 @@ function initNameDropdown() {
 function _readBindingInputs() {
   const ws = document.getElementById('custom-workspace');
   const mcp = document.getElementById('custom-mcp-servers');
-  return {
+  const out = {
     workspace: ws ? ws.value.trim() : '',
     mcp_servers: mcp ? mcp.value.split(',').map(s => s.trim()).filter(Boolean) : [],
   };
+  // Agent options are only sent when set, so the server keeps the old
+  // preset shape (and the global defaults) for personas that don't use them.
+  const think = document.getElementById('custom-thinking');
+  if (think && think.value) out.thinking = think.value;
+  const rounds = document.getElementById('custom-max-rounds');
+  const n = rounds ? parseInt(rounds.value, 10) : NaN;
+  if (Number.isFinite(n) && n >= 1) out.max_rounds = Math.min(n, 200);
+  return out;
+}
+
+// Index the persona's workspace for retrieval (POST /api/presets/index-workspace).
+// Chunks are tagged with the workspace, so only this persona's chats see them.
+async function _indexWorkspace() {
+  const ws = document.getElementById('custom-workspace');
+  const status = document.getElementById('custom-workspace-index-status');
+  const btn = document.getElementById('custom-workspace-index-btn');
+  const folder = ws ? ws.value.trim() : '';
+  if (!status || !btn) return;
+  if (!folder) { status.textContent = 'Set a workspace folder first.'; return; }
+  btn.disabled = true;
+  status.textContent = 'Indexing...';
+  try {
+    const res = await fetch(`${API_BASE}/api/presets/index-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace: folder }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data && data.detail) || `HTTP ${res.status}`);
+    status.textContent = `Indexed ${data.indexed_count} chunks` + (data.failed_count ? ` (${data.failed_count} failed)` : '');
+  } catch (e) {
+    status.textContent = 'Indexing failed: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'custom-workspace-index-btn') _indexWorkspace();
+  });
 }
 
 function _writeBindingInputs(src) {
@@ -286,8 +327,13 @@ function _writeBindingInputs(src) {
   const mcp = document.getElementById('custom-mcp-servers');
   if (ws) ws.value = (src && src.workspace) || '';
   if (mcp) mcp.value = ((src && src.mcp_servers) || []).join(', ');
+  const think = document.getElementById('custom-thinking');
+  if (think) think.value = (src && src.thinking && src.thinking !== 'auto') ? src.thinking : '';
+  const rounds = document.getElementById('custom-max-rounds');
+  if (rounds) rounds.value = (src && src.max_rounds) ? String(src.max_rounds) : '';
   const box = document.getElementById('char-binding');
-  if (box) box.open = !!(src && (src.workspace || (src.mcp_servers || []).length));
+  if (box) box.open = !!(src && (src.workspace || (src.mcp_servers || []).length
+    || src.thinking || src.max_rounds));
 }
 
 function _tryLoadTemplate(name) {
@@ -623,6 +669,9 @@ export function openCustomPresetModal() {
     if (tkv) tkv.textContent = (saved === 0 || saved > 8192) ? 'No limit' : parseInt(saved).toLocaleString();
   }
   if (promptInput) promptInput.value = savedConfig.system_prompt || '';
+  // Workspace, MCP allowlist and agent options of the active persona: without
+  // this the form reopened blank and saving it again wiped them.
+  _writeBindingInputs(savedConfig);
 
   // Load inject fields
   const prefixInput = document.getElementById('inject-prefix');
@@ -870,6 +919,8 @@ export async function saveCustomPreset(showToast, showError) {
           max_tokens: config.max_tokens,
           workspace: config.workspace || '',
           mcp_servers: config.mcp_servers || [],
+          ...(config.thinking ? { thinking: config.thinking } : {}),
+          ...(config.max_rounds ? { max_rounds: config.max_rounds } : {}),
         }
         const ENDPOINT = `${API_BASE}/api/presets/templates`;
 

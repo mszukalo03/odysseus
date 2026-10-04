@@ -158,7 +158,8 @@ class TTSService:
 
     # ── API endpoint ──
 
-    def _synthesize_api(self, text: str, endpoint_id: str, model: str, voice: str, speed: float = 1.0) -> Optional[bytes]:
+    def _synthesize_api(self, text: str, endpoint_id: str, model: str, voice: str, speed: float = 1.0,
+                        connect_timeout: Optional[float] = None) -> Optional[bytes]:
         from src.database import SessionLocal, ModelEndpoint
 
         db = SessionLocal()
@@ -186,7 +187,8 @@ class TTSService:
         }
 
         try:
-            r = httpx.post(url, json=payload, headers=headers, timeout=60)
+            timeout = httpx.Timeout(60, connect=connect_timeout) if connect_timeout else 60
+            r = httpx.post(url, json=payload, headers=headers, timeout=timeout)
             r.raise_for_status()
             logger.info(f"API TTS: {len(r.content)} bytes from {base_url}")
             return r.content
@@ -196,13 +198,20 @@ class TTSService:
 
     # ── Public interface ──
 
-    def synthesize(self, text: str, use_cache: bool = True) -> Optional[bytes]:
+    def synthesize(self, text: str, use_cache: bool = True,
+                   override: Optional[Dict[str, Any]] = None) -> Optional[bytes]:
+        """Synthesize with the configured provider.
+
+        ``override`` (see src/speech_routing.py) can swap in another provider,
+        model, voice and connect timeout for this call; None keeps the settings.
+        """
         settings = self._load_settings()
         if settings.get("tts_enabled") is False:
             return None
-        provider = settings["tts_provider"]
-        model = settings["tts_model"]
-        voice = settings["tts_voice"]
+        override = override or {}
+        provider = override.get("provider") or settings["tts_provider"]
+        model = override.get("model") or settings["tts_model"]
+        voice = override.get("voice") or settings["tts_voice"]
         speed = _safe_speed(settings.get("tts_speed", "1"))
 
         if provider in ("disabled", "browser"):
@@ -229,7 +238,11 @@ class TTSService:
                 return None
         elif provider.startswith("endpoint:"):
             endpoint_id = provider.split(":", 1)[1]
-            audio_data = self._synthesize_api(text, endpoint_id, model, voice, speed)
+            if override.get("connect_timeout"):
+                audio_data = self._synthesize_api(text, endpoint_id, model, voice, speed,
+                                                  connect_timeout=override["connect_timeout"])
+            else:
+                audio_data = self._synthesize_api(text, endpoint_id, model, voice, speed)
         else:
             logger.error(f"Unknown TTS provider: {provider}")
             return None
@@ -240,9 +253,9 @@ class TTSService:
 
         return audio_data
 
-    def synthesize_to_base64(self, text: str) -> Optional[str]:
+    def synthesize_to_base64(self, text: str, override: Optional[Dict[str, Any]] = None) -> Optional[str]:
         import base64
-        audio = self.synthesize(text)
+        audio = self.synthesize(text, override=override) if override else self.synthesize(text)
         if audio:
             return base64.b64encode(audio).decode("utf-8")
         return None

@@ -403,6 +403,27 @@ def _resolve_tool_path(raw_path: str) -> str:
     )
 
 
+def _strip_workspace_name_prefix(base: str, rel_path: str, candidate: str) -> str:
+    """Forgive a relative path written from the workspace's parent folder.
+
+    Instruction files often link from a shared root (``thesis/20-lit/x.md``
+    while the workspace *is* ``.../thesis``), which resolves to
+    ``.../thesis/thesis/...`` and fails. When the literal path doesn't exist,
+    its first component is the workspace's own folder name, and the stripped
+    path (or, for a new file, its parent folder) does exist, use the stripped
+    one. Containment is still checked by the caller on the result.
+    """
+    if os.path.lexists(candidate):
+        return candidate
+    parts = os.path.normpath(rel_path).split(os.sep)
+    if len(parts) < 2 or parts[0] != os.path.basename(base):
+        return candidate
+    stripped = os.path.join(base, *parts[1:])
+    if os.path.lexists(stripped) or os.path.isdir(os.path.dirname(stripped)):
+        return stripped
+    return candidate
+
+
 def _resolve_tool_path_in_workspace(workspace: str, raw_path: str) -> str:
     """Confine a model-supplied path to the active workspace.
 
@@ -417,6 +438,8 @@ def _resolve_tool_path_in_workspace(workspace: str, raw_path: str) -> str:
     base = os.path.realpath(workspace)
     expanded = os.path.expanduser(str(raw_path).strip())
     candidate = expanded if os.path.isabs(expanded) else os.path.join(base, expanded)
+    if not os.path.isabs(expanded):
+        candidate = _strip_workspace_name_prefix(base, expanded, candidate)
     resolved = os.path.realpath(candidate)
     if _is_sensitive_path(resolved):
         raise ValueError(

@@ -14,6 +14,8 @@ import { addAITTSButton } from './tts-ai.js';
 import markdownModule from './markdown.js';
 import spinnerModule from './spinner.js';
 import presetsModule from './presets.js';
+import thinkingControl from './thinkingControl.js';
+import voiceMode from './voiceMode.js';
 import fileHandlerModule from './fileHandler.js';
 import searchModule from './search.js';
 import documentModule from './document.js';
@@ -1933,6 +1935,17 @@ import { loadPanel } from './panels.js';
       if (presetsModule.getSelectedPreset()) {
         fd.append('preset_id', presetsModule.getSelectedPreset());
       }
+      // Thinking level (composer menu); omitted for Auto so the persona or
+      // model default applies.
+      const _thinking = thinkingControl.requestValue();
+      if (_thinking) {
+        fd.append('thinking', _thinking);
+      }
+      // Live voice mode: the reply will be spoken (speech-style prompt,
+      // thinking off unless chosen explicitly).
+      if (voiceMode.isActive()) {
+        fd.append('voice', 'true');
+      }
 
 
       // Superseded during preflight (uploads, document saves): a newer send
@@ -3504,6 +3517,9 @@ import { loadPanel } from './panels.js';
               } else if (json.type === 'tool_start') {
                 _closeOpenThinkingMarkup(_isBg);
                 if (_isBg) continue;
+                document.dispatchEvent(new CustomEvent('odysseus:agent-tool-start', {
+                  detail: { tool: json.tool || '' },
+                }));
                 _cancelThinkingTimer();
                 _removeThinkingSpinner();
                 // Force-close thinking if still open — tools are real content, not thinking
@@ -4554,6 +4570,12 @@ import { loadPanel } from './panels.js';
       clearResponseTimeout();
       clearProcessingProbe();
       clearFirstTokenWaitTimers();
+      // Listeners such as live voice mode (voiceMode.js) re-arm on this.
+      try {
+        document.dispatchEvent(new CustomEvent('odysseus:chat-stream-end', {
+          detail: { sessionId: streamSessionId },
+        }));
+      } catch (_) { /* never let a listener break cleanup */ }
       // A replacement send bumps the session's generation the moment it
       // starts, before it registers or reaches the server, so cleanup rights
       // are decided by generation: a superseded send may remove only what it

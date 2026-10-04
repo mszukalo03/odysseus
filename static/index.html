@@ -1207,6 +1207,19 @@
               <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
             </svg>
           </button>
+          <!-- Thinking level (Auto / Off / Low / Medium / High), see js/thinkingControl.js -->
+          <button type="button" class="input-icon-btn thinking-level-btn" title="Thinking: Auto" id="thinking-level-btn" aria-label="Thinking level" aria-haspopup="menu" aria-expanded="false" aria-pressed="false">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.74V16h8v-1.26A7 7 0 0 0 12 2z"/>
+            </svg>
+            <span class="thinking-level-label"></span>
+          </button>
+          <!-- Live voice mode (hands-free), see js/voiceMode.js -->
+          <button type="button" class="input-icon-btn voice-mode-btn" title="Voice mode (Alt+Shift+V)" id="voice-mode-btn" aria-label="Voice mode" aria-pressed="false">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 14v-2a9 9 0 0 1 18 0v2"/><path d="M21 16a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2z"/><path d="M3 16a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2z"/>
+            </svg>
+          </button>
           <!-- Workspace indicator (hidden until a folder is set) -->
           <button type="button" class="input-icon-btn tool-indicator" title="Workspace - click to clear" id="workspace-indicator-btn" aria-label="Clear workspace" style="display:none;">
             <svg class="workspace-indicator-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
@@ -1330,8 +1343,28 @@
                 <summary>Workspace &amp; tools (agent mode)</summary>
                 <label for="custom-workspace">Workspace folder</label>
                 <input type="text" id="custom-workspace" maxlength="1024" placeholder="e.g. /vaults/omegaV2/thesis (file tools stay inside it)" autocomplete="off" style="width:100%">
+                <div class="char-binding-index">
+                  <button type="button" id="custom-workspace-index-btn" class="char-binding-index-btn" title="Index this folder so its notes are searched automatically in this persona's chats">Index for search</button>
+                  <span id="custom-workspace-index-status" class="char-binding-index-status" aria-live="polite"></span>
+                </div>
                 <label for="custom-mcp-servers">MCP servers</label>
                 <input type="text" id="custom-mcp-servers" maxlength="1000" placeholder="comma-separated names; empty = all enabled" autocomplete="off" style="width:100%">
+                <div class="char-binding-row">
+                  <div>
+                    <label for="custom-thinking">Thinking</label>
+                    <select id="custom-thinking" title="Default thinking level for this persona (the chat's Thinking control overrides it)">
+                      <option value="">Model default</option>
+                      <option value="off">Off</option>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="custom-max-rounds">Max agent steps</label>
+                    <input type="number" id="custom-max-rounds" min="1" max="200" step="1" placeholder="global" autocomplete="off">
+                  </div>
+                </div>
               </details>
             </div>
             <!-- Group tab -->

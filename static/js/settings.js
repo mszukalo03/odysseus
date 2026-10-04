@@ -1703,6 +1703,7 @@ const SHORTCUT_DEFAULTS = {
   delete_session: 'ctrl+alt+d',
   cancel:         'escape',
   tts:            'alt+shift+t',
+  voice_mode:     'alt+shift+v',
   incognito:      'ctrl+alt+i',
   settings:       'ctrl+,',
   focus_input:    'ctrl+/',
@@ -1751,6 +1752,7 @@ const SHORTCUT_LABELS = {
   delete_session: 'Delete session',
   cancel:         'Cancel / close',
   tts:            'Play/stop TTS',
+  voice_mode:     'Start/stop voice mode',
   incognito:      'Toggle incognito',
   settings:       'Toggle Window',
   focus_input:    'Focus chat input',
@@ -1769,7 +1771,7 @@ const SHORTCUT_LABELS = {
 const SHORTCUT_CATEGORIES = [
   { name: 'Navigation', keys: ['search', 'toggle_sidebar', 'focus_input', 'settings'] },
   { name: 'Sessions', keys: ['new_session', 'fav_session', 'delete_session'] },
-  { name: 'Tools', keys: ['incognito', 'tts', 'cancel'] },
+  { name: 'Tools', keys: ['incognito', 'tts', 'voice_mode', 'cancel'] },
   { name: 'Open Tools', keys: ['open_calendar', 'open_compare', 'open_cookbook', 'open_research', 'open_gallery', 'open_library', 'open_memory', 'open_notes', 'open_tasks', 'open_theme'] },
 ];
 

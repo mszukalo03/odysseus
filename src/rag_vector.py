@@ -72,6 +72,22 @@ def _rewrite_owner_path(value: str, path_map: Dict[str, str], path_prefixes: Lis
     return value
 
 
+
+def _passes_scope(meta, path_prefix: Optional[str], exclude_scope: Optional[str]) -> bool:
+    """Path-boundary / scope filter for search results (see VectorRAG.search)."""
+    meta = meta if isinstance(meta, dict) else {}
+    if exclude_scope and meta.get("scope") == exclude_scope:
+        return False
+    if path_prefix:
+        root = os.path.abspath(path_prefix)
+        source = meta.get("source")
+        if not isinstance(source, str):
+            return False
+        source = os.path.abspath(source)
+        if source != root and not source.startswith(root + os.sep):
+            return False
+    return True
+
 class VectorRAG:
     """RAG system using ChromaDB vector storage with hybrid search."""
 
@@ -345,7 +361,28 @@ class VectorRAG:
     # Search — hybrid: vector similarity + keyword overlap
     # ------------------------------------------------------------------
 
-    def search(self, query: str, k: int = 5, owner: Optional[str] = None) -> List[Dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        k: int = 5,
+        owner: Optional[str] = None,
+        path_prefix: Optional[str] = None,
+        exclude_scope: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Hybrid search.
+
+        ``path_prefix`` keeps only chunks whose ``source`` is inside that
+        folder (a workspace persona searching its own vault side);
+        ``exclude_scope`` drops chunks indexed with that ``scope`` metadata
+        (e.g. workspace-indexed notes in chats without a workspace). Both are
+        Python-side filters, so the candidate pool is widened when set.
+        """
+        if not path_prefix and not exclude_scope:
+            return self._search(query, k, owner=owner)
+        pool = self._search(query, max(k * 6, 30), owner=owner)
+        return [r for r in pool if _passes_scope(r.get("metadata"), path_prefix, exclude_scope)][:k]
+
+    def _search(self, query: str, k: int = 5, owner: Optional[str] = None) -> List[Dict[str, Any]]:
         if not self.healthy:
             return []
         if not query or not isinstance(query, str):
@@ -493,7 +530,8 @@ class VectorRAG:
     # ------------------------------------------------------------------
 
     def index_personal_documents(
-        self, directory: str, file_extensions: Optional[set] = None, owner: Optional[str] = None
+        self, directory: str, file_extensions: Optional[set] = None, owner: Optional[str] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         if file_extensions is None:
             file_extensions = DEFAULT_FILE_EXTENSIONS
@@ -535,6 +573,11 @@ class VectorRAG:
                         }
                         if owner:
                             meta['owner'] = owner
+                        if extra_metadata:
+                            meta.update({
+                                key: value for key, value in extra_metadata.items()
+                                if isinstance(value, (str, int, float, bool))
+                            })
 
                         for i, chunk in enumerate(self._split_into_chunks(content)):
                             if self.add_document(chunk, {**meta, 'chunk_id': i}):

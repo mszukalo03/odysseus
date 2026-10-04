@@ -2083,6 +2083,15 @@ async function _cmdCompact(args, ctx) {
   return true;
 }
 
+// ── Voice mode ──
+
+function _cmdVoice() {
+  const vm = window.voiceMode;
+  if (!vm) { slashReply('Voice mode is not loaded.'); return true; }
+  vm.toggle();
+  return true;
+}
+
 // ── TTS ──
 
 async function _cmdTts(args, ctx) {
@@ -6112,6 +6121,13 @@ const COMMANDS = {
     help: 'Compact older chat messages',
     handler: _cmdCompact,
     usage: '/compact'
+  },
+  voice: {
+    alias: ['talk'],
+    category: 'Utility',
+    help: 'Start or stop live voice mode (hands-free spoken conversation)',
+    handler: _cmdVoice,
+    usage: '/voice'
   },
   sh: {
     alias: ['exec', 'run', 'shell'],

@@ -8,7 +8,7 @@ import { getSettings } from './appConfig.js';
 const _defaultKeybinds = {
   search: 'ctrl+k', toggle_sidebar: 'ctrl+alt+b', new_session: 'ctrl+alt+n',
   fav_session: 'ctrl+alt+f', delete_session: 'ctrl+alt+d',
-  cancel: 'escape', tts: 'alt+shift+t',
+  cancel: 'escape', tts: 'alt+shift+t', voice_mode: 'alt+shift+v',
   incognito: 'ctrl+alt+i', settings: 'ctrl+,', focus_input: 'ctrl+/',
   // Open-tool shortcuts (Calendar bound by default; rest unbound).
   open_calendar: 'ctrl+alt+c', open_compare: '', open_cookbook: '',
@@ -162,6 +162,11 @@ export function initKeyboardShortcuts(modules) {
         if (sb) sb.classList.remove('hidden');
       }
       if (typeof syncRailSide === 'function') syncRailSide();
+      return;
+    }
+    if (_matchesCombo(e, kb.voice_mode)) {
+      e.preventDefault();
+      if (window.voiceMode) window.voiceMode.toggle();
       return;
     }
     if (_matchesCombo(e, kb.tts)) {

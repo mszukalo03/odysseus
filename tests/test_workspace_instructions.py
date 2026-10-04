@@ -142,3 +142,80 @@ def test_mcp_allowlist_hides_other_external_servers():
     mgr.is_builtin = lambda sid: sid.startswith("builtin_")
     assert mgr.tool_names_outside(["zotero"]) == {"mcp__srv2__query"}
     assert mgr.tool_names_outside(["srv2"]) == {"mcp__srv1__search", "mcp__srv1__get_item"}
+
+
+def test_odysseus_md_wins_over_agents_and_claude_md(vault):
+    (vault / "thesis" / "AGENTS.md").write_text("AGENTS VERSION\n")
+    (vault / "thesis" / "ODYSSEUS.md").write_text("ODYSSEUS VERSION\n")
+    text = wi.load_workspace_instructions(str(vault / "thesis"))
+    assert "ODYSSEUS VERSION" in text
+    assert "AGENTS VERSION" not in text and "THESIS TOP" not in text
+    # The shared root keeps its CLAUDE.md when it has no ODYSSEUS.md.
+    assert "ROOT RULES" in text
+
+
+def test_odysseus_md_is_per_directory(vault):
+    (vault / "ODYSSEUS.md").write_text("LEAN ROOT\n")
+    text = wi.load_workspace_instructions(str(vault / "thesis"))
+    assert "LEAN ROOT" in text and "ROOT RULES" not in text
+    assert "THESIS TOP" in text
+
+
+def test_mcp_allowlist_offers_its_servers_tools():
+    from src.mcp_manager import McpManager
+
+    mgr = McpManager.__new__(McpManager)
+    mgr._tools = {
+        "srv1": [{"name": "search"}, {"name": "get_item"}],
+        "srv2": [{"name": "query"}],
+        "builtin_memory": [{"name": "remember"}],
+    }
+    mgr._connections = {"srv1": {"name": "Zotero"}, "srv2": {"name": "Postgres"}}
+    mgr.is_builtin = lambda sid: sid.startswith("builtin_")
+    assert mgr.tool_names_inside(["zotero"]) == {"mcp__srv1__search", "mcp__srv1__get_item"}
+    assert mgr.tool_names_inside(["memory", "builtin_memory"]) == set()
+    assert mgr.tool_names_inside([]) == set()
+
+
+def test_persona_agent_options(tmp_path):
+    from src.chat_handler import ChatHandler
+    from src.preset_manager import PresetManager
+
+    pm = PresetManager(str(tmp_path))
+    handler = ChatHandler.__new__(ChatHandler)
+    handler.preset_manager = pm
+
+    # Saved without options: no new keys, no overrides (old shape preserved).
+    pm.update_custom(0.4, 0, "persona", name="Thesis", workspace="/v/thesis")
+    assert "thinking" not in pm.presets["custom"] and "max_rounds" not in pm.presets["custom"]
+    assert handler.preset_agent_options("custom") == {"thinking": None, "max_rounds": None}
+
+    pm.update_custom(0.4, 0, "persona", name="Thesis", thinking="off", max_rounds=12)
+    assert handler.preset_agent_options("custom") == {"thinking": "off", "max_rounds": 12}
+
+    pm.presets["custom"]["max_rounds"] = 999
+    pm.presets["custom"]["thinking"] = "bogus"
+    assert handler.preset_agent_options("custom") == {"thinking": None, "max_rounds": 200}
+
+    pm.update_custom(0.4, 0, "persona", name="Thesis", enabled=False, thinking="high")
+    assert handler.preset_agent_options("custom") == {"thinking": None, "max_rounds": None}
+    assert handler.preset_agent_options(None) == {"thinking": None, "max_rounds": None}
+
+
+def test_mcp_prompt_description_skips_excluded_tools():
+    from src.mcp_manager import McpManager
+
+    mgr = McpManager.__new__(McpManager)
+    mgr._tools = {
+        "srv1": [{"name": "search", "description": "find papers"}],
+        "srv2": [{"name": "query", "description": "run sql"}],
+    }
+    mgr._connections = {"srv1": {"name": "Zotero"}, "srv2": {"name": "Postgres"}}
+    mgr.is_builtin = lambda sid: False
+    mgr._cached_prompt_desc = None
+    mgr._cached_prompt_desc_key = None
+    mgr._generation = 0
+    full = mgr.get_tool_descriptions_for_prompt({})
+    assert "mcp__srv2__query" in full
+    hidden = mgr.get_tool_descriptions_for_prompt({}, exclude={"mcp__srv2__query", "bash"})
+    assert "mcp__srv1__search" in hidden and "mcp__srv2__query" not in hidden

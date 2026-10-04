@@ -269,6 +269,9 @@ class ChatProcessor:
         use_memory: bool = True,
         time_filter: Optional[str] = None,
         preset_system_prompt: Optional[str] = None,
+        protect_preset_prompt: bool = False,
+        voice_prompt: Optional[str] = None,
+        workspace: Optional[str] = None,
         owner: Optional[str] = None,
         character_name: Optional[str] = None,
         agent_mode: bool = False,
@@ -298,14 +301,21 @@ class ChatProcessor:
 
         # Add preset system prompt if specified
         if preset_system_prompt:
-            preface.append({
+            preset_msg = {
                 "role": "system",
                 "content": preset_system_prompt
-            })
+            }
+            if protect_preset_prompt:
+                # Carries a workspace's project instructions: context trimming
+                # must never truncate it (see context_compactor.trim_for_context).
+                preset_msg["_protected"] = "lead"
+            preface.append(preset_msg)
         preface.append({
             "role": "system",
             "content": UNTRUSTED_CONTEXT_POLICY,
         })
+        if voice_prompt:
+            preface.append({"role": "system", "content": voice_prompt})
 
         # Memory: core pinned facts + relevant pinned/extended recall.
         self._last_used_memories = []  # track what was injected
@@ -363,7 +373,16 @@ class ChatProcessor:
             try:
                 rag_manager = getattr(self.personal_docs_manager, 'rag_manager', None)
                 if rag_manager:
-                    results = rag_manager.search(message, k=5, owner=owner)
+                    # Workspace-indexed notes (persona vaults) stay with their
+                    # workspace: a bound chat only searches its own folder, and
+                    # chats without one never see them.
+                    try:
+                        if workspace:
+                            results = rag_manager.search(message, k=5, owner=owner, path_prefix=workspace)
+                        else:
+                            results = rag_manager.search(message, k=5, owner=owner, exclude_scope="workspace")
+                    except TypeError:
+                        results = [] if workspace else rag_manager.search(message, k=5, owner=owner)
                     # Filter by similarity threshold
                     relevant = [r for r in results if r.get("similarity", 0) >= self.RAG_SIMILARITY_THRESHOLD]
                     if relevant:
