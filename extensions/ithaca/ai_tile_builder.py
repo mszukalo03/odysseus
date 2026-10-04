@@ -164,7 +164,7 @@ def _sanitize_query(sql: str) -> str:
         alias = m.group(1).strip()
         if " " not in alias:
             return m.group(0)
-        return f"AS {re.sub(r'\s+', '_', alias).lower()}"
+        return "AS " + re.sub(r"\s+", "_", alias).lower()
     return _BARE_ALIAS_RE.sub(_fix, sql.strip())
 
 
