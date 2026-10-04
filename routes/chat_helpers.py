@@ -626,6 +626,7 @@ async def build_chat_context(
     defer_context_shaping: bool = False,
     continuation_context_message: str | None = None,
     persist_user_message: bool = True,
+    workspace_instructions: str = "",
 ) -> ChatContext:
     """Build the full context (preface + messages) for an LLM call.
 
@@ -725,7 +726,12 @@ async def build_chat_context(
         use_web=use_web and not skip_web,
         use_memory=mem_enabled,
         time_filter=time_filter,
-        preset_system_prompt=preset.system_prompt,
+        # Project instruction files of the bound workspace (trusted roots
+        # only, see src/workspace_instructions) ride along with the persona's
+        # own prompt: both are user-authored system instructions.
+        preset_system_prompt="\n\n".join(
+            p for p in (preset.system_prompt, workspace_instructions) if p
+        ) or None,
         owner=user,
         character_name=preset.character_name,
         agent_mode=agent_mode,

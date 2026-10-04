@@ -1326,6 +1326,13 @@
                   Expand
                 </button>
               </div>
+              <details class="char-binding" id="char-binding">
+                <summary>Workspace &amp; tools (agent mode)</summary>
+                <label for="custom-workspace">Workspace folder</label>
+                <input type="text" id="custom-workspace" maxlength="1024" placeholder="e.g. /vaults/omegaV2/thesis (file tools stay inside it)" autocomplete="off" style="width:100%">
+                <label for="custom-mcp-servers">MCP servers</label>
+                <input type="text" id="custom-mcp-servers" maxlength="1000" placeholder="comma-separated names; empty = all enabled" autocomplete="off" style="width:100%">
+              </details>
             </div>
             <!-- Group tab -->
             <div class="preset-chartab" data-chartab-panel="group" style="display:none">

@@ -122,3 +122,6 @@ _scratch/
 /odysseus/
 ROADMAP_PRIVATE*
 .internal/*
+
+# Machine-specific compose additions (local mounts, trusted instruction roots)
+docker-compose.override.yml

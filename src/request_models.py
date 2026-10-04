@@ -91,6 +91,16 @@ class PresetUpdateRequest(BaseModel):
         max_length=5000,
         description="Text to append to each outgoing user message"
     )
+    workspace: str = Field(
+        "",
+        max_length=1024,
+        description="Folder this persona's agent chats are bound to (file/shell tools confined to it). Empty = none."
+    )
+    mcp_servers: List[str] = Field(
+        default_factory=list,
+        max_length=50,
+        description="MCP servers (id or name) this persona may use. Empty = all enabled servers."
+    )
 
 
 class DirectoryRequest(BaseModel):

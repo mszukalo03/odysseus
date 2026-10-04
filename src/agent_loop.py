@@ -1268,6 +1268,30 @@ def _workspace_coding_rules(workspace: Optional[str]) -> str:
     )
 
 
+def _workspace_project_rules(workspace: Optional[str]) -> str:
+    """Rules for a workspace that ships its own instruction files.
+
+    Used instead of ``_workspace_coding_rules`` when the folder has a
+    CLAUDE.md/AGENTS.md under a trusted root (see src/workspace_instructions).
+    The project instructions themselves arrive with the system prompt; these
+    rules only cover tool mechanics, and defer to the instructions on scope.
+    """
+    if not workspace:
+        return ""
+    return (
+        "\n\n## Workspace project mode\n"
+        f"- Active workspace: `{workspace}`. Treat relative paths as relative to this folder. "
+        "File and shell tools are confined to it.\n"
+        "- This workspace has project instructions (in the system prompt under 'Project instructions'). "
+        "They define the task modes, file conventions and session routine. Follow them over generic habits.\n"
+        "- Work from the real files: read before you edit, and re-read numbers from files instead of recalling them.\n"
+        "- Edit with `edit_file` for an exact replacement, `apply_patch` for related multi-line edits, "
+        "`write_file` for new files. Keep the files' existing format (frontmatter, tables, checkbox lists).\n"
+        "- Prefer targeted reads (`grep`, `glob`, `read_file` with ranges) over dumping whole folders.\n"
+        "- When the instructions name a closing step (for example writing a session log), do it before your final answer."
+    )
+
+
 def _strip_think_blocks(text: str) -> str:
     """Linear-time equivalent of
     ``re.sub(r'<think>.*?</think>', '', text, flags=DOTALL|IGNORECASE)``.
@@ -2660,7 +2684,11 @@ def _build_system_prompt(
             pass
 
     if workspace and not suppress_local_context:
-        agent_prompt += _workspace_coding_rules(workspace)
+        from src.workspace_instructions import has_instructions as _ws_has_instructions
+        if _ws_has_instructions(workspace):
+            agent_prompt += _workspace_project_rules(workspace)
+        else:
+            agent_prompt += _workspace_coding_rules(workspace)
     elif (
         relevant_tools
         and not suppress_local_context
