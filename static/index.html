@@ -1343,6 +1343,10 @@
                 <summary>Workspace &amp; tools (agent mode)</summary>
                 <label for="custom-workspace">Workspace folder</label>
                 <input type="text" id="custom-workspace" maxlength="1024" placeholder="e.g. /vaults/omegaV2/thesis (file tools stay inside it)" autocomplete="off" style="width:100%">
+                <div class="char-binding-index">
+                  <button type="button" id="custom-workspace-index-btn" class="char-binding-index-btn" title="Index this folder so its notes are searched automatically in this persona's chats">Index for search</button>
+                  <span id="custom-workspace-index-status" class="char-binding-index-status" aria-live="polite"></span>
+                </div>
                 <label for="custom-mcp-servers">MCP servers</label>
                 <input type="text" id="custom-mcp-servers" maxlength="1000" placeholder="comma-separated names; empty = all enabled" autocomplete="off" style="width:100%">
                 <div class="char-binding-row">

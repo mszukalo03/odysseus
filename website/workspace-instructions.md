@@ -79,6 +79,16 @@ In **Character → Persona → Workspace & tools**:
 All of these are saved with the persona template and only apply while the
 persona is active. Workspaces are an admin/single-user feature, as before.
 
+## Workspace search
+
+**Index for search** under the persona's workspace folder (admin, trusted
+roots only) indexes the folder's notes into the retrieval store, tagged with
+the workspace. In chats bound to that workspace the usual "relevant
+documents" retrieval then searches only that folder; chats without an
+instruction workspace never see those chunks, so one side of a vault can't
+leak into another side or into general chats. Re-index after large changes
+(`POST /api/presets/index-workspace {"workspace": "..."}`). Needs ChromaDB.
+
 ## Docker
 
 Mount the folder and trust its parent, e.g. in `docker-compose.override.yml`:

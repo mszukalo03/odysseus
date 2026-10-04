@@ -1420,6 +1420,9 @@ def setup_chat_routes(
             use_enhanced_message=True,
             workspace_instructions=_workspace_instructions,
             voice_mode=_voice_mode,
+            # RAG is scoped to the workspace only for instruction workspaces
+            # (vault personas); other chats keep their usual retrieval.
+            workspace=(workspace or "") if _workspace_instructions else "",
             # Skills index only ships when the model can actually call
             # manage_skills (agent mode). In plain chat or incognito the
             # index would be useless / unwanted noise.

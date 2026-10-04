@@ -289,6 +289,39 @@ function _readBindingInputs() {
   return out;
 }
 
+// Index the persona's workspace for retrieval (POST /api/presets/index-workspace).
+// Chunks are tagged with the workspace, so only this persona's chats see them.
+async function _indexWorkspace() {
+  const ws = document.getElementById('custom-workspace');
+  const status = document.getElementById('custom-workspace-index-status');
+  const btn = document.getElementById('custom-workspace-index-btn');
+  const folder = ws ? ws.value.trim() : '';
+  if (!status || !btn) return;
+  if (!folder) { status.textContent = 'Set a workspace folder first.'; return; }
+  btn.disabled = true;
+  status.textContent = 'Indexing...';
+  try {
+    const res = await fetch(`${API_BASE}/api/presets/index-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace: folder }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data && data.detail) || `HTTP ${res.status}`);
+    status.textContent = `Indexed ${data.indexed_count} chunks` + (data.failed_count ? ` (${data.failed_count} failed)` : '');
+  } catch (e) {
+    status.textContent = 'Indexing failed: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'custom-workspace-index-btn') _indexWorkspace();
+  });
+}
+
 function _writeBindingInputs(src) {
   const ws = document.getElementById('custom-workspace');
   const mcp = document.getElementById('custom-mcp-servers');

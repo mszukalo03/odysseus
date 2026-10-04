@@ -271,6 +271,7 @@ class ChatProcessor:
         preset_system_prompt: Optional[str] = None,
         protect_preset_prompt: bool = False,
         voice_prompt: Optional[str] = None,
+        workspace: Optional[str] = None,
         owner: Optional[str] = None,
         character_name: Optional[str] = None,
         agent_mode: bool = False,
@@ -372,7 +373,16 @@ class ChatProcessor:
             try:
                 rag_manager = getattr(self.personal_docs_manager, 'rag_manager', None)
                 if rag_manager:
-                    results = rag_manager.search(message, k=5, owner=owner)
+                    # Workspace-indexed notes (persona vaults) stay with their
+                    # workspace: a bound chat only searches its own folder, and
+                    # chats without one never see them.
+                    try:
+                        if workspace:
+                            results = rag_manager.search(message, k=5, owner=owner, path_prefix=workspace)
+                        else:
+                            results = rag_manager.search(message, k=5, owner=owner, exclude_scope="workspace")
+                    except TypeError:
+                        results = [] if workspace else rag_manager.search(message, k=5, owner=owner)
                     # Filter by similarity threshold
                     relevant = [r for r in results if r.get("similarity", 0) >= self.RAG_SIMILARITY_THRESHOLD]
                     if relevant:

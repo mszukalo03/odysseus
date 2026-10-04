@@ -10919,6 +10919,37 @@ details a:hover {
   color: var(--accent, var(--red));
 }
 
+/* Persona workspace "Index for search" row */
+.char-binding-index {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+.char-binding-index-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+}
+.char-binding-index-btn:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.char-binding-index-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.char-binding-index-status {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
 /* Persona agent options (thinking level, step cap) under Workspace & tools */
 .char-binding-row {
   display: flex;

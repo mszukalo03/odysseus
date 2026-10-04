@@ -628,6 +628,7 @@ async def build_chat_context(
     persist_user_message: bool = True,
     workspace_instructions: str = "",
     voice_mode: bool = False,
+    workspace: str = "",
 ) -> ChatContext:
     """Build the full context (preface + messages) for an LLM call.
 
@@ -742,6 +743,8 @@ async def build_chat_context(
     )
     if use_rag is not None or is_research_spinoff or casual_low_signal:
         _preface_kwargs["use_rag"] = use_rag_val
+    if workspace:
+        _preface_kwargs["workspace"] = workspace
     if voice_mode:
         # Live voice turn: the reply is spoken, so ask for speech-shaped output.
         from src.voice_prompt import voice_prompt

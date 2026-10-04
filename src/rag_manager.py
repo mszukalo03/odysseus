@@ -32,8 +32,13 @@ class RAGManager:
         logger.info("RAGManager initialized as wrapper for VectorRAG")
     
     # Delegate all methods to VectorRAG
-    def search(self, query: str, k: int = 5, owner: Optional[str] = None) -> List[Dict[str, Any]]:
+    def search(self, query: str, k: int = 5, owner: Optional[str] = None,
+               path_prefix: Optional[str] = None,
+               exclude_scope: Optional[str] = None) -> List[Dict[str, Any]]:
         """Search for documents - delegates to VectorRAG."""
+        if path_prefix or exclude_scope:
+            return self.vector_rag.search(query, k, owner=owner, path_prefix=path_prefix,
+                                          exclude_scope=exclude_scope)
         return self.vector_rag.search(query, k, owner=owner)
     
     def index_personal_documents(
@@ -41,13 +46,25 @@ class RAGManager:
         directory: str,
         file_extensions: Optional[set] = None,
         owner: Optional[str] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Index documents - delegates to VectorRAG."""
+        if extra_metadata:
+            return self.vector_rag.index_personal_documents(
+                directory,
+                file_extensions=file_extensions,
+                owner=owner,
+                extra_metadata=extra_metadata,
+            )
         return self.vector_rag.index_personal_documents(
             directory,
             file_extensions=file_extensions,
             owner=owner,
         )
+
+    def remove_directory(self, directory: str) -> Dict[str, Any]:
+        """Remove all chunks under a directory - delegates to VectorRAG."""
+        return self.vector_rag.remove_directory(directory)
     
     def retrieve(self, query: str, k: int = 5) -> List[str]:
         """Retrieve relevant chunks - delegates to VectorRAG."""
