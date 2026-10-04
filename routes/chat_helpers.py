@@ -732,6 +732,7 @@ async def build_chat_context(
         preset_system_prompt="\n\n".join(
             p for p in (preset.system_prompt, workspace_instructions) if p
         ) or None,
+        protect_preset_prompt=bool(workspace_instructions),
         owner=user,
         character_name=preset.character_name,
         agent_mode=agent_mode,

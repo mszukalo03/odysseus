@@ -269,6 +269,7 @@ class ChatProcessor:
         use_memory: bool = True,
         time_filter: Optional[str] = None,
         preset_system_prompt: Optional[str] = None,
+        protect_preset_prompt: bool = False,
         owner: Optional[str] = None,
         character_name: Optional[str] = None,
         agent_mode: bool = False,
@@ -298,10 +299,15 @@ class ChatProcessor:
 
         # Add preset system prompt if specified
         if preset_system_prompt:
-            preface.append({
+            preset_msg = {
                 "role": "system",
                 "content": preset_system_prompt
-            })
+            }
+            if protect_preset_prompt:
+                # Carries a workspace's project instructions: context trimming
+                # must never truncate it (see context_compactor.trim_for_context).
+                preset_msg["_protected"] = "lead"
+            preface.append(preset_msg)
         preface.append({
             "role": "system",
             "content": UNTRUSTED_CONTEXT_POLICY,

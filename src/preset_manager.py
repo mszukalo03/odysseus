@@ -142,6 +142,8 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
         inject_suffix: str = "",
         workspace: str = "",
         mcp_servers: Optional[List[str]] = None,
+        thinking: Optional[str] = None,
+        max_rounds: Optional[int] = None,
     ) -> bool:
         """Update the custom preset"""
         self.presets["custom"] = {
@@ -156,6 +158,12 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
             "workspace": (workspace or "").strip(),
             "mcp_servers": [s.strip() for s in (mcp_servers or []) if s and s.strip()],
         }
+        # Agent options are only written when set, so a persona saved without
+        # them keeps exactly the old shape (and the global defaults).
+        if thinking:
+            self.presets["custom"]["thinking"] = thinking
+        if max_rounds:
+            self.presets["custom"]["max_rounds"] = int(max_rounds)
         return self.save(self.presets)
     
     def get_all(self) -> Dict[str, Any]:

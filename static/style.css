@@ -10919,6 +10919,23 @@ details a:hover {
   color: var(--accent, var(--red));
 }
 
+/* Persona agent options (thinking level, step cap) under Workspace & tools */
+.char-binding-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.char-binding-row > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.char-binding-row select,
+.char-binding-row input {
+  width: 100%;
+}
+
 .char-prompt-wrap {
   position: relative;
 }

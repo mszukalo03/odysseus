@@ -1332,6 +1332,22 @@
                 <input type="text" id="custom-workspace" maxlength="1024" placeholder="e.g. /vaults/omegaV2/thesis (file tools stay inside it)" autocomplete="off" style="width:100%">
                 <label for="custom-mcp-servers">MCP servers</label>
                 <input type="text" id="custom-mcp-servers" maxlength="1000" placeholder="comma-separated names; empty = all enabled" autocomplete="off" style="width:100%">
+                <div class="char-binding-row">
+                  <div>
+                    <label for="custom-thinking">Thinking</label>
+                    <select id="custom-thinking" title="Default thinking level for this persona (the chat's Thinking control overrides it)">
+                      <option value="">Model default</option>
+                      <option value="off">Off</option>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="custom-max-rounds">Max agent steps</label>
+                    <input type="number" id="custom-max-rounds" min="1" max="200" step="1" placeholder="global" autocomplete="off">
+                  </div>
+                </div>
               </details>
             </div>
             <!-- Group tab -->

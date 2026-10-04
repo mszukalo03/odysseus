@@ -101,6 +101,17 @@ class PresetUpdateRequest(BaseModel):
         max_length=50,
         description="MCP servers (id or name) this persona may use. Empty = all enabled servers."
     )
+    thinking: Optional[str] = Field(
+        None,
+        pattern="^(auto|off|low|medium|high)$",
+        description="Default thinking level for this persona's chats (auto = model default)."
+    )
+    max_rounds: Optional[int] = Field(
+        None,
+        ge=1,
+        le=200,
+        description="Agent step cap for this persona's chats (empty = global setting)."
+    )
 
 
 class DirectoryRequest(BaseModel):

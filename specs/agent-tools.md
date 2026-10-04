@@ -64,7 +64,11 @@ Tool registration is split:
 
 When adding, removing, or renaming a tool, update the registry chain, execution dispatch, retrieval text, prompt wording, disabled-tool UI, and tests together.
 
-`src.tool_index.ALWAYS_AVAILABLE` is the retrieval catalog for high-frequency tools such as shell/python, web search/fetch, read/write/edit-file, code-nav, `manage_memory`, `ask_user`, `update_plan`, selected Cookbook serve controls, and `app_api`. Current prompt/schema assembly preserves only selected base tools unconditionally, then adds intent-, skill-, and retrieval-relevant tools so unrelated schemas do not flood small contexts.
+`src.tool_index.ALWAYS_AVAILABLE` is deliberately tiny: `manage_memory`, `ask_user`, `update_plan`, `bash`, `python`, and `manage_bg_jobs`. Everything else (web, file, code-nav, documents, Cookbook, settings) is added by intent classification, skills, forced per-request tools, or retrieval, so unrelated schemas do not flood small contexts. A workspace that ships project instructions (`ODYSSEUS.md`/`AGENTS.md`/`CLAUDE.md` under a trusted root) always gets the read/write file and code-nav tools plus its persona's allowlisted MCP servers' tools, via the forced-tools path in `routes/chat_routes.py` (`_PROJECT_WORKSPACE_TOOLS`).
+
+`grep` accepts `count: true` to return per-file counts of matching lines (scanning past the listing cap) instead of the lines themselves.
+
+The agent loop's step budget is guarded by `src/agent_budget.py`: two rounds before `max_rounds` the model is told to wrap up, in workspace project mode a long streak of tool-only rounds draws a one-time nudge, and the final round (or the round after the tool budget is spent) runs tool-free so the turn ends with an answer. `rounds_exhausted` is still emitted so Continue works. The `agent_answer_on_cap` setting (default true) turns this off.
 
 ## Tool Retrieval And Execution
 

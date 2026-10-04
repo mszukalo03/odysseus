@@ -585,6 +585,24 @@ class McpManager:
             blocked.update(f"mcp__{server_id}__{tool['name']}" for tool in tools)
         return blocked
 
+    def tool_names_inside(self, allowed) -> Set[str]:
+        """Qualified names of tools on the external servers listed in ``allowed``.
+
+        The counterpart of :meth:`tool_names_outside`: a persona that names MCP
+        servers gets those servers' tools offered every turn.
+        """
+        wanted = {str(a).strip().lower() for a in (allowed or []) if str(a).strip()}
+        if not wanted:
+            return set()
+        names: Set[str] = set()
+        for server_id, tools in self._tools.items():
+            if self.is_builtin(server_id):
+                continue
+            name = str(self._connections.get(server_id, {}).get("name", server_id)).lower()
+            if server_id.lower() in wanted or name in wanted:
+                names.update(f"mcp__{server_id}__{tool['name']}" for tool in tools)
+        return names
+
     def get_all_openai_schemas(self, disabled_map: Optional[Dict[str, set]] = None) -> List[Dict]:
         """Return all MCP tools in OpenAI function-calling format.
 
@@ -676,10 +694,21 @@ class McpManager:
     _cached_prompt_desc = None
     _cached_prompt_desc_key = None
 
-    def get_tool_descriptions_for_prompt(self, disabled_map: Optional[Dict[str, set]] = None) -> str:
-        """Generate text describing MCP tools for the agent system prompt. Cached."""
+    def get_tool_descriptions_for_prompt(
+        self,
+        disabled_map: Optional[Dict[str, set]] = None,
+        exclude: Optional[Set[str]] = None,
+    ) -> str:
+        """Generate text describing MCP tools for the agent system prompt. Cached.
+
+        ``exclude`` holds qualified names (``mcp__{id}__{tool}``) that are
+        blocked for this turn (e.g. outside a persona's MCP allowlist), so the
+        prompt doesn't advertise tools the model can't call.
+        """
+        exclude = {e for e in (exclude or ()) if isinstance(e, str) and e.startswith("mcp__")}
         cache_key = (
             frozenset((k, frozenset(v)) for k, v in (disabled_map or {}).items()),
+            frozenset(exclude),
             len(self._tools),
             self._generation,
         )
@@ -697,6 +726,8 @@ class McpManager:
             if self.is_builtin(t["server_id"]) and t["server_id"] != "builtin_browser":
                 continue
             if t.get("is_disabled"):
+                continue
+            if t.get("qualified_name") in exclude:
                 continue
             sn = t["server_name"]
             if sn not in by_server:

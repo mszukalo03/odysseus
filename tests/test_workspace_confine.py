@@ -531,3 +531,49 @@ def test_request_workspace_gate(ws, monkeypatch):
     monkeypatch.setattr(ts, "owner_is_admin_or_single_user", lambda owner: True)
     assert cr._resolve_request_workspace(object(), ws) == (os.path.realpath(ws), "")
     assert cr._resolve_request_workspace(object(), "/nonexistent/xyz") == ("", "/nonexistent/xyz")
+
+
+# --- vault-root path forgiveness ------------------------------------------
+
+@pytest.fixture
+def side(tmp_path):
+    """A workspace named like a vault side, with a sibling side next to it."""
+    vault = tmp_path / "vault"
+    (vault / "thesis" / "20-lit").mkdir(parents=True)
+    (vault / "thesis" / "20-lit" / "queue.md").write_text("q")
+    (vault / "personal").mkdir()
+    (vault / "personal" / "secret.md").write_text("s")
+    return str(vault / "thesis")
+
+
+def test_workspace_name_prefix_is_stripped_when_literal_missing(side):
+    got = _resolve_tool_path_in_workspace(side, "thesis/20-lit/queue.md")
+    assert got == os.path.realpath(os.path.join(side, "20-lit", "queue.md"))
+
+
+def test_workspace_name_prefix_for_new_file_in_existing_folder(side):
+    got = _resolve_tool_path_in_workspace(side, "thesis/20-lit/new.md")
+    assert got == os.path.realpath(os.path.join(side, "20-lit", "new.md"))
+
+
+def test_real_subfolder_named_like_workspace_still_wins(side):
+    os.makedirs(os.path.join(side, "thesis"))
+    with open(os.path.join(side, "thesis", "inner.md"), "w") as f:
+        f.write("i")
+    got = _resolve_tool_path_in_workspace(side, "thesis/inner.md")
+    assert got == os.path.realpath(os.path.join(side, "thesis", "inner.md"))
+
+
+def test_other_side_prefix_is_not_rewritten(side):
+    with pytest.raises(ValueError):
+        # personal/... from the thesis workspace stays inside thesis (missing),
+        # never reaches the sibling folder.
+        p = _resolve_tool_path_in_workspace(side, "../personal/secret.md")
+    got = _resolve_tool_path_in_workspace(side, "personal/secret.md")
+    assert got.startswith(os.path.realpath(side) + os.sep)
+    assert not os.path.exists(got)
+
+
+def test_prefix_strip_cannot_escape(side):
+    with pytest.raises(ValueError):
+        _resolve_tool_path_in_workspace(side, "thesis/../../personal/secret.md")

@@ -1289,8 +1289,16 @@ def _workspace_project_rules(workspace: Optional[str]) -> str:
         "- Work from the real files: read before you edit, and re-read numbers from files instead of recalling them.\n"
         "- Edit with `edit_file` for an exact replacement, `apply_patch` for related multi-line edits, "
         "`write_file` for new files. Keep the files' existing format (frontmatter, tables, checkbox lists).\n"
-        "- Prefer targeted reads (`grep`, `glob`, `read_file` with ranges) over dumping whole folders.\n"
-        "- When the instructions name a closing step (for example writing a session log), do it before your final answer."
+        "- Prefer targeted reads (`grep`, `glob`, `read_file` with ranges) over dumping whole folders. "
+        "To count rows or entries, use `grep` with `count: true` instead of counting by eye.\n"
+        "- Size the routine to the ask. A quick question (a count, a status, a lookup, \"what's in X\") "
+        "needs no session routine: find the file that holds the answer, read it, answer, stop. "
+        "Run the instructions' opening and closing steps (orienting on recent logs, writing a session log) "
+        "only for substantive work, and only the closing steps your available tools can actually do.\n"
+        "- If the instructions name a tool or server you don't have in this chat (for example Zotero or a "
+        "database), say so once in your answer and work from the files instead. Don't search for it.\n"
+        "- Paths written from the parent vault root (for example `thesis/...` while the workspace is the "
+        "`thesis` folder) are resolved inside the workspace; don't retry them under other spellings."
     )
 
 
@@ -2841,7 +2849,9 @@ def _build_system_prompt(
     # MCP tool descriptions — sourced from external servers, must not be in system role.
     if mcp_mgr:
         try:
-            _mcp_desc = mcp_mgr.get_tool_descriptions_for_prompt(mcp_disabled_map or {})
+            _mcp_desc = mcp_mgr.get_tool_descriptions_for_prompt(
+                mcp_disabled_map or {}, exclude=disabled_tools,
+            )
             if _mcp_desc:
                 _mcp_desc_message = untrusted_context_message(
                     "MCP tools",
@@ -4575,6 +4585,16 @@ async def stream_agent_loop(
     # so the user can resume instead of the turn silently stalling.
     _exhausted_rounds = False
 
+    # Step-budget guard: wrap-up warnings and a tool-free final round so a long
+    # exploration still ends with an answer (src/agent_budget.py).
+    from src.agent_budget import AgentBudgetGuard
+    from src.workspace_instructions import has_instructions as _guard_has_instructions
+    _budget_guard = AgentBudgetGuard(
+        max_rounds,
+        project_mode=bool(workspace and _guard_has_instructions(workspace)),
+        enabled=bool(get_setting("agent_answer_on_cap", True)),
+    )
+
     def _filter_route_tool_schemas(schemas):
         # Keep candidate actions visible after taint so the model can propose
         # the exact call that the server will seal for user approval.  Schema
@@ -4891,6 +4911,13 @@ async def stream_agent_loop(
         }
         if round_num == 1 and not _approved_result_injected:
             _active_route_state["request_messages"] = _initial_route_request_messages
+        if not _force_answer:
+            _guard_note = _budget_guard.before_round(round_num, tools_used=bool(tool_events))
+            if _guard_note:
+                logger.info("[agent] budget guard round %d: %s", round_num, _guard_note.text[:80])
+                messages.append({"role": "system", "content": _guard_note.text})
+                if _guard_note.force_answer:
+                    _force_answer = True
         all_tool_schemas = _tool_schemas_for_route(_active_route_state)
         agent_stream_timeout = int(get_setting("agent_stream_timeout_seconds", 300) or 300)
 
@@ -5675,6 +5702,7 @@ async def stream_agent_loop(
             _stuck_rounds += 1
         else:
             _stuck_rounds = 0
+        _budget_guard.after_round(tool_calls=len(tool_blocks), has_text=bool(_real_text))
         # Runaway = the SAME exact call repeated an absurd number of times.
         # Distinct calls to one tool (a real batch) are legitimate work, so we
         # count identical call signatures, not raw per-tool-type totals.
@@ -6351,8 +6379,9 @@ async def stream_agent_loop(
                 # model-supplied call from the same batch after this request.
                 break
 
-        # If budget was hit, stop the loop
-        if budget_hit:
+        # If budget was hit, stop the loop -- unless the guard turns the next
+        # round into a tool-free answer round (results so far are kept).
+        if budget_hit and not _budget_guard.on_tool_budget_hit(round_num):
             break
 
         # ask_user posed a question — stop here and wait for the user's choice.
@@ -6405,6 +6434,11 @@ async def stream_agent_loop(
         # Continue instead of stopping silently. This catches ALL exhaustion
         # paths, including a verifier `continue` on the final round (the old
         # bottom-of-loop flag missed those).
+        _exhausted_rounds = True
+
+    # The guard spent the last round on an answer instead of more tools: the
+    # work may still be unfinished, so keep offering Continue.
+    if _budget_guard.answered_at_cap:
         _exhausted_rounds = True
 
     # If the loop hit the round cap while still working, tell the client so it

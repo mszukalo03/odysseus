@@ -118,7 +118,8 @@ FUNCTION_TOOL_SCHEMAS = [
                     "path": {"type": "string", "description": "Directory or file to search (optional; defaults to the project root)"},
                     "glob": {"type": "string", "description": "Only search files matching this glob, e.g. '*.py' (optional)"},
                     "ignore_case": {"type": "boolean", "description": "Case-insensitive match (optional)"},
-                    "max_results": {"type": "integer", "description": "Max matches to return (optional)"}
+                    "max_results": {"type": "integer", "description": "Max matches to return (optional)"},
+                    "count": {"type": "boolean", "description": "Return per-file counts of matching lines instead of the lines themselves (optional). Use it to count rows/entries exactly, e.g. table rows matching '^\\| RQ-'."}
                 },
                 "required": ["pattern"]
             }

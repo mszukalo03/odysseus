@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import uuid
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
@@ -23,6 +23,8 @@ class UserTemplateRequest(BaseModel):
     max_tokens: int = Field(0, ge=0, le=65536)
     workspace: str = Field("", max_length=1024)
     mcp_servers: List[str] = Field(default_factory=list, max_length=50)
+    thinking: Optional[str] = Field(None, pattern="^(auto|off|low|medium|high)$")
+    max_rounds: Optional[int] = Field(None, ge=1, le=200)
 
 
 def setup_preset_routes(preset_manager) -> APIRouter:
@@ -45,6 +47,8 @@ def setup_preset_routes(preset_manager) -> APIRouter:
                 preset_update.inject_suffix,
                 workspace=preset_update.workspace,
                 mcp_servers=preset_update.mcp_servers,
+                thinking=preset_update.thinking,
+                max_rounds=preset_update.max_rounds,
             )
             if success:
                 return {"success": True, "message": "Custom preset updated"}
@@ -59,7 +63,7 @@ def setup_preset_routes(preset_manager) -> APIRouter:
 
     @router.post("/api/presets/templates")
     async def save_user_template(req: UserTemplateRequest, _admin: None = Depends(require_admin)) -> Dict[str, Any]:
-        template = req.model_dump()
+        template = req.model_dump(exclude_none=True)
         if not template["id"]:
             template["id"] = f"user-{uuid.uuid4().hex[:8]}"
         success = preset_manager.save_user_template(template)

@@ -178,6 +178,14 @@ async def _tool_approval_resolution_stream(decision: str) -> AsyncGenerator[str,
     yield "data: [DONE]\n\n"
 
 
+# File tools a workspace with project instructions always gets (see the
+# forced-tools block in chat_stream's agent branch).
+_PROJECT_WORKSPACE_TOOLS = frozenset({
+    "read_file", "grep", "glob", "ls", "get_workspace",
+    "edit_file", "write_file", "apply_patch",
+})
+
+
 def _chat_candidate_request_factory(
     messages,
     fallback_context_length: int = 0,
@@ -1023,6 +1031,10 @@ def setup_chat_routes(
         # allowlist. A workspace picked explicitly in the request wins.
         _binding = getattr(chat_handler, "preset_binding", None)
         _preset_workspace, _preset_mcp_servers = _binding(preset_id) if _binding else ("", [])
+        _persona_opts_fn = getattr(chat_handler, "preset_agent_options", None)
+        _persona_options = _persona_opts_fn(preset_id) if callable(_persona_opts_fn) else {}
+        if not isinstance(_persona_options, dict):
+            _persona_options = {}
         if not workspace and not workspace_rejected and _preset_workspace:
             workspace, workspace_rejected = _resolve_request_workspace(request, _preset_workspace)
         # CLAUDE.md / AGENTS.md of the workspace -- only under a trusted root.
@@ -2351,6 +2363,10 @@ def setup_chat_routes(
                     except (TypeError, ValueError):
                         _max_rounds = _DEFAULT_ROUNDS
                     _max_rounds = max(1, min(_max_rounds, 200))
+                    # A persona can carry its own step cap (e.g. a small local
+                    # model that should answer within a dozen steps).
+                    if isinstance(_persona_options.get("max_rounds"), int):
+                        _max_rounds = max(1, min(_persona_options["max_rounds"], 200))
 
                     _forced_tools = None
                     if _search_enabled:
@@ -2359,6 +2375,19 @@ def setup_chat_routes(
                             _forced_tools |= set(_BROWSER_MCP_TOOLS)
                     elif _explicit_browser_intent:
                         _forced_tools = set(_BROWSER_MCP_TOOLS)
+                    # A workspace with its own project instructions (a vault
+                    # persona) always needs its file tools, and the persona's
+                    # allowlisted MCP servers, whatever the intent classifier or
+                    # tool retrieval picked for this message. Shell stays on the
+                    # normal selection path; plan mode still drops write tools.
+                    if workspace and _workspace_instructions:
+                        _project_tools = set(_PROJECT_WORKSPACE_TOOLS)
+                        if _preset_mcp_servers:
+                            from src.tool_execution import get_mcp_manager as _get_mcp_manager
+                            _persona_mcp = _get_mcp_manager()
+                            if _persona_mcp:
+                                _project_tools |= _persona_mcp.tool_names_inside(_preset_mcp_servers)
+                        _forced_tools = (_forced_tools or set()) | _project_tools
 
                     async for chunk in stream_agent_loop(
                         sess.endpoint_url,
