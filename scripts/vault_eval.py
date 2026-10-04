@@ -40,6 +40,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 import httpx
+from urllib.parse import urlsplit
 
 COOKIE_NAME = "odysseus_session"
 
@@ -68,13 +69,36 @@ def load_cases(path: str) -> List[Dict[str, Any]]:
     return cases
 
 
+def _check(resp: httpx.Response) -> httpx.Response:
+    """raise_for_status, but with the server's own error message."""
+    if resp.is_error:
+        try:
+            detail = resp.json().get("detail")
+        except ValueError:
+            detail = resp.text[:300]
+        raise httpx.HTTPStatusError(
+            f"{resp.status_code} from {resp.request.url.path}: {detail}",
+            request=resp.request, response=resp,
+        )
+    return resp
+
+
+def list_endpoints(client: httpx.Client) -> None:
+    rows = _check(client.get("/api/model-endpoints")).json()
+    if isinstance(rows, dict):
+        rows = rows.get("endpoints") or rows.get("items") or []
+    print("Model endpoints (use --endpoint-id ID --model MODEL):")
+    for ep in rows:
+        models = ", ".join((ep.get("models") or [])[:8])
+        print(f"  {ep.get('id'):<10} {ep.get('name') or ''}  [{models}]")
+
+
 def create_session(client: httpx.Client, args, name: str) -> str:
     resp = client.post(
         "/api/session",
         data={"name": f"eval: {name}", "endpoint_id": args.endpoint_id or "", "model": args.model or ""},
     )
-    resp.raise_for_status()
-    return resp.json()["id"]
+    return _check(resp).json()["id"]
 
 
 def run_case(client: httpx.Client, args, case: Dict[str, Any]) -> Dict[str, Any]:
@@ -96,7 +120,9 @@ def run_case(client: httpx.Client, args, case: Dict[str, Any]) -> Dict[str, Any]
     t0 = time.monotonic()
     ttft: Optional[float] = None
     with client.stream("POST", "/api/chat_stream", data=form, timeout=args.timeout) as resp:
-        resp.raise_for_status()
+        if resp.is_error:
+            resp.read()
+            _check(resp)
         for line in resp.iter_lines():
             if not line.startswith("data: "):
                 continue
@@ -147,7 +173,8 @@ def main() -> int:
     ap.add_argument("--base-url", default=os.environ.get("ODY_BASE_URL", "http://localhost:7000"))
     ap.add_argument("--session-cookie", default=os.environ.get("ODY_SESSION", ""),
                     help=f"value of the {COOKIE_NAME} cookie (or set ODY_SESSION)")
-    ap.add_argument("--endpoint-id", default="", help="model endpoint id to run on (default: app default)")
+    ap.add_argument("--endpoint-id", default="", help="model endpoint id to run on (see --list-endpoints)")
+    ap.add_argument("--list-endpoints", action="store_true", help="print model endpoints and exit")
     ap.add_argument("--model", default="", help="model name on that endpoint")
     ap.add_argument("--only", default="", help="run only cases whose name contains this")
     ap.add_argument("--timeout", type=float, default=600.0)
@@ -157,12 +184,22 @@ def main() -> int:
 
     if not args.session_cookie:
         sys.exit(f"Set ODY_SESSION (the {COOKIE_NAME} cookie from a logged-in browser).")
+    # Accept a pasted browser address: keep only scheme://host[:port].
+    parts = urlsplit(args.base_url.strip())
+    args.base_url = f"{parts.scheme or 'http'}://{parts.netloc or parts.path}".rstrip("/")
+    if args.list_endpoints or not (args.endpoint_id and args.model):
+        with httpx.Client(base_url=args.base_url, cookies={COOKIE_NAME: args.session_cookie},
+                          timeout=30) as client:
+            list_endpoints(client)
+        if not args.list_endpoints:
+            sys.exit("\nPass --endpoint-id and --model to choose the model to test.")
+        return 0
     cases = [c for c in load_cases(args.cases) if args.only in c["name"]]
     if not cases:
         sys.exit("no cases to run")
 
     results = []
-    with httpx.Client(base_url=args.base_url.rstrip("/"),
+    with httpx.Client(base_url=args.base_url,
                       cookies={COOKIE_NAME: args.session_cookie},
                       timeout=args.timeout) as client:
         for case in cases:
