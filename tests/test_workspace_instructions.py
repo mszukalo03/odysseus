@@ -219,3 +219,8 @@ def test_mcp_prompt_description_skips_excluded_tools():
     assert "mcp__srv2__query" in full
     hidden = mgr.get_tool_descriptions_for_prompt({}, exclude={"mcp__srv2__query", "bash"})
     assert "mcp__srv1__search" in hidden and "mcp__srv2__query" not in hidden
+
+
+def test_chat_mode_note_constant_mentions_agent_mode():
+    from routes.chat_helpers import _CHAT_MODE_PROJECT_NOTE
+    assert "Chat mode" in _CHAT_MODE_PROJECT_NOTE and "Agent mode" in _CHAT_MODE_PROJECT_NOTE

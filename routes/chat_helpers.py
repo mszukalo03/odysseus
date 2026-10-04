@@ -602,6 +602,16 @@ def _session_is_research_spinoff(sess) -> bool:
     return False
 
 
+_CHAT_MODE_PROJECT_NOTE = (
+    "## This chat is in Chat mode\n"
+    "You have no tools here: you cannot read, search or edit files, so ignore any "
+    "instruction above to use them and never plan tool calls. Answer from the "
+    "retrieved notes provided in this conversation (marked as retrieved documents) "
+    "and from what the user tells you. If they don't contain the answer, say so in "
+    "one line and suggest switching to Agent mode, which can search the files."
+)
+
+
 async def build_chat_context(
     sess,
     request,
@@ -732,7 +742,14 @@ async def build_chat_context(
         # only, see src/workspace_instructions) ride along with the persona's
         # own prompt: both are user-authored system instructions.
         preset_system_prompt="\n\n".join(
-            p for p in (preset.system_prompt, workspace_instructions) if p
+            p for p in (
+                preset.system_prompt,
+                workspace_instructions,
+                # The project instructions describe file tools, but Chat mode
+                # has none: without this the model plans a grep, can't run it,
+                # and ends the turn without answering.
+                _CHAT_MODE_PROJECT_NOTE if (workspace_instructions and not agent_mode) else "",
+            ) if p
         ) or None,
         protect_preset_prompt=bool(workspace_instructions),
         owner=user,
