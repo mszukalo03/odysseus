@@ -636,6 +636,9 @@ export function openCustomPresetModal() {
     if (tkv) tkv.textContent = (saved === 0 || saved > 8192) ? 'No limit' : parseInt(saved).toLocaleString();
   }
   if (promptInput) promptInput.value = savedConfig.system_prompt || '';
+  // Workspace, MCP allowlist and agent options of the active persona: without
+  // this the form reopened blank and saving it again wiped them.
+  _writeBindingInputs(savedConfig);
 
   // Load inject fields
   const prefixInput = document.getElementById('inject-prefix');
