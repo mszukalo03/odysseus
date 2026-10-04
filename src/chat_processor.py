@@ -368,8 +368,11 @@ class ChatProcessor:
             # (skills index injection moved out — see below; only fires in
             # agent mode so chat mode and incognito stay clean.)
 
-        # RAG: search if enabled and rag_manager available, inject only above threshold
-        if use_rag:
+        # RAG: search if enabled and rag_manager available, inject only above threshold.
+        # A vault persona (instruction workspace) always searches its own
+        # workspace index -- indexing it is the opt-in; the composer's RAG
+        # toggle only governs the general document index.
+        if use_rag or workspace:
             try:
                 rag_manager = getattr(self.personal_docs_manager, 'rag_manager', None)
                 if rag_manager:

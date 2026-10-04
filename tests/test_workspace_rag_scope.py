@@ -81,6 +81,14 @@ def test_preface_scopes_rag_by_workspace():
         pytest.skip(f"preface needs app wiring: {exc}")
     assert seen == [{"path_prefix": "/v/thesis"}, {"exclude_scope": "workspace"}]
 
+    # The composer's RAG toggle off: the workspace index is still searched,
+    # general retrieval is not.
+    seen.clear()
+    proc.build_context_preface(message="hi", session=None, use_memory=False, use_rag=False,
+                               workspace="/v/thesis")
+    proc.build_context_preface(message="hi", session=None, use_memory=False, use_rag=False)
+    assert seen == [{"path_prefix": "/v/thesis"}]
+
 
 def test_index_workspace_route_requires_trusted_root(tmp_path, monkeypatch):
     from fastapi import FastAPI
