@@ -200,7 +200,9 @@ def test_read_file_offset_limit(repo):
         f.write("\n".join(f"line{i}" for i in range(1, 11)) + "\n")
     r = _run("read_file", f'{{"path": "{p}", "offset": 3, "limit": 2}}')
     assert r["exit_code"] == 0
-    assert r["output"] == "line3\nline4\n"
+    assert r["output"].startswith("line3\nline4\n")
+    # The rest of the file is announced with where to continue.
+    assert "more lines follow" in r["output"] and "offset=5" in r["output"]
 
 
 def test_read_file_plain_path_backcompat(repo):

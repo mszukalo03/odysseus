@@ -1036,6 +1036,42 @@ def _is_self_hosted_openai_compatible(url: str) -> bool:
     return is_local_endpoint(url)
 
 
+def _consolidate_system_messages(messages: List[Dict], url: str) -> List[Dict]:
+    """One system message, first, as every template accepts.
+
+    The leading system messages are joined. Later ones (agent step-budget and
+    loop-breaker notes, appended mid-turn) used to be folded into that same
+    first message too, which rewrote the very start of the prompt and made a
+    self-hosted server (llama.cpp prompt cache, issue #2927) prefill the whole
+    conversation again. For self-hosted endpoints they stay where they are as
+    user-role notes instead, merged into an adjacent user message so roles
+    still alternate. Cloud providers keep the old behaviour.
+    """
+    sys_parts: List[str] = []
+    rest: List[Dict] = []
+    in_place = _is_self_hosted_openai_compatible(url)
+    leading = True
+    for m in messages:
+        if m.get("role") == "system":
+            if leading or not in_place:
+                sys_parts.append(m.get("content") or "")
+                continue
+            note = m.get("content") or ""
+            if not isinstance(note, str):
+                note = _message_content_as_text(note)
+            prev = rest[-1] if rest else None
+            if prev and prev.get("role") == "user" and isinstance(prev.get("content"), str):
+                rest[-1] = {**prev, "content": f"{prev['content']}\n\n{note}"}
+            else:
+                rest.append({"role": "user", "content": note})
+            continue
+        leading = False
+        rest.append(m)
+    if sys_parts:
+        return [{"role": "system", "content": "\n\n".join(sys_parts)}] + rest
+    return rest
+
+
 def _apply_local_cache_affinity(payload: Dict, url: str, session_id: Optional[str]) -> None:
     """Add llama.cpp-server slot-affinity hints to an outgoing payload, in place.
 
@@ -1998,17 +2034,8 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     messages_copy = _sanitize_llm_messages(messages)
 
     # Consolidate multiple system messages into one at the start.
-    sys_parts = []
-    non_sys = []
-    for m in messages_copy:
-        if m.get("role") == "system":
-            sys_parts.append(m.get('content') or '')
-        else:
-            non_sys.append(m)
-    if sys_parts:
-        messages_copy = [{"role": "system", "content": "\n\n".join(sys_parts)}] + non_sys
-    else:
-        messages_copy = non_sys
+    # Some models (e.g. Qwen3.5) reject system messages that aren't first.
+    messages_copy = _consolidate_system_messages(messages_copy, url)
 
     provider = _detect_provider(url)
     cache_key = _get_cache_key(
@@ -2314,17 +2341,8 @@ async def llm_call_async(
     messages_copy = _sanitize_llm_messages(messages)
 
     # Consolidate multiple system messages into one at the start.
-    sys_parts = []
-    non_sys = []
-    for m in messages_copy:
-        if m.get("role") == "system":
-            sys_parts.append(m.get('content') or '')
-        else:
-            non_sys.append(m)
-    if sys_parts:
-        messages_copy = [{"role": "system", "content": "\n\n".join(sys_parts)}] + non_sys
-    else:
-        messages_copy = non_sys
+    # Some models (e.g. Qwen3.5) reject system messages that aren't first.
+    messages_copy = _consolidate_system_messages(messages_copy, url)
 
     cache_key = _get_cache_key(
         url, model, messages_copy, temperature, max_tokens, headers=headers,
@@ -2646,17 +2664,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
 
     # Consolidate multiple system messages into one at the start.
     # Some models (e.g. Qwen3.5) reject system messages that aren't first.
-    sys_parts = []
-    non_sys = []
-    for m in messages_copy:
-        if m.get("role") == "system":
-            sys_parts.append(m.get('content') or '')
-        else:
-            non_sys.append(m)
-    if sys_parts:
-        messages_copy = [{"role": "system", "content": "\n\n".join(sys_parts)}] + non_sys
-    else:
-        messages_copy = non_sys
+    messages_copy = _consolidate_system_messages(messages_copy, url)
 
     if provider == "anthropic":
         target_url = _normalize_anthropic_url(url)

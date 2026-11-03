@@ -260,6 +260,12 @@ class EditFileTool:
             result["diff"] = diff
         return result
 
+def _continue_note(start: int, shown: int, why: str) -> str:
+    last = start + shown - 1
+    return (f"\n... [{why}; showed lines {start}-{last}. "
+            f"Continue with read_file offset={last + 1}]")
+
+
 class ReadFileTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.tool_execution import _resolve_tool_path, _resolve_search_root, _truncate
@@ -279,24 +285,30 @@ class ReadFileTool:
             return {"error": f"read_file: {e}", "exit_code": 1}
         try:
             def _read():
-                if offset > 0 or limit > 0:
-                    start = max(offset, 1)
-                    out, n, budget = [], 0, MAX_READ_CHARS
-                    with open(path, "r", encoding="utf-8", errors="replace") as f:
-                        for i, line in enumerate(f, 1):
-                            if i < start:
-                                continue
-                            if limit > 0 and n >= limit:
-                                break
-                            out.append(line)
-                            n += 1
-                            budget -= len(line)
-                            if budget <= 0:
-                                out.append(f"\n... [truncated at {MAX_READ_CHARS} chars]")
-                                break
-                    return "".join(out)
+                # Whole lines only, and when the read stops early, say exactly
+                # where to pick up so the model doesn't re-read what it has.
+                start = max(offset, 1)
+                out, n, budget = [], 0, MAX_READ_CHARS
                 with open(path, "r", encoding="utf-8", errors="replace") as f:
-                    return f.read(MAX_READ_CHARS + 1)
+                    for i, line in enumerate(f, 1):
+                        if i < start:
+                            continue
+                        if limit > 0 and n >= limit:
+                            out.append(_continue_note(start, n, "more lines follow"))
+                            break
+                        if n and len(line) > budget:
+                            out.append(_continue_note(start, n, f"truncated at {MAX_READ_CHARS} chars"))
+                            break
+                        if len(line) > budget:
+                            # A single line longer than the whole budget.
+                            out.append(line[:budget])
+                            out.append(f"\n... [line {i} truncated at {MAX_READ_CHARS} chars. "
+                                       f"Continue with read_file offset={i + 1}]")
+                            break
+                        out.append(line)
+                        n += 1
+                        budget -= len(line)
+                return "".join(out)
             data = await asyncio.to_thread(_read)
         except FileNotFoundError:
             return {"error": f"read_file: {path}: not found", "exit_code": 1}
@@ -306,8 +318,6 @@ class ReadFileTool:
             return {"error": f"read_file: {path}: is a directory (use ls)", "exit_code": 1}
         except OSError as e:
             return {"error": f"read_file: {path}: {e}", "exit_code": 1}
-        if not (offset > 0 or limit > 0) and len(data) > MAX_READ_CHARS:
-            data = data[:MAX_READ_CHARS] + f"\n... [truncated at {MAX_READ_CHARS} chars]"
         return {"output": data, "exit_code": 0}
 
 

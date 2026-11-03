@@ -138,6 +138,14 @@ DEFAULT_SETTINGS = {
     # At the step cap (or tool budget), spend one last tool-free round on an
     # answer instead of stopping silently (src/agent_budget.py).
     "agent_answer_on_cap": True,
+    # Answer a repeated identical workspace read (read_file/grep/glob/ls with
+    # the same args, nothing written since) with a pointer to the earlier
+    # result instead of running it again (src/agent_repeat_guard.py).
+    "agent_skip_duplicate_reads": True,
+    # Reasoning echoed back on agent tool rounds: "latest" (newest assistant
+    # message only), "none", or "auto" = none for self-hosted endpoints (keeps
+    # their prompt cache intact), latest elsewhere (src/agent_loop.py).
+    "agent_reasoning_history": "auto",
     # Soft input-token budget for the agent loop. The DEFAULT value (6000) is the
     # "auto" sentinel: it means "scale the budget to the model's context window"
     # (#1230) — so long-context models aren't capped at 6000. Set ANY OTHER value

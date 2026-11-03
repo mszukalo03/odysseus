@@ -1334,6 +1334,60 @@ def _strip_think_blocks(text: str) -> str:
     return "".join(parts)
 
 
+def _strip_reasoning_text(text: str) -> str:
+    """Assistant text as it should be sent back to the model: closed
+    ``<think>`` blocks removed, and when a closer is left with no opener
+    (templates that open ``<think>`` in the generation prompt), everything
+    up to it is reasoning too."""
+    if not isinstance(text, str) or "think>" not in text.lower():
+        return text
+    out = _strip_think_blocks(text)
+    close = out.lower().rfind("</think>")
+    if close != -1 and "<think>" not in out[:close].lower():
+        out = out[close + len("</think>"):]
+    return out.lstrip()
+
+
+def _strip_history_reasoning(messages: List[Dict]) -> List[Dict]:
+    """Copy of ``messages`` with earlier assistant reasoning removed.
+
+    Qwen3-family templates expect prior ``<think>`` blocks to be gone, and
+    replaying them makes a model re-read (and often re-enact) its own earlier
+    deliberation. Only assistant messages change; the inputs aren't mutated.
+    """
+    cleaned = []
+    for msg in messages or []:
+        if isinstance(msg, dict) and msg.get("role") == "assistant" and (
+            "reasoning_content" in msg
+            or (isinstance(msg.get("content"), str) and "think>" in msg["content"].lower())
+        ):
+            msg = dict(msg)
+            msg.pop("reasoning_content", None)
+            if isinstance(msg.get("content"), str):
+                msg["content"] = _strip_reasoning_text(msg["content"])
+        cleaned.append(msg)
+    return cleaned
+
+
+def _echo_reasoning_mode(endpoint_url: str) -> str:
+    """How much of this turn's reasoning to send back on tool rounds.
+
+    ``latest``: only the newest assistant message keeps ``reasoning_content``
+    (DeepSeek's API rejects thinking-mode follow-ups without it). ``none``:
+    never echo it, so each round's prompt is the previous one plus new
+    messages and a llama.cpp-style prompt cache is reused whole. ``auto``
+    picks ``none`` for self-hosted endpoints and ``latest`` elsewhere.
+    """
+    mode = str(get_setting("agent_reasoning_history", "auto") or "auto").strip().lower()
+    if mode in {"latest", "none"}:
+        return mode
+    try:
+        from src.llm_core import _is_self_hosted_openai_compatible
+        return "none" if _is_self_hosted_openai_compatible(endpoint_url) else "latest"
+    except Exception:
+        return "latest"
+
+
 _LOW_SIGNAL_RE = re.compile(r"^[\W_]*$", re.UNICODE)
 _CASUAL_OPENING_RE = re.compile(
     r"^\s*(?:h+i+|hey+|hello+|yo+|sup+|what'?s up|wass?up|hiya|howdy|"
@@ -3107,6 +3161,7 @@ def _append_tool_results(
     round_num: int,
     round_reasoning: str = "",
     tool_result_records: Optional[list] = None,
+    echo_reasoning: str = "latest",
 ):
     """Append tool execution results back into the message history for the next LLM round.
 
@@ -3122,12 +3177,20 @@ def _append_tool_results(
     reasoning, which reinforces repetition/looping. So keep reasoning_content
     on the MOST RECENT assistant turn only: enough for DeepSeek continuity,
     without the per-round accumulation.
+
+    ``echo_reasoning="none"`` drops it altogether (see _echo_reasoning_mode):
+    nothing earlier in the history then changes between rounds. Inline
+    ``<think>`` text is always kept out of the echoed assistant content.
     """
     tool_result_records = tool_result_records or []
-    # Strip reasoning_content from earlier assistant turns; only the newest keeps it.
-    for _m in messages:
-        if _m.get("role") == "assistant":
-            _m.pop("reasoning_content", None)
+    round_response = _strip_reasoning_text(round_response or "")
+    if echo_reasoning == "none":
+        round_reasoning = ""
+    else:
+        # Strip reasoning_content from earlier assistant turns; only the newest keeps it.
+        for _m in messages:
+            if _m.get("role") == "assistant":
+                _m.pop("reasoning_content", None)
     if used_native and native_tool_calls:
         assistant_msg = {"role": "assistant"}
         # When the model emitted ONLY tool calls (no prose), content must be
@@ -3568,6 +3631,10 @@ async def stream_agent_loop(
       - data: {"type": "metrics", "data": {...}}            (final metrics)
       - data: [DONE]                                        (end)
     """
+
+    # Earlier turns go back to the model without their reasoning.
+    messages = _strip_history_reasoning(messages)
+    _echo_reasoning = _echo_reasoning_mode(endpoint_url)
 
     run_security = ToolRunSecurityContext(
         external_untrusted_context_seen=(
@@ -4596,6 +4663,10 @@ async def stream_agent_loop(
         project_mode=bool(workspace and _guard_has_instructions(workspace)),
         enabled=bool(get_setting("agent_answer_on_cap", True)),
     )
+    # Repeated identical workspace reads are answered with a pointer to the
+    # earlier result instead of running again (src/agent_repeat_guard.py).
+    from src.agent_repeat_guard import FORCE_ANSWER_AFTER_REPEATS_NOTE, ToolRepeatGuard
+    _repeat_guard = ToolRepeatGuard(enabled=bool(get_setting("agent_skip_duplicate_reads", True)))
 
     def _filter_route_tool_schemas(schemas):
         # Keep candidate actions visible after taint so the model can propose
@@ -5758,6 +5829,7 @@ async def stream_agent_loop(
         tool_result_texts = []  # plain text for native tool role messages
         tool_result_records = []  # aligned structured provenance for next round
         budget_hit = False
+        _round_duplicates = 0  # calls answered by the repeat guard, not run
         for i, block in enumerate(tool_blocks):
             # --- Tool budget check ---
             if max_tool_calls > 0 and total_tool_calls >= max_tool_calls:
@@ -5904,6 +5976,17 @@ async def stream_agent_loop(
                         "Exact approval required before tool start: %s",
                         block.tool_type,
                     )
+            elif (_prior_round := _repeat_guard.prior_round(block.tool_type, block.content)) is not None:
+                # Same read, same args, nothing changed since: don't run it
+                # again, point the model at the result it already has.
+                yield (
+                    f'data: {json.dumps({"type": "tool_start", "tool": block.tool_type, "command": cmd_display, "full_command": full_command, "round": round_num})}\n\n'
+                )
+                desc = f"{block.tool_type}: already run in step {_prior_round}"
+                result = _repeat_guard.duplicate_result(block.tool_type, _prior_round)
+                _round_duplicates += 1
+                logger.info("[agent] skipped duplicate %s call (first run in round %d)",
+                            block.tool_type, _prior_round)
             else:
                 yield (
                     f'data: {json.dumps({"type": "tool_start", "tool": block.tool_type, "command": cmd_display, "full_command": full_command, "round": round_num})}\n\n'
@@ -5960,6 +6043,7 @@ async def stream_agent_loop(
                             await _tool_task
                         except (asyncio.CancelledError, Exception):
                             pass
+                _repeat_guard.record(block.tool_type, block.content, round_num, result)
 
             run_security.observe_tool_result(block.tool_type, result, block.content)
 
@@ -6421,7 +6505,15 @@ async def stream_agent_loop(
         _append_tool_results(messages, round_response, converted_calls,
                              tool_results, tool_result_texts, used_native, round_num,
                              round_reasoning=round_reasoning,
-                             tool_result_records=tool_result_records)
+                             tool_result_records=tool_result_records,
+                             echo_reasoning=_echo_reasoning)
+
+        # A second round in a row of nothing but already-answered reads: the
+        # model is circling. Take tools away so the next round answers.
+        if _repeat_guard.end_round(calls=len(tool_results), duplicates=_round_duplicates) and not _force_answer:
+            logger.warning("[agent] repeat guard: round %d was only duplicate reads; forcing an answer", round_num)
+            _force_answer = True
+            messages.append({"role": "system", "content": FORCE_ANSWER_AFTER_REPEATS_NOTE})
 
         # Emit agent_step event
         yield (

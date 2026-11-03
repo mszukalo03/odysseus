@@ -70,6 +70,10 @@ When adding, removing, or renaming a tool, update the registry chain, execution 
 
 The agent loop's step budget is guarded by `src/agent_budget.py`: two rounds before `max_rounds` the model is told to wrap up, in workspace project mode a long streak of tool-only rounds draws a one-time nudge, and the final round (or the round after the tool budget is spent) runs tool-free so the turn ends with an answer. `rounds_exhausted` is still emitted so Continue works. The `agent_answer_on_cap` setting (default true) turns this off.
 
+`src/agent_repeat_guard.py` answers a repeated workspace read (`read_file`/`grep`/`glob`/`ls`, same normalized args, nothing state-changing run since) with a note pointing at the earlier result instead of running it again; two consecutive rounds of nothing but such repeats force a tool-free answer round. Setting `agent_skip_duplicate_reads` (default true). Truncated `read_file` output names the line it stopped at and the `offset` to continue from.
+
+Reasoning is kept out of the history sent back to the model: incoming assistant history and each round's echoed content lose inline `<think>` text, and `agent_reasoning_history` (`auto` default: `none` for self-hosted endpoints, `latest` elsewhere) decides whether the newest round's `reasoning_content` is echoed. With `none`, each tool round's prompt is the previous one plus new messages. For self-hosted OpenAI-compatible endpoints, `llm_core._consolidate_system_messages` folds only the leading system messages into the first one; later system notes (budget, loop-breaker, repeat guard) stay in place as user-role text, so the prompt prefix the server cached is not rewritten mid-turn.
+
 ## Tool Retrieval And Execution
 
 `src.tool_index.ToolIndex` owns candidate retrieval using embeddings/keywords and cached index data. Security filtering is not its hard boundary: `agent_loop` hides unavailable schemas, and `tool_execution` blocks disabled, admin-only, and public-restricted calls before dispatch.
