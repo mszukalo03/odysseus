@@ -13,7 +13,7 @@ a = Analysis(
     ['launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[('static', 'static'), ('scripts', 'scripts'), ('mcp_servers', 'mcp_servers'), ('services/hwfit/data', 'services/hwfit/data'), ('config', 'config'), ('.env.example', '.env.example')] + _extensions_datas,
+    datas=[('licenses', 'licenses'), ('THIRD_PARTY_PROVENANCE.json', '.'), ('ACKNOWLEDGMENTS.md', '.'), ('static', 'static'), ('scripts', 'scripts'), ('mcp_servers', 'mcp_servers'), ('services/hwfit/data', 'services/hwfit/data'), ('config', 'config'), ('.env.example', '.env.example')] + _extensions_datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

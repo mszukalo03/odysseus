@@ -20,12 +20,16 @@ export const state = {
   _libFolders: [],
   _libAccountId: null,           // null = backend default account
   _libAccounts: [],              // list of accounts for the chip strip
+  _libAutoReplyActive: false,    // active account currently has an away reply
   _libPendingExpandUid: null,
   _libSearch: '',
   _libFilter: 'all',             // all, unread, unanswered
   _libSort: 'recent',            // recent, unread, favorites
   _libHasAttachments: false,
   _libShowTags: localStorage.getItem('odysseus.email.showTags') !== '0',
+  // Embedded MIME images are shown by default; Email Settings can opt a
+  // mailbox back into the manual-load behavior.
+  _libViewInlineImages: true,
   _libLoading: false,
   _docModule: null,
   _onEmailClick: null,
@@ -34,4 +38,8 @@ export const state = {
   _selectedUids: new Set(),
   _libReaderUid: null,           // 3-pane layout: uid currently shown in .email-pane-reader
   _libUnreadCounts: {},          // 3-pane layout: per-folder unread count, from GET /api/email/folders
+  // Generation guard for the away/auto-reply refresh. Written by the
+  // settings page and by the unread-badge refresh, which live in
+  // different modules, so it cannot be a module-level `let`.
+  _autoReplyRefreshSeq: 0,
 };

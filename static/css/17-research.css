@@ -1,0 +1,4883 @@
+/* 17-research - part of the former static/style.css.
+ *
+ * The stylesheet is split by area, but the split is mechanical: rules were
+ * moved verbatim and NOT regrouped. The numeric prefix is the load order, and
+ * that order is what preserves the cascade. A rule sits in the file its
+ * original position fell into, so an area's rules are not all in its file and
+ * a file is not only that area's rules.
+ *
+ * Do not reorder the <link> tags in static/index.html, and do not move a rule
+ * between files: with 1,151 redeclarations and 1,886 !important in this
+ * cascade, either can change which declaration wins.
+ *
+ * static/index.html and the PRECACHE list in static/sw.js must agree on this
+ * order. tests/test_static_stylesheet_manifest.py and
+ * tests/test_css_computed_style_snapshot.py fail if that drifts.
+ */
+button.cal-btn { background:color-mix(in srgb, var(--fg) 8%, transparent); border:1px solid var(--border); color:var(--fg); border-radius:5px; padding:0 14px; height:28px; font-size:11px; font-weight:500; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; transition:background 0.15s, border-color 0.15s; }
+button.cal-btn:hover { background:color-mix(in srgb, var(--fg) 14%, transparent); }
+button.cal-btn.cal-btn-primary { background:var(--accent, var(--red)); color:var(--bg); border-color:var(--accent, var(--red)); }
+button.cal-btn.cal-btn-primary:hover { opacity:0.9; background:var(--accent, var(--red)); }
+@media (max-width: 600px) {
+  .cal-modal-container { max-width:100vw; width:100vw; border-radius:0; max-height:100vh; height:100vh; }
+  .cal-day { min-height:58px; padding:3px; }
+  .cal-day-num { font-size:10px; }
+  .cal-event-preview { display:none; }
+  .cal-multiday { font-size:8.5px; padding:0 4px; }
+  .cal-event-row { min-height:16px; padding:2px 3px; gap:3px; }
+  .cal-event-row-name,
+  .cal-event-row-time { font-size:9.5px; }
+  /* Two-row toolbar on mobile:
+        Row 1 — Title (full width)
+        Row 2 — [← Today →] [view toggle] [settings/sync/filters/+New]
+     Title gets its own row so it isn't squeezed to nothing when the
+     right-side group is wide. The .cal-toolbar-nav (which now only
+     contains the title since JS moved the date-nav to the right) is
+     width:100% so it forces a wrap before .cal-toolbar-right. */
+  .cal-toolbar {
+    gap: 4px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .cal-toolbar-nav {
+    flex-wrap: nowrap;
+    flex: 1 1 100%;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+  .cal-toolbar-right {
+    margin-top: 6px;
+    margin-left: 0;
+    flex-wrap: nowrap;
+    flex-shrink: 1;
+    overflow-x: auto;
+    scrollbar-width: none;
+    width: 100%;
+  }
+  .cal-quickadd-row {
+    top: -2px;
+  }
+  .cal-toolbar-right::-webkit-scrollbar { display: none; }
+  .cal-title {
+    font-size: 13px;
+    padding: 0 4px;
+  }
+  #cal-side-prev,
+  #cal-side-next {
+    display: none !important;
+  }
+  .cal-nav { padding: 2px 5px; font-size: 10px; }
+  .cal-view-btn { padding: 2px 5px; font-size: 9px; }
+  .cal-filters {
+    gap: 3px;
+    margin: 0 0 6px;
+    padding: 0;
+  }
+  .cal-filter-toggle { top: -5px; }
+  .cal-filter-item { font-size: 9px; padding: 1px 5px; }
+  .cal-year { grid-template-columns:repeat(3, 1fr); gap:6px; }
+  .cal-year-cell { font-size:7px; }
+}
+
+/* ═══ Research Panel ═══ */
+/* .research-overlay inherits from .modal — no extra layout needed */
+.research-pane {
+  display:flex; flex-direction:column;
+  padding:10px; box-sizing:border-box;
+  font-size:12px;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  /* Research hydration replaces picker options after mount. Do not inherit
+     the generic scale-in animation: scaling a changing-height frame reads as
+     a bounce, particularly next to the document split pane. */
+  animation: research-pane-enter 0.18s ease-out both;
+}
+/* Synapse signal traveling around the outer edge of the pane. The pane keeps a
+   flat background; only this thin border ring remains animated. */
+.research-pane::after {
+  content: '';
+  position: absolute; inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(
+    from var(--research-orbit-angle, 0deg),
+    transparent 0deg,
+    transparent 300deg,
+    color-mix(in srgb, var(--accent, var(--red)) 70%, transparent) 335deg,
+    var(--accent, var(--red)) 350deg,
+    color-mix(in srgb, var(--accent, var(--red)) 70%, transparent) 358deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+@media (prefers-reduced-motion: reduce) {
+  .research-pane::after { animation: none; opacity: 0.4; }
+}
+.research-pane-header {
+  display:flex; justify-content:space-between; align-items:center;
+  margin-bottom:6px; cursor:grab; user-select:none;
+}
+.research-pane-title-icon {
+  display: inline-flex;
+  align-items: center;
+}
+.research-pane-title-icon svg { display: block; }
+.research-pane-header-actions {
+  display: flex; align-items: center; gap: 2px;
+  margin-left: auto;
+}
+.research-pane-body {
+  flex: 1; min-height: 0; overflow: hidden;
+  display: flex; flex-direction: column; gap: 10px;
+  /* Flat surface — matches Library's .modal-body (no inset sub-window).
+     The outer .research-pane already provides the 10px padding + border. */
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 12px;
+  color: var(--fg);
+}
+/* Research uses the same flat tab navigation as Memory and Skills. Each view
+   owns its scrolling so switching tabs never leaves the form or result list
+   clipped by the modal body. */
+.research-tabs {
+  flex: 0 0 auto;
+  margin: -4px -4px 0;
+  padding: 0 4px;
+}
+.research-tabs .memory-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.research-tabs .memory-tab[hidden] { display: none !important; }
+.research-tabs .memory-tab svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  opacity: 0.75;
+}
+.research-tab-panel {
+  flex: 1 1 auto;
+}
+.research-tab-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 28px;
+  margin: 0 0 6px;
+}
+.research-tab-heading > .memory-count {
+  font-size: 10px;
+  opacity: 0.55;
+  font-weight: normal;
+}
+.research-tab-heading #research-history-clear { margin-left: auto; }
+/* Match the .admin-card surface used in Cookbook (Download / Serve sections):
+   var(--panel) bg with var(--border) and rounded corners. */
+.research-new-job {
+  flex-shrink: 0;
+}
+.research-query {
+  width:100%; resize:vertical; min-height:80px; max-height:240px;
+  /* Match the rest of the app's inputs (var(--bg) page tone) rather than
+     the darker panel tone — keeps the input readable on the dark sub-window. */
+  background: var(--bg); color: var(--fg);
+  border:1px solid var(--border); border-radius:6px;
+  padding:8px 10px; font-size:12px; font-family:inherit;
+  box-sizing:border-box;
+  margin-top: 6px;
+}
+.research-query:focus { outline:none; border-color:var(--accent-primary, var(--red)); }
+.research-settings-row {
+  display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.research-setting {
+  display:flex; flex-direction:column; flex:1; min-width:104px;
+}
+.research-setting:has(#research-rounds),
+.research-setting:has(#research-category) {
+  position: relative;
+  top: 0;
+}
+.research-setting:has(#research-search-provider),
+.research-setting:has(#research-endpoint) {
+  position: relative;
+  top: 5px;
+}
+.research-setting:has(#research-model) {
+  position: relative;
+  top: 1px;
+}
+.research-setting-label {
+  font-size:9px; text-transform:uppercase; letter-spacing:0.5px;
+  color:var(--accent, var(--red)); opacity:1; margin-bottom:2px;
+}
+.research-native-select {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+.research-picker { position: relative; min-width: 0; }
+.research-picker-btn {
+  width: 100%; height: 28px; padding: 0 8px;
+  display: flex; align-items: center; gap: 6px;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  font: inherit; font-size: 12px; cursor: pointer; text-align: left;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+.research-picker-btn:hover,
+.research-picker.open .research-picker-btn {
+  border-color: color-mix(in srgb, var(--accent, var(--red)) 62%, var(--border));
+  background: color-mix(in srgb, var(--accent, var(--red)) 5%, var(--bg));
+}
+.research-picker-current {
+  min-width: 0; flex: 1; display: flex; align-items: center; gap: 6px;
+}
+.research-picker-icon {
+  width: 15px; height: 15px; flex: 0 0 15px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--accent, var(--red));
+}
+.research-picker-icon svg { width: 15px; height: 15px; display: block; }
+.research-picker-btn > svg {
+  width: 9px; height: 9px; flex-shrink: 0; opacity: 0.5;
+  transition: transform 0.14s ease;
+}
+.research-picker-menu {
+  position: absolute; z-index: 120;
+  top: calc(100% + 4px); left: 0;
+  width: max-content; min-width: 100%; max-width: min(280px, 82vw);
+  max-height: 230px; overflow-y: auto;
+  padding: 4px;
+  background: var(--panel, var(--bg));
+  border: 1px solid var(--border); border-radius: 7px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.32);
+}
+.research-picker-option {
+  width: 100%; min-height: 31px; padding: 6px 7px;
+  display: flex; align-items: center; gap: 7px;
+  border: 0; border-radius: 5px;
+  background: transparent; color: var(--fg);
+  font: inherit; font-size: 12px; text-align: left; cursor: pointer;
+  white-space: nowrap;
+}
+.research-picker-option:hover,
+.research-picker-option:focus {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+.research-picker-option.active {
+  color: var(--accent, var(--red));
+  background: color-mix(in srgb, var(--accent, var(--red)) 10%, transparent);
+}
+.research-picker-check { margin-left: auto; opacity: 0; color: var(--accent, var(--red)); }
+.research-controls-row {
+  display:flex; align-items:center; gap:8px; margin-top:10px;
+}
+.research-start-btn {
+  margin-left:auto;
+  display:flex; align-items:center; gap:5px;
+  height:28px; padding:0 14px; border:none; border-radius:6px;
+  background:var(--accent-primary, var(--red)); color:var(--bg);
+  font-size:12px; font-weight:600; cursor:pointer;
+  transition:opacity 0.15s;
+}
+.research-start-btn:hover { opacity:0.85; color:var(--fg); }
+.research-start-btn:hover svg { color:inherit; }
+.research-start-btn:disabled, .research-start-btn.research-start-busy {
+  opacity:0.7; cursor:wait;
+}
+.research-start-spinner {
+  display:inline-block; width:11px; height:11px; vertical-align:-1px; margin-right:4px;
+  border:2px solid currentColor; border-right-color:transparent; border-radius:50%;
+  animation: spin 0.7s linear infinite;
+}
+.research-category-row {
+  display:flex; gap:4px; margin-top:8px; flex-wrap:wrap;
+}
+/* Mobile: keep the category chips on ONE row (scroll horizontally) instead of
+   wrapping to two rows. */
+@media (max-width: 600px) {
+  .research-category-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .research-category-row::-webkit-scrollbar { display: none; }
+  .research-cat { flex-shrink: 0; white-space: nowrap;   position: relative; top: -8px;
+}
+}
+/* Match .doclib-chip exactly so categories feel like document filter tags. */
+.research-cat {
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  position: relative;
+  top: -4px;
+}
+.research-cat:hover { border-color: var(--red); }
+.research-cat.active {
+  background: color-mix(in srgb, var(--red) 15%, transparent);
+  border-color: color-mix(in srgb, var(--red) 40%, transparent);
+  color: var(--red);
+}
+/* Match the Cookbook "Trending models" toggle (a left-aligned memory-toolbar-btn
+   with an arrow + label) instead of the old tiny-uppercase borderless text. */
+.research-settings-toggle {
+  display:flex; align-items:center; gap:6px;
+  width:100%; text-align:left;
+  height:24px; padding:0 8px; margin-top:10px;
+  background:none; border:1px solid var(--border); border-radius:4px;
+  color:color-mix(in srgb, var(--fg) 60%, transparent);
+  font-size:11px; font-family:inherit; cursor:pointer;
+  transition:all 0.15s;
+}
+.research-settings-toggle:hover { color:var(--fg); border-color:var(--fg); }
+.research-settings-chevron { display:inline-flex; transition:transform 0.2s; margin-left:auto; }
+.research-settings-toggle.collapsed .research-settings-chevron { transform:rotate(-90deg); }
+/* When settings is EXPANDED, merge the toggle bar visually into the
+   settings body so it's clear the row below is the toggle's content
+   (no gap, no doubled border between them). */
+.research-settings-toggle:not(.collapsed) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
+}
+.research-settings-toggle:not(.collapsed) + .research-settings-row {
+  margin-top: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-top-color: color-mix(in srgb, var(--border) 50%, transparent);
+}
+.research-add-btn {
+  height:28px;
+  padding:0 10px;
+  color:var(--fg);
+  font-size:11px;
+}
+.research-add-btn:hover { background:color-mix(in srgb, var(--border) 30%, transparent); }
+
+/* Popover anchored to the Start-All button — pick parallel vs sequential
+   without the heavy "Run N jobs" modal. Drops down by default, flips to
+   drop-up when there's no room below (the .rrm-up modifier is added by
+   the JS that positions it). */
+.research-run-mode-popover {
+  position: fixed;
+  z-index: 12000;
+  min-width: 200px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  padding: 5px;
+  font-size: 13px;
+  animation: rrm-pop-in 0.12s ease-out both;
+  transform-origin: top right;
+}
+@keyframes rrm-pop-in {
+  from { opacity: 0; transform: scale(0.96) translateY(-2px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.research-run-mode-popover .research-run-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--fg);
+  font-family: inherit;
+  padding: 10px 13px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.research-run-mode-popover .research-run-mode-row svg { flex-shrink: 0; opacity: 0.8; }
+.research-run-mode-popover .rrm-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--fg);
+}
+.research-jobs-list {
+  flex:1; min-height:0; overflow-y:auto; padding:6px 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.research-empty {
+  text-align:center; padding:30px 14px;
+  font-size:12px; opacity:0.4;
+}
+/* Cards match Library's .doclib-card: subtle fg 3% tint over var(--bg). */
+.research-job-card {
+  --cat-color: #db8576;
+  margin: 0;
+  padding: 9px 10px 9px 11px;
+  background: color-mix(in srgb, var(--cat-color) 4%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--cat-color) 25%, var(--border));
+  border-left: 3px solid var(--cat-color);
+  border-radius: 8px;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+.research-job-card:hover {
+  background: color-mix(in srgb, var(--cat-color) 7%, var(--bg));
+  border-color: color-mix(in srgb, var(--cat-color) 40%, var(--border));
+}
+.research-job-card.running {
+  background: color-mix(in srgb, var(--cat-color) 8%, var(--bg));
+  box-shadow: inset 0 1px color-mix(in srgb, var(--cat-color) 14%, transparent);
+}
+.research-job-card.queued { --cat-color: var(--fg-dim, #888); }
+.background-tools-status.agent-thread { min-width: 0; width: calc(100% - 32px); max-width: 640px; }
+.chat-research-card .agent-thread-header { width: 100%; min-height: 44px; background: none; border: 0; border-radius: 0; text-align: left; font-family: inherit; }
+.chat-research-card .agent-thread-header:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.chat-research-card.agent-thread-node .agent-thread-dot { top: 23px; }
+.chat-research-card .agent-thread-status { min-width: 0; }
+.chat-research-background { display: inline-flex; align-items: center; gap: 5px; margin-left: 0; white-space: nowrap; flex-shrink: 0; }
+.chat-research-background .spinner-whirlpool { margin: 0 !important; }
+.chat-research-background canvas { transform: translateY(-2px); }
+.chat-research-card .research-job-query { white-space: normal; overflow-wrap: anywhere; font-size: 12px; }
+.chat-research-detail { margin-top: 5px; font-size: 12px; color: var(--fg-dim, #888); }
+.chat-research-open { display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; margin-top: 4px; color: var(--red); text-decoration: underline; }
+.chat-research-open:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; border-radius: 4px; }
+.research-job-card.error,
+.research-job-card.cancelled { --cat-color: #f44336; }
+/* Per-category theming — picks up a category accent, badge, and soft tint */
+.research-job-card[data-category] { --cat-color: var(--accent, var(--red)); }
+.research-job-card[data-category="product"]    { --cat-color: #5b8abf; }
+.research-job-card[data-category="comparison"] { --cat-color: #e5a33a; }
+.research-job-card[data-category="howto"]      { --cat-color: #82c882; }
+.research-job-card[data-category="landscape"]  { --cat-color: #a07ae0; }
+.research-job-card[data-category="factcheck"]  { --cat-color: var(--red); }
+/* Inline category label — sits beside the title in low-opacity colored
+   text instead of a separate pill. Picks up the per-card --cat-color. */
+/* Uncategorized (default-format) research = "standard", shown in the same
+   green as its left border so the green reads as a labelled category. */
+.research-cat-badge.research-cat-standard { color: var(--cat-color); }
+.research-cat-badge {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 2px 5px;
+  background: color-mix(in srgb, var(--cat-color) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cat-color) 22%, transparent);
+  border-radius: 4px;
+  color: var(--cat-color, var(--accent));
+  opacity: 0.9;
+  flex-shrink: 0;
+  margin-left: 0;
+}
+
+/* Category hero banner */
+.research-hero {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 18px; margin: 8px 0 14px;
+  border-radius: 10px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--cat-color, var(--accent)) 18%, transparent) 0%,
+    color-mix(in srgb, var(--cat-color, var(--accent)) 5%, transparent) 100%
+  );
+  border-left: 4px solid var(--cat-color, var(--accent));
+  position: relative; overflow: hidden;
+}
+.research-hero-icon {
+  flex-shrink: 0; width: 32px; height: 32px;
+  color: var(--cat-color, var(--accent));
+  display: flex; align-items: center; justify-content: center;
+  filter: drop-shadow(0 2px 4px color-mix(in srgb, var(--cat-color, var(--accent)) 40%, transparent));
+}
+.research-hero-text { flex: 1; min-width: 0; }
+.research-hero-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px;
+  font-weight: 700; opacity: 0.7; margin-bottom: 3px;
+  color: var(--cat-color, var(--accent));
+}
+.research-hero-query {
+  font-size: 15px; font-weight: 600;
+  line-height: 1.3; color: var(--fg);
+}
+
+
+
+
+
+
+.research-job-header {
+  display:flex; align-items:center; gap:7px; min-height:24px;
+}
+.research-job-query {
+  flex:1; min-width:0; font-size:12px; font-weight:650;
+  letter-spacing: 0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  color: var(--fg);
+  transform: translateY(-4px);
+}
+.research-job-time,
+.research-job-meta {
+  font-size:10px; opacity:0.5; white-space:nowrap; font-family:monospace;
+}
+.research-job-status {
+  font-size:10px; text-transform:uppercase; opacity:0.6;
+}
+.research-job-cancel,
+.research-job-remove,
+.research-job-report-link {
+  background:transparent; border:none; color:var(--fg);
+  opacity:0.4; cursor:pointer; padding:2px; display:flex;
+  transition:opacity 0.15s;
+}
+/* Minimize toggle for the per-job synapse "tree" visual. */
+.research-synapse-toggle {
+  background:transparent; border:none; color:var(--fg);
+  opacity:0.4; cursor:pointer; padding:2px; display:flex;
+  transition:opacity 0.15s;
+}
+.research-job-model {
+  font-size:9px; opacity:0.4; white-space:nowrap;
+  max-width:120px; overflow:hidden; text-overflow:ellipsis;
+}
+.research-job-actions {
+  display:flex; gap:5px; margin-top:7px;
+  align-items:center;
+}
+.research-job-thumb-frame {
+  position: relative;
+  width: 49px;
+  height: 29px;
+  border-radius: 4px;
+  flex: 0 0 49px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: var(--panel, var(--bg));
+}
+.research-job-summary {
+  align-items: flex-start;
+}
+.research-job-summary-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  transform: translateY(-20px);
+}
+.research-job-summary .research-job-meta {
+  position: relative;
+  top: 12px;
+  transform: none;
+}
+.research-job-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.research-job-thumb-empty {
+  display: inline-block;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--fg) 7%, transparent),
+      color-mix(in srgb, var(--fg) 3%, transparent));
+}
+/* Match .doclib-toolbar-btn — same font, padding, hover */
+.research-job-action {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 10px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.research-job-action:hover {
+  color: var(--fg);
+  border-color: var(--fg);
+}
+.research-job-action-dim { opacity: 0.5; border-color: transparent; }
+.research-job-action-copied {
+  color: var(--color-success) !important;
+  border-color: color-mix(in srgb, var(--color-success) 45%, var(--border)) !important;
+  opacity: 1 !important;
+}
+.research-job-overflow { position: relative; margin-left: auto; }
+.research-job-more {
+  width: 30px; height: 30px; padding: 0;
+  justify-content: center; color: var(--fg-muted);
+}
+.research-job-menu {
+  position: absolute; z-index: 140;
+  right: 0; top: calc(100% + 5px);
+  min-width: 168px;
+  cursor: default;
+}
+.research-job-menu > .dropdown-item-compact svg { width: 13px; height: 13px; flex-shrink: 0; opacity: 0.72; }
+.research-job-menu > [data-menu-action="copy"] { position: relative; top: -2px; }
+.research-job-menu > [data-menu-action="dismiss"] { position: relative; top: 2px; }
+.research-job-phase {
+  font-size:10px; font-weight:600; color:var(--cat-color);
+  margin:7px 0 2px; padding:5px 7px;
+  background:color-mix(in srgb, var(--cat-color) 8%, transparent);
+  border-radius:4px;
+}
+.research-job-queued-meta {
+  font-size:10px; opacity:0.4; margin-top:2px;
+}
+.research-section-divider {
+  display:flex; align-items:center; gap:10px;
+  padding:6px 14px; font-size:10px; opacity:0.4;
+  text-transform:uppercase; letter-spacing:0.5px;
+}
+/* Foldable job sections (Active / Past research) */
+/* Collapsible section styled like the Cookbook download sub-blocks (.cookbook-card):
+   clean var(--bg) card, 8px radius, a real 13px/600 title. Chevron on the LEFT,
+   then title, count, and a status-color dot on the right (the dot stays visible
+   when folded so you get status at a glance). Keeps every modal consistent. */
+.research-section {
+  margin-top: 6px;
+  /* Same surface as the research "window" (.research-new-job -> var(--panel)). */
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--fg) 12%, var(--border));
+  border-radius: 8px;
+  overflow: visible;
+}
+.research-section-body { display: flex; flex-direction: column; gap: 7px; padding: 9px; }
+.research-section-header {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 9px 11px; cursor: pointer; user-select: none;
+  transition: background 0.15s;
+  border-radius: 7px 7px 0 0;
+}
+.research-section-header:hover { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.research-section-title { font-size: 13px; font-weight: 650; letter-spacing: 0; }
+.research-section-chevron { flex-shrink: 0; opacity: 0.55; transition: transform 0.2s ease; }
+.research-section-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; opacity: 0.9; }
+/* The top "Research" heading is a plain card-style title — no bar/chevron/dot. */
+.research-main-header {
+  cursor: default; background: none; border: none;
+  padding: 6px 2px; font-size: 13px; font-weight: 600;
+}
+.research-main-header:hover { background: none; }
+.research-section-count {
+  /* Match the panel header's "N research" chip — small, muted, no weight. */
+  font-size: 10px; opacity: 0.6; font-weight: normal;
+  font-variant-numeric: tabular-nums;
+}
+.research-job-error {
+  font-size:11px; color:#f44336; margin-top:4px; line-height:1.4;
+  word-break:break-word;
+}
+.research-job-title-error {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
+  margin-top: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.research-progress-bar {
+  height:4px; background:color-mix(in srgb, var(--cat-color) 13%, var(--border)); border-radius:3px; margin-top:7px;
+  overflow:hidden;
+}
+.research-progress-fill {
+  height:100%; background:var(--cat-color, var(--accent-primary, var(--red)));
+  border-radius:2px; transition:width 0.4s ease;
+}
+/* Active research uses the same compact card language as History. The live
+   map, progress, and navigation feedback are one optional detail region so a
+   long-running job does not permanently take over the active list. */
+#research-pane #research-active-list {
+  gap: 4px;
+  padding: 2px 2px 4px 0;
+}
+#research-pane #research-active-list .research-job-card {
+  display: block;
+  box-sizing: border-box;
+  max-height: none;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  border: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: none;
+}
+#research-pane #research-active-list .research-job-card:hover {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 16%, transparent);
+  transform: none;
+}
+#research-pane #research-active-list .research-active-card-header {
+  min-width: 0;
+  min-height: 22px;
+  gap: 6px;
+  cursor: pointer;
+}
+#research-pane #research-active-list .research-job-query {
+  position: static;
+  transform: none;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+#research-pane #research-active-list .research-job-model {
+  max-width: 110px;
+}
+#research-pane #research-active-list .research-job-time {
+  font-family: inherit;
+  font-size: 10px;
+}
+#research-pane #research-active-list .research-active-card-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  color: var(--fg);
+  opacity: 0.52;
+}
+#research-pane #research-active-list .research-job-overflow {
+  align-self: flex-start;
+  margin-left: 0;
+}
+#research-pane #research-active-list .research-job-more {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  border: 0;
+  background: transparent;
+}
+#research-pane #research-active-list .research-active-detail {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding-top: 5px;
+  overflow: hidden;
+}
+#research-pane #research-active-list .research-active-detail[hidden] {
+  display: none !important;
+}
+#research-pane #research-active-list .research-job-phase {
+  margin: 0 0 4px;
+}
+#research-pane #research-active-list .research-progress-bar {
+  margin-top: 5px;
+}
+#research-pane #research-active-list .research-navigation-trace-live {
+  margin-top: 6px;
+}
+.research-job-result {
+  margin-top:10px; border-top:1px solid var(--border); padding-top:10px;
+}
+.research-job-sources {
+  display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;
+}
+.research-source-link {
+  font-size:10px; padding:2px 6px;
+  background:color-mix(in srgb, var(--accent-primary, var(--red)) 10%, transparent);
+  border-radius:3px; color:var(--accent-primary, var(--red));
+  text-decoration:none; white-space:nowrap;
+  max-width:200px; overflow:hidden; text-overflow:ellipsis;
+}
+.research-source-badges {
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  margin-left:5px;
+  vertical-align:1px;
+}
+.research-source-badge {
+  font-size:8px;
+  line-height:1;
+  padding:1px 3px;
+  border-radius:3px;
+  background:color-mix(in srgb, currentColor 12%, transparent);
+  opacity:0.75;
+  text-transform:uppercase;
+}
+.research-source-state {
+  font-size:10px;
+  line-height:1.45;
+  white-space:pre-wrap;
+  color:var(--text-muted);
+  background:color-mix(in srgb, var(--accent-primary, var(--red)) 5%, transparent);
+  border:1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius:5px;
+  padding:6px 7px;
+  margin:0 0 8px;
+}
+.research-navigation-trace {
+  font-size:10px;
+  line-height:1.4;
+  color:var(--text-muted);
+  background:color-mix(in srgb, var(--panel-bg, var(--bg)) 80%, transparent);
+  border:1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius:5px;
+  padding:6px 7px;
+  margin:0 0 8px;
+}
+.research-nav-title {
+  font-weight:600;
+  color:var(--text-primary, var(--text));
+  margin-bottom:4px;
+}
+.research-nav-spacer {
+  height:6px;
+}
+.research-nav-row {
+  display:grid;
+  grid-template-columns:auto minmax(0, 1fr) auto;
+  gap:5px;
+  align-items:baseline;
+  min-width:0;
+}
+.research-nav-tool {
+  color:var(--accent-primary, var(--red));
+  font-weight:600;
+}
+.research-action-skipped .research-nav-tool {
+  color:var(--text-muted);
+}
+.research-source-more { font-size:10px; opacity:0.5; padding:2px 4px; }
+.research-job-report-body {
+  font-size:12px; line-height:1.55; max-height:400px; overflow-y:auto;
+}
+.research-job-loading { font-size:11px; opacity:0.5; padding:8px 0; }
+.research-library-section {
+  border-top:1px solid var(--border); flex-shrink:0;
+}
+.research-library-toggle {
+  width:100%; background:transparent; border:none; color:var(--fg);
+  padding:8px 14px; font-size:11px; text-align:left;
+  opacity:0.6; cursor:pointer; font-weight:500;
+}
+.research-library-item {
+  display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+  padding:8px 14px; font-size:11px;
+  border-bottom:1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+.research-library-item:hover { background:color-mix(in srgb, var(--border) 20%, transparent); }
+.research-lib-query {
+  flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:120px;
+}
+.research-lib-actions {
+  display:flex; gap:4px; margin-left:auto;
+}
+.research-lib-meta {
+  font-size:9px; opacity:0.4; white-space:nowrap; font-family:monospace;
+}
+.research-lib-open,
+.research-lib-delete {
+  background:transparent; border:none; color:var(--fg);
+  opacity:0.3; cursor:pointer; padding:2px; display:flex;
+  transition:opacity 0.15s;
+}
+.research-lib-delete:hover { opacity:1; color:#f44336; }
+.research-badge {
+  background:var(--accent-primary, var(--red)); border-radius:50%;
+  width:6px; height:6px; margin-left:auto; display:inline-block; flex-shrink:0;
+  position: relative; left: -4px;
+  /* Breathe when research has finished — gentle scale + glow pulse to
+     draw the eye to the unread result without being a hard blink. */
+  animation: research-badge-breathe 2.4s ease-in-out infinite;
+}
+
+/* Sidebar Deep Research running indicator — text then dot, styled the same
+   as Cookbook's running status (no glow). */
+.research-sb-running {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.research-sb-status {
+  font-size: 8px;
+  opacity: 0.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: relative;
+  top: 0;
+  left: -12px;
+}
+.research-sb-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--color-success, #4caf50);
+  animation: cookbook-notif-pulse 2s ease-in-out infinite;
+  position: relative;
+  top: -1px;
+  left: -4px;
+}
+
+/* ── In-house color picker ── */
+/* A color-picker swatch input shows the chosen colour as its background; hide
+   the underlying hex text/caret so it doesn't read as "#a1b2c3" in the box.
+   (The themed/gallery variants set this too; this is the generic fallback for
+   swatches outside those scopes, e.g. the calendar-settings color dots.) */
+input.cp-swatch-input {
+  color: transparent;
+  font-size: 0;
+  text-shadow: none;
+  caret-color: transparent;
+  user-select: none;
+}
+input.cp-swatch-input::selection { background: transparent; }
+.cp-popover {
+  position: fixed; z-index: 10000;
+  display: none;
+  width: 240px;
+  background: var(--panel, #1a1a1a);
+  border: 1px solid var(--border, #333);
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  font-family: inherit; color: var(--fg, #eee); font-size: 12px;
+  user-select: none;
+}
+@media (max-width: 768px) {
+  .cp-popover {
+    width: min(240px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+  }
+  .cp-sl {
+    height: min(150px, 34dvh);
+  }
+}
+.cp-sl {
+  position: relative;
+  width: 100%; height: 160px;
+  border-radius: 6px;
+  cursor: crosshair;
+  overflow: hidden;
+  touch-action: none;
+}
+.cp-sl-white {
+  position: absolute; inset: 0;
+  background: linear-gradient(to right, #fff, rgba(255,255,255,0));
+  pointer-events: none;
+}
+.cp-sl-black {
+  position: absolute; inset: 0;
+  background: linear-gradient(to top, #000, rgba(0,0,0,0));
+  pointer-events: none;
+}
+.cp-sl-handle {
+  position: absolute;
+  width: 12px; height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 1px 3px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+.cp-hue {
+  position: relative;
+  margin-top: 10px;
+  height: 14px;
+  border-radius: 7px;
+  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+  cursor: pointer;
+  touch-action: none;
+}
+.cp-hue-handle {
+  position: absolute; top: 50%;
+  width: 10px; height: 18px;
+  margin: -9px 0 0 -5px;
+  border: 2px solid #fff;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 1px 3px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+.cp-row {
+  display: flex; align-items: center; gap: 6px; margin-top: 10px;
+}
+.cp-preview {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border, #333);
+  flex-shrink: 0;
+}
+.cp-hex {
+  flex: 1; min-width: 0;
+  padding: 4px 6px;
+  background: var(--bg, #000); color: var(--fg, #eee);
+  border: 1px solid var(--border, #333);
+  border-radius: 4px;
+  font-family: ui-monospace, 'Fira Code', monospace;
+  font-size: 12px; text-transform: lowercase;
+}
+.cp-hex:focus { outline: none; border-color: var(--red, #e06c75); }
+.cp-copy {
+  width: 26px; height: 26px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border, #333);
+  border-radius: 4px;
+  color: var(--fg, #eee);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 0 26px;
+  transition: background 0.1s, color 0.1s;
+}
+.cp-copy:hover { background: color-mix(in srgb, var(--accent, var(--red)) 12%, transparent); color: var(--accent, var(--red)); }
+.cp-eyedropper {
+  width: 26px; height: 26px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border, #333);
+  border-radius: 4px;
+  color: var(--fg, #eee);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.1s;
+}
+.cp-eyedropper:hover:not(:disabled) { background: rgba(255,255,255,0.08); }
+.cp-section-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
+  opacity: 0.5; margin-top: 10px; margin-bottom: 4px;
+}
+.cp-swatches {
+  display: flex; flex-wrap: wrap; gap: 4px;
+}
+.cp-swatch {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--border, #333);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.08s;
+}
+.cp-swatch:hover { transform: scale(1.15); }
+.cp-recent-empty {
+  font-size: 11px; opacity: 0.4; padding: 2px 0;
+}
+
+/* PDF form export modal + signature modals — match the app theme via the
+   existing modal/confirm-btn classes. Only a few atom-level styles below. */
+.pdf-export-overlay .modal-content { padding: 12px 14px; }
+.pdf-export-overlay #pdf-export-body { padding-right: 4px; }
+.pdf-export-overlay .pdf-export-section {
+  margin-bottom: 14px;
+}
+.pdf-export-overlay .pdf-export-section-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--red);
+  opacity: 0.85;
+  margin-bottom: 6px;
+}
+.pdf-export-overlay .pdf-export-row {
+  display: grid;
+  grid-template-columns: 38% 62%;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 0;
+}
+.pdf-export-overlay .pdf-export-row label {
+  font-size: 0.78rem;
+  color: var(--fg);
+  opacity: 0.85;
+}
+.pdf-export-input,
+.pdf-export-overlay select.pdf-export-input,
+.pdf-export-overlay input.pdf-export-input {
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-family: inherit;
+}
+.pdf-export-input:focus {
+  outline: none;
+  border-color: var(--fg);
+}
+.sig-modal-overlay .modal-content { padding: 12px 14px; }
+.sig-modal-overlay .sig-canvas {
+  display: block;
+  width: 100%;
+  height: 240px;
+  background: #fff;
+  cursor: crosshair;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  /* Drawing uses pointer events; without this, a touch-drag on the canvas pans
+     the page / sheet instead of drawing ("the whole window moves"). */
+  touch-action: none;
+}
+.sig-modal-overlay .sig-name,
+.sig-modal-overlay .sig-smoothness {
+  font-family: inherit;
+}
+.sig-modal-overlay .sig-smoothness {
+  accent-color: var(--accent, var(--red));
+  margin: 0;
+}
+.sig-modal-overlay .sig-name {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+.sig-modal-overlay .sig-tile {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  cursor: pointer;
+  background: var(--bg);
+}
+.sig-modal-overlay .sig-tile:hover { border-color: var(--fg); }
+.sig-modal-overlay .sig-tile img {
+  display: block;
+  width: 100%;
+  height: 80px;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 3px;
+}
+.sig-modal-overlay .sig-tile-del {
+  position: absolute;
+  top: 1px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  /* Center the × glyph inside the round bg — without this the button's default
+     text metrics push it past the right edge of the circle. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0 0 1px;
+  box-sizing: border-box;
+  font-size: 0.85rem;
+  line-height: 1;
+  border: 1px solid var(--accent, var(--red));
+  background: #fff;
+  color: var(--accent, var(--red));
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 1;
+}
+.sig-modal-overlay .sig-tile-del:hover {
+  background: color-mix(in srgb, var(--accent, var(--red)) 10%, #fff);
+}
+.sig-modal-overlay .sig-new-tile {
+  border: 2px dashed var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  cursor: pointer;
+  background: var(--bg);
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 106px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+.sig-modal-overlay .sig-new-tile:hover {
+  opacity: 1;
+  border-color: var(--fg);
+}
+
+/* Form checkboxes — render as a circular dot, theme-aware. Used in the
+   Export PDF modal and the inline PDF view overlay. */
+.pdf-export-overlay input[type="checkbox"],
+#doc-pdf-view input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+  cursor: pointer;
+  border-radius: 50%;
+  background: #fff;
+  position: relative;
+}
+.pdf-export-overlay input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+}
+.pdf-export-overlay input[type="checkbox"]:checked {
+  background: var(--fg);
+  border-color: var(--fg);
+}
+/* PDF view overlays on a white page render — keep colors theme-independent
+   so the dot is always visible against the rendered PDF. */
+#doc-pdf-view input[type="checkbox"] {
+  border: 1.5px solid #444;
+}
+#doc-pdf-view input[type="checkbox"]:checked {
+  background: #111;
+  border-color: #111;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Frosted glass theme — applied when the user enables the "Glass" toggle
+   in theme settings (writes `body.theme-frosted`). Layers a semi-translucent
+   tint over every panel/modal/sidebar/dropdown and blurs whatever is
+   behind it, so the UI reads like layered glass.
+   ───────────────────────────────────────────────────────────────────────── */
+body.theme-frosted #sidebar,
+body.theme-frosted .modal-content,
+body.theme-frosted .doclib-modal-content,
+body.theme-frosted .gallery-modal-content,
+body.theme-frosted .notes-pane,
+body.theme-frosted .research-pane,
+body.theme-frosted .calendar-pane,
+body.theme-frosted .cookbook-pane,
+body.theme-frosted .doc-pane,
+body.theme-frosted .doc-pane-floating,
+body.theme-frosted .cp-popover,
+body.theme-frosted .dropdown,
+body.theme-frosted .overflow-menu,
+body.theme-frosted .doc-tab-dropdown,
+body.theme-frosted .email-reader,
+body.theme-frosted .admin-card,
+body.theme-frosted .gallery-detail-menu,
+body.theme-frosted #theme-popup .modal-content {
+  /* Tinted base color (set separately so the shorthand can't swallow it);
+     much more transparent than before so what's behind actually shows
+     through. The blur catches whatever pixels are below. */
+  background-color: color-mix(in srgb, var(--panel, var(--bg)) 32%, transparent) !important;
+  background-image: linear-gradient(180deg,
+    color-mix(in srgb, var(--fg, #fff) 14%, transparent) 0%,
+    color-mix(in srgb, var(--fg, #fff)  4%, transparent) 26%,
+    transparent 55%) !important;
+  backdrop-filter: blur(24px) saturate(170%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(170%) !important;
+  border-color: color-mix(in srgb, var(--fg) 22%, transparent) !important;
+}
+/* The sidebar header + user bar paint their own opaque --sidebar-bg/--panel.
+   Under the frosted theme the sidebar is translucent glass, so those solid
+   bands stood out as a dark (near-black) strip over the title/avatar area.
+   Make them transparent so they blend into the frosted sidebar. */
+body.theme-frosted .sidebar-header,
+body.theme-frosted .sidebar-user-bar {
+  background: transparent !important;
+}
+/* Same problem on tool modals: the sticky .modal-header paints a solid
+   var(--panel) bar (so scrolled content doesn't bleed through). Over a
+   frosted-glass modal body that solid bar reads as a dark band across the
+   title area (Calendar, Tasks, Cookbook, Memory, Email…). Give the header
+   its own matching frosted glass — translucent tint + blur — so it stays
+   readable while scrolling but blends into the panel instead of a black band. */
+body.theme-frosted .modal-header {
+  /* Transparent — NOT another panel tint. The header sits on top of the
+     already-frosted modal body, so any added tint stacks and the band
+     reads darker than its surroundings. Keep just the blur (which doesn't
+     darken) so scrolled content stays legible under the sticky header. */
+  background-color: transparent !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* Deep Research's header isn't sticky (content doesn't scroll under it) and
+   its pane carries extra frosting — saturate + a top gradient highlight +
+   the synapse glow. The generic header blur above adds its OWN glass layer,
+   which renders a different shade than the pane behind it. Drop the header's
+   blur so the pane's frosted background shows through the header uniformly. */
+body.theme-frosted .research-pane-header {
+  background-color: transparent !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+body.theme-frosted .notes-mobile-grabber {
+  background-color: transparent !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* Inner admin-cards inside frosted modals stack their transparency on top
+   of the modal's, which kills the see-through. Make the inner card nearly
+   fully transparent so the outer modal's blur dominates. */
+body.theme-frosted .modal-content .admin-card,
+body.theme-frosted .doclib-modal-content .admin-card,
+body.theme-frosted .gallery-modal-content .admin-card,
+body.theme-frosted #theme-popup .admin-card {
+  background-color: color-mix(in srgb, var(--panel, var(--bg)) 10%, transparent) !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* Subtle inner light highlight + softer shadow on the heavier surfaces */
+body.theme-frosted .modal-content,
+body.theme-frosted .doclib-modal-content,
+body.theme-frosted .gallery-modal-content,
+body.theme-frosted .notes-pane,
+body.theme-frosted .research-pane,
+body.theme-frosted .calendar-pane,
+body.theme-frosted .cookbook-pane,
+body.theme-frosted .doc-pane,
+body.theme-frosted .doc-pane-floating {
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 color-mix(in srgb, var(--fg, #fff) 14%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #000 14%, transparent) !important;
+}
+/* Backdrops should be MUCH less opaque so the blur effect reads through to
+   the actual page content behind the modal. */
+body.theme-frosted .modal {
+  background: color-mix(in srgb, #000 12%, transparent) !important;
+}
+
+/* ─── Neon border glow ────────────────────────────────────────────
+ *  Enabled via theme toggle (writes `body.neon-glow`). Applies a
+ *  pulsing box-shadow glow on bordered elements using --border color.
+ *  ───────────────────────────────────────────────────────────────── */
+@keyframes neon-glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 4px color-mix(in srgb, var(--border) 50%, transparent),
+                0 0 10px color-mix(in srgb, var(--border) 25%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 8px color-mix(in srgb, var(--border) 70%, transparent),
+                0 0 18px color-mix(in srgb, var(--border) 40%, transparent),
+                0 0 28px color-mix(in srgb, var(--border) 15%, transparent);
+  }
+}
+body.neon-glow .msg-user,
+body.neon-glow .msg-ai,
+body.neon-glow .chat-input-area,
+body.neon-glow .admin-card,
+body.neon-glow .modal-content,
+body.neon-glow #sidebar {
+  animation: neon-glow-pulse 3s ease-in-out infinite;
+}
+
+/* Mobile only: lift the Dependencies "Server" dropdown's selected text up ~2px. */
+@media (max-width: 768px) {
+  #hwfit-deps-server { padding-bottom: 4px; line-height: 1; }
+}
+
+/* Emoji rendered as monochrome line icons (OpenMoji-black via /api/emoji proxy)
+   instead of colorful system glyphs — project rule: never colorful emoji. The
+   SVG is used as a mask filled with the current text color, so it tints to the
+   theme. Sized to sit on the text baseline. */
+.emoji {
+  height: 1.15em;
+  width: 1.15em;
+  vertical-align: -0.18em;
+  margin: 0 0.05em;
+  display: inline-block;
+  background-color: currentColor;
+  -webkit-mask: var(--em) center / contain no-repeat;
+          mask: var(--em) center / contain no-repeat;
+}
+
+.assistant-message a[href^="#event-"] .emoji,
+.ai-message a[href^="#event-"] .emoji,
+.message.assistant a[href^="#event-"] .emoji {
+  position: relative;
+  top: 2px;
+}
+
+.emoji[aria-label="🔔"] {
+  position: relative;
+  top: 3px;
+}
+
+
+/* RESEARCH SCROLL FORCE — guarantee the jobs list scrolls inside the bounded
+   pane (the pane is height-capped: 85vh desktop, 100dvh mobile). Each ancestor
+   needs min-height:0 for a nested flex scroll to engage. */
+#research-pane { min-height: 0; }
+/* The BODY is the single scroller — the list flows into it and the whole body
+   scrolls. (A nested list-scroller kept clipping instead of scrolling.) */
+#research-pane .research-pane-body {
+  flex: 1 1 auto !important; min-height: 0 !important;
+  display: flex !important; flex-direction: column !important;
+  overflow-y: auto !important; -webkit-overflow-scrolling: touch;
+}
+#research-pane .research-jobs-list {
+  flex: 0 0 auto !important; min-height: 0 !important;
+  overflow: visible !important; max-height: none !important;
+}
+/* The tabbed research panel replaces the old single body scroller above:
+   each result tab now owns its list viewport. */
+#research-pane .research-tab-panel {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+#research-pane .research-tab-panel:not([data-research-panel="research"]) .research-jobs-list {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+}
+#research-pane .research-tab-panel[data-research-panel="research"] .research-new-job {
+  margin-bottom: 0;
+}
+
+/* RESEARCH FULLSCREEN MOBILE — the pane wasn't opening to full height on mobile,
+   so its content overflowed with nowhere to scroll. Pin it to the full viewport
+   (id selector + !important beats the inherited modal-content sizing). */
+@media (max-width: 768px) {
+  /* Bottom-sheet: 90dvh tall (a touch smaller than full-screen) anchored to the
+     bottom, so there's a small gap at the top and it reads as a sheet. The body
+     still scrolls within the bounded height. */
+  #research-overlay { align-items: flex-end !important; justify-content: stretch !important; padding-bottom: 0 !important; }
+  #research-pane {
+    height: 90dvh !important;
+    max-height: 90dvh !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    border-radius: 14px 14px 0 0 !important;
+  }
+  /* Bottom breathing room so the expanded Settings + Start button clear the
+     browser's bottom toolbar / safe area and can always be scrolled into view
+     (otherwise the form fits the viewport and there's no room to reach them). */
+  #research-pane .research-pane-body {
+    padding-bottom: calc(var(--safe-bottom) + 40px) !important;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+  }
+}
+
+/* Keep the primary action transition consistent with the shared toolbar. */
+.research-start-btn { transition: opacity 0.16s ease; }
+
+/* Right-side group of the section header: clear button (past), status dot, chevron. */
+.research-section-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+/* "Clear all" in the Past header — styled like the cookbook-running clear btn. */
+.research-section-clear {
+  font-size: 10px; padding: 0 8px; height: 22px;
+  border-radius: 6px; border: 1px solid var(--border);
+  color: color-mix(in srgb, var(--fg) 45%, transparent);
+  background: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  font-family: inherit; white-space: nowrap; transition: all 0.15s;
+  position: relative; top: -2px;
+}
+.research-section-clear:hover { color: var(--red); border-color: var(--red); background: color-mix(in srgb, var(--red) 8%, transparent); }
+
+/* Visual Report button tinted with the research type colour (--cat-color),
+   falling back to the accent for "standard" (uncategorized) research. */
+.research-job-action.research-job-action-report {
+  color: var(--cat-color, var(--accent, var(--red)));
+  border-color: color-mix(in srgb, var(--cat-color, var(--accent, var(--red))) 45%, var(--border));
+}
+
+.research-start-btn svg,
+.research-add-plus { display: inline-block; }
+
+/* Compare's selector uses the shared Start button markup, but its accent
+   background needs a readable dark foreground and a lighter hover weight. */
+#compare-model-overlay .research-start-btn {
+  color: #000;
+}
+#compare-model-overlay .research-start-btn:hover {
+  color: var(--fg);
+  font-weight: 400;
+  opacity: 1;
+}
+
+/* Footer hint under Past research linking to the Library's Research tab. */
+.research-library-hint {
+  width: 100%; flex-basis: 100%; margin: -2px 0 0; line-height: 1.2;
+  font-size: calc(1em - 2px); opacity: 0.55;
+}
+.research-library-link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font: inherit; color: var(--accent, var(--red)); text-decoration: underline;
+}
+
+
+@media (max-width: 768px) {
+  /* Mobile: the "Delete" label is too wide in Deep Research job rows; keep the
+     familiar trash action but make it icon-only. */
+  .research-job-action[data-action="delete"] {
+    width: 28px;
+    min-width: 28px;
+    padding-left: 0;
+    padding-right: 0;
+    gap: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+  .research-job-action[data-action="delete"] svg {
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    flex-shrink: 0;
+  }
+}
+
+/* Standard research gets a stable visual variant instead of inheriting the
+   global warm accent. Keep typography unchanged; vary only the card tint,
+   border, badge, progress bar, and report hero accent. */
+.research-job-card.research-standard {
+  --cat-color: var(--research-accent);
+  background: color-mix(in srgb, var(--research-accent) 4%, var(--bg));
+  border-color: color-mix(in srgb, var(--research-accent) 28%, var(--border));
+  border-left-color: var(--research-accent);
+}
+.research-job-card.research-standard .research-cat-badge.research-cat-standard {
+  color: var(--research-accent);
+}
+
+/* Failed research (0 sources) — red flag + actionable note. */
+.research-job-card.research-job-failed { border-color: color-mix(in srgb, #f44336 40%, var(--border)); }
+.research-cat-badge.research-cat-failed { color: #f44336; display: inline-flex; align-items: center; gap: 3px; }
+.research-cat-badge.research-cat-failed svg { width: 10px; height: 10px; }
+.research-job-failnote { position: relative; top: 2px; font-size: 10px; color: #f44336; opacity: 0.9; margin: 2px 0 6px; line-height: 1.35; }
+
+/* Shared popup-menu row feedback. Many small menus use their own item class;
+   keep the hover light and consistent instead of giving one action a special
+   glow. */
+:is(
+  .overflow-menu-item,
+  .dropdown-item,
+  .dropdown-item-compact,
+  .export-dropdown-item,
+  .sort-dropdown-item,
+  .note-reminder-menu-item,
+  .research-run-mode-popover .research-run-mode-row,
+  .ge-fx-menu-item
+) {
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease,
+    opacity 0.14s ease,
+    transform 0.14s ease;
+}
+:is(
+  .overflow-menu-item,
+  .dropdown-item,
+  .dropdown-item-compact,
+  .export-dropdown-item,
+  .sort-dropdown-item,
+  .note-reminder-menu-item,
+  .research-run-mode-popover .research-run-mode-row,
+  .ge-fx-menu-item
+):hover:not(:disabled) {
+  opacity: 1;
+  color: var(--fg);
+  background-color: color-mix(in srgb, var(--accent, var(--red)) 10%, transparent);
+  transform: translateX(1px);
+}
+
+/* Slash command autocomplete popup, anchored to the message composer */
+.slash-autocomplete-popup {
+  position: fixed;
+  z-index: 9000;
+  background: var(--panel, var(--bg));
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  font-size: 13px;
+  color: var(--fg, #e6e6e6);
+  overflow-y: auto;
+  padding: 4px 0;
+  display: none;
+}
+.slash-ac-cat {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted, #888);
+  padding: 6px 10px 2px;
+  opacity: 0.7;
+}
+.slash-ac-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.slash-ac-row:hover { background-color: color-mix(in srgb, var(--accent, var(--red)) 10%, transparent); }
+.slash-ac-row-sel  { background-color: color-mix(in srgb, var(--accent, var(--red)) 14%, transparent); }
+.slash-ac-token {
+  font-family: 'Fira Code', ui-monospace, monospace;
+  color: var(--accent, var(--red));
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.slash-ac-help {
+  color: var(--fg);
+  opacity: 0.85;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slash-ac-usage {
+  color: var(--fg-muted, #888);
+  font-family: 'Fira Code', ui-monospace, monospace;
+  font-size: 11px;
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+.slash-ac-empty {
+  padding: 10px;
+  color: var(--fg-muted, #888);
+  font-style: italic;
+}
+.slash-ac-empty code {
+  font-family: 'Fira Code', ui-monospace, monospace;
+  color: var(--accent, var(--red));
+}
+
+/* ══ iOS focus-zoom fix — Safari touch devices only; desktop sizes untouched ══
+   16px is the threshold below which iOS Safari auto-zooms on focus.
+   Selects and date/time inputs are excluded on purpose — they open native
+   pickers and never zoom. */
+@supports (-webkit-touch-callout: none) {
+@media (hover: none) and (pointer: coarse) {
+
+  /* 1 ── Catch-all: every text-entry control NOT pinned with its own
+     !important. !important here beats any non-important rule regardless of
+     specificity, so this clears the long tail (settings, admin, memory,
+     notes, calendar, email, gallery, tasks, model picker, etc.). */
+  input[type="text"],
+  input[type="search"],
+  input[type="email"],
+  input[type="url"],
+  input[type="tel"],
+  input[type="password"],
+  input[type="number"],
+  input:not([type]),
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* 2 ── Fields that pin their own !important at specificity our catch-all
+     can't beat. Each is matched at equal-or-higher specificity and, being
+     later in the file, wins the tie. */
+  #message { font-size: 16px !important; }                                  /* chat composer (was 13px !important) */
+  .cookbook-dl-repo,
+  .hwfit-search { font-size: 16px !important; }                             /* cookbook repo path + hardware search */
+  .ge-topbar input { font-size: 16px !important; }                          /* image-editor topbar input */
+  .ge-transform-field > input.ge-transform-popup-input {                    /* image-editor transform values */
+    font-size: 16px !important;
+  }
+}
+}
+
+@supports (-webkit-touch-callout: none) {
+@media (hover: none) and (pointer: coarse) {
+  /* Only the sub-16px tiers need bumping; large lands ABOVE 16 so it
+     stays zoom-safe AND visibly larger than medium (otherwise L collapses
+     onto M on touch). All three editor layers move together so the
+     highlight/line-number overlay stays metrically aligned with the textarea. */
+  .doc-font-m .doc-editor-textarea, .doc-font-m .doc-editor-highlight, .doc-font-m .doc-line-numbers {
+    font-size: 16px !important;   /* was 13px */
+  }
+  .doc-font-l .doc-editor-textarea, .doc-font-l .doc-editor-highlight, .doc-font-l .doc-line-numbers {
+    font-size: 18px !important;   /* was 15px — keep L > M */
+  }
+  /* Email compose rich-body. Medium (15px) zooms, so bump it; large (17px)
+     is already ≥16px and never zoomed — leave it so we don't shrink it. */
+  .doc-email-richbody.doc-font-m { font-size: 16px !important; }
+}
+}
+
+/* GitHub Copilot device-flow connect block (model endpoints → API) */
+.adm-copilot-connect {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.adm-copilot-connect #adm-copilotStatus { flex-basis: 100%; margin-top: 0; }
+.adm-copilot-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.adm-copilot-wait {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--fg) 70%, transparent);
+}
+.adm-copilot-coderow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.adm-copilot-code-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: color-mix(in srgb, var(--fg) 45%, transparent);
+}
+.adm-copilot-code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  padding: 4px 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  user-select: all;
+}
+.adm-copilot-auth {
+  text-align: center;
+  text-decoration: none;
+  padding: 7px 12px;
+  font-size: 12px;
+}
+.adm-copilot-hint {
+  font-size: 11px;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--fg) 45%, transparent);
+}
+/* ChatGPT Subscription per-account usage card (Settings → Added Models) */
+.adm-chatgpt-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  align-items: center;
+  margin: 4px 0 2px auto;
+}
+.adm-chatgpt-usage-chevron {
+  font-size: 10px;
+  line-height: 1;
+  display: inline-block;
+  margin-left: 2px;
+}
+.adm-chatgpt-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11px;
+}
+.adm-chatgpt-usage-plan { display: flex; gap: 6px; align-items: center; }
+.adm-chatgpt-usage-limit { display: flex; flex-direction: column; gap: 6px; }
+.adm-chatgpt-usage-limit-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: color-mix(in srgb, var(--fg) 55%, transparent);
+}
+.adm-chatgpt-usage-model {
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--mono, ui-monospace, monospace);
+  opacity: 0.8;
+}
+.adm-chatgpt-usage-row { display: flex; flex-direction: column; gap: 3px; }
+.adm-chatgpt-usage-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.adm-chatgpt-usage-name {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: color-mix(in srgb, var(--fg) 70%, transparent);
+}
+.adm-chatgpt-usage-remaining { font-weight: 600; }
+.adm-chatgpt-usage-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+}
+.adm-chatgpt-usage-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+.adm-chatgpt-usage-warn .adm-chatgpt-usage-fill { background: #d99a2b; }
+.adm-chatgpt-usage-critical .adm-chatgpt-usage-fill { background: #d9534f; }
+.adm-chatgpt-usage-unknown .adm-chatgpt-usage-fill { background: color-mix(in srgb, var(--fg) 25%, transparent); }
+.adm-chatgpt-usage-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: color-mix(in srgb, var(--fg) 50%, transparent);
+}
+.adm-chatgpt-usage-status {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--fg) 60%, transparent);
+}
+.adm-chatgpt-usage-blocked { color: #d9534f; }
+.adm-chatgpt-usage-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.adm-chatgpt-reconnect-status { font-size: 11px; }
+/* Cookbook serve panel: Launch + ^ split button pair */
+.hwfit-serve-launch-group {
+  display: inline-flex;
+  align-items: stretch;
+  vertical-align: middle;
+}
+.hwfit-serve-launch-group .hwfit-serve-schedule-arrow {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-left: 1px solid var(--border) !important;
+  padding: 0 8px !important;
+  min-width: 26px;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Mobile: drop the inline icons on Launch + Cancel in the serve panel so
+   the buttons are text-only and don't wrap on narrow screens. Icons stay
+   on desktop where horizontal space isn't tight. */
+@media (max-width: 600px) {
+  .hwfit-serve-launch > svg,
+  .hwfit-serve-cancel > svg {
+    display: none !important;
+  }
+}
+
+/* Schedule form — mounted inside the cookbook serve panel. Uses the
+   theme tokens (--bg, --panel, --border, --accent, --red) so it
+   matches the rest of the cookbook chrome instead of inline whites. */
+.hwfit-schedule-form {
+  margin: 10px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hwfit-schedule-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.95;
+  flex-wrap: wrap;
+}
+.hwfit-schedule-title svg { opacity: 0.7; flex-shrink: 0; }
+.hwfit-schedule-title-spacer { flex: 1; min-width: 8px; }
+.hwfit-schedule-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.hwfit-schedule-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+.hwfit-schedule-label {
+  font-size: 11px;
+  opacity: 0.75;
+}
+.hwfit-sched-days {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.hwfit-schedule-actions-inline {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 6px;
+  align-self: flex-end;
+  padding-bottom: 1px;
+}
+.hwfit-sched-day-chip {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.hwfit-sched-day-chip:hover { border-color: var(--accent, var(--red)); }
+.hwfit-sched-day-chip.is-on {
+  background: var(--accent, var(--red));
+  color: var(--panel, #fff);
+  border-color: var(--accent, var(--red));
+}
+.hwfit-schedule-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.hwfit-schedule-actions-spacer { flex: 1; }
+
+/* Days row hosts the day-chip strip on the left and the Cancel / Save
+   action buttons on the right. The spacer between them pushes the
+   actions to the right edge. */
+.hwfit-schedule-days-row {
+  align-items: center;
+}
+/* Cancel + Save sit on the right side of the days row with matching
+   icon-plus-label chrome. */
+.hwfit-sched-cancel,
+.hwfit-sched-save {
+  display: inline-flex !important;
+  align-items: center;
+}
+.hwfit-schedule-mirror-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  opacity: 0.9;
+  cursor: pointer;
+  user-select: none;
+}
+.hwfit-sched-err {
+  font-size: 12px;
+  color: var(--red, #ff6b6b);
+  display: none;
+}
+@media (max-width: 600px) {
+  .hwfit-schedule-row { gap: 8px; }
+  .hwfit-sched-day-chip { width: 36px; height: 36px; font-size: 11px; }
+}
+
+/* ── ask_user: multiple-choice question card ─────────────────────────────
+   The agent posed a question and ended its turn. The user clicks an option
+   or types a free-text "Other" answer. */
+.ask-user-card {
+  /* Left-align like an assistant message (.msg-ai), not centered. */
+  align-self: flex-start;
+  margin: 10px auto 10px 8px;
+  width: 85%;
+  max-width: 85%;
+  box-sizing: border-box;
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 12px 16px 14px;
+  border: 1px solid var(--bubble-border, var(--border));
+  border-radius: 18px 18px 18px 0;
+  background: var(--ai-bubble-bg, var(--panel));
+  overflow: hidden;
+  position: relative;
+  isolation: isolate;
+}
+.ask-user-card-attached {
+  margin-top: 0;
+  margin-left: 8px;
+  width: 85%;
+  max-width: 85%;
+}
+.ask-user-card-attached::before {
+  content: '';
+  position: absolute;
+  left: 20px;
+  top: -18px;
+  width: 2px;
+  height: 18px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--red) 18%, transparent);
+  pointer-events: none;
+  z-index: -1;
+}
+/* Focused only programmatically (tabIndex -1) to move SR/keyboard position; no
+   visible outline on the whole card box. */
+.ask-user-card:focus { outline: none; }
+.ask-user-head {
+  display: none;
+}
+.ask-user-close {
+  display: none !important;
+}
+.ask-user-question {
+  margin: 0 0 10px;
+  font-size: 11px !important;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--fg);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+.ask-user-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ask-user-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  row-gap: 2px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  height: auto !important;
+  /* Match the height of the free-text input below (.styled-prompt-input). */
+  min-height: 39px;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 11px !important;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.ask-user-option:hover:not(:disabled) {
+  border-color: var(--accent, var(--red));
+  background: color-mix(in srgb, var(--accent, var(--red)) 10%, var(--bg));
+}
+.ask-user-option:disabled { cursor: default; }
+.ask-user-card.ask-user-answered {
+  opacity: 0.92;
+}
+.ask-user-card.ask-user-answered .ask-user-question {
+  margin-bottom: 8px;
+}
+.ask-user-option-label,
+.ask-user-option-desc {
+  display: block;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+.ask-user-option-label {
+  font-size: 11px !important;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--accent, var(--red));
+}
+.ask-user-option-desc {
+  flex-basis: 100%;
+  width: 100%;
+  opacity: 0.65;
+  font-size: 10px !important;
+  line-height: 1.35;
+}
+/* Free-text "Other" row: input + send, on one line. */
+.ask-user-other {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  min-width: 0;
+}
+/* Reuses .styled-prompt-input; override its full-width + top margin so it
+   sits inline in the flex row next to the send button. */
+.ask-user-other-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  margin-top: 0;
+  font-size: 11px !important;
+  line-height: 1.35;
+}
+/* Reuses .confirm-btn .confirm-btn-primary; flex-row deltas + height match to
+   the input beside it (.confirm-btn won't stretch on its own). */
+.ask-user-other-send {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  width: 32px;
+  min-width: 32px;
+  height: 32px !important;
+  min-height: 32px;
+  font-size: 11px !important;
+  line-height: 1.35;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: var(--send-btn-bg, var(--red));
+  color: #fff;
+}
+.ask-user-other-send svg { display: block; flex-shrink: 0; }
+.ask-user-other-send:hover:not(:disabled) {
+  background: var(--send-btn-hover, color-mix(in srgb, var(--red) 80%, white));
+}
+.ask-user-other-send:disabled { opacity: 0.5; cursor: default; }
+.ask-user-answer {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent, var(--red)) 24%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent, var(--red)) 8%, var(--bg));
+  color: var(--fg);
+  font-size: 11px !important;
+  line-height: 1.35;
+}
+.ask-user-answer-label {
+  flex: 0 0 auto;
+  color: var(--accent, var(--red));
+  font-weight: 600;
+}
+.ask-user-answer-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .ask-user-card {
+    width: calc(100% - 16px);
+    max-width: calc(100% - 16px);
+    margin-left: 8px;
+    margin-right: 8px;
+    padding: 10px 11px 12px;
+    border-radius: 10px;
+  }
+  .ask-user-card-attached {
+    margin-left: 0;
+    margin-right: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+  .ask-user-question {
+    font-size: 11px !important;
+    line-height: 1.45;
+  }
+  .ask-user-option {
+    padding: 7px 8px;
+    font-size: 11px !important;
+    gap: 6px;
+  }
+  .ask-user-option-label {
+    font-size: 11px !important;
+  }
+  .ask-user-option-desc {
+    font-size: 10px !important;
+  }
+  .ask-user-other {
+    flex-wrap: wrap;
+  }
+  .ask-user-other-send {
+    width: 32px;
+    min-width: 32px;
+    height: 32px !important;
+    min-height: 32px;
+    padding: 0;
+  }
+}
+
+/* ─── RSS Feed Reader ───────────────────────────── */
+
+/* RSS is now a workspace (extensions/rss/static/index.js), not a floating
+   popup — .rss-workspace is the full-canvas host, mirroring .ithaca-screen.
+   Everything below it (.rss-pane-header, .rss-body, .rss-sidebar, ...) is
+   unchanged internal layout, reused as-is regardless of the outer wrapper. */
+.rss-workspace {
+  display: none;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px));
+  z-index: 90; /* above the chat surface, below floating tool modals */
+  background: var(--bg, var(--panel));
+  flex-direction: column;
+  overflow: hidden;
+}
+.rss-workspace-open { display: flex; }
+
+.rss-pane-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: none;
+  animation: rss-backdrop-fade-in 180ms ease both;
+}
+.rss-pane-backdrop .rss-pane {
+  pointer-events: auto;
+}
+@keyframes rss-backdrop-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.rss-pane {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  width: min(880px, 92vw);
+  height: min(85vh, 820px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  box-sizing: border-box;
+  animation: rss-pane-enter 200ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  transform-origin: center center;
+  will-change: transform, opacity;
+}
+@keyframes rss-pane-enter {
+  from { transform: scale(0.96); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+
+@media (max-width: 768px) {
+  .rss-pane {
+    position: fixed;
+    inset: 0;
+    max-width: 100%;
+    width: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    z-index: 170;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 14px 14px 0 0;
+    overflow: hidden;
+    animation: sheet-enter 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    transform-origin: bottom center;
+  }
+  .rss-pane-backdrop {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+.rss-pane-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.rss-pane-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.rss-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.rss-sidebar {
+  width: 220px;
+  min-width: 180px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rss-sidebar-header {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Scoped override of the shared .memory-search-input — adds a search icon
+   and a taller box, matching the pattern already used for Notes/Email search
+   (see .notes-search-bar .memory-search-input) instead of the bare 24px/11px
+   default, which read as under-styled/generic next to the rest of the app. */
+.rss-sidebar-header .memory-search-input {
+  height: 32px;
+  min-height: 32px;
+  margin-top: 0;
+  font-size: 12px;
+  padding: 0 10px 0 30px;
+  background-color: var(--bg);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-opacity='0.85' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>");
+  background-repeat: no-repeat;
+  background-position: 10px center;
+  border-radius: 7px;
+  transition: border-color 0.15s;
+}
+
+/* Segmented-control look: shared track background instead of 3 separate
+   thin-bordered boxes, active tab reads as a filled pill inside the track. */
+.rss-filter-bar {
+  display: flex;
+  gap: 2px;
+  margin-top: 8px;
+  padding: 2px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.rss-filter-btn {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 11px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.12s, background 0.12s;
+}
+
+.rss-filter-btn:hover {
+  opacity: 0.9;
+  background: rgba(128,128,128,0.1);
+}
+
+.rss-filter-btn.active {
+  opacity: 1;
+  font-weight: 600;
+  background: var(--accent-primary, var(--fg));
+  color: var(--accent-on, var(--bg));
+}
+
+.rss-feed-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.rss-feed-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 42px 7px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s;
+  position: relative;
+}
+
+.rss-feed-item:hover {
+  background: rgba(128,128,128,0.1);
+}
+
+.rss-feed-item.active {
+  background: rgba(128,128,128,0.15);
+}
+
+.rss-feed-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 10px;
+  color: var(--text-dim);
+  opacity: 0;
+  cursor: grab;
+  transition: opacity 0.15s;
+}
+
+.rss-feed-item:hover .rss-feed-drag-handle {
+  opacity: 0.45;
+}
+
+.rss-feed-drag-handle:hover {
+  opacity: 0.9 !important;
+}
+
+/* dragSort lifts the dragged row to position:absolute with its own inline
+   width/left/top — its handle just needs to keep the grab cursor while held. */
+.rss-feed-item.dragging .rss-feed-drag-handle {
+  cursor: grabbing;
+  opacity: 0.9;
+}
+
+.rss-group-header-ungrouped {
+  cursor: default;
+}
+
+.rss-feed-delete {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.rss-feed-interval {
+  position: absolute;
+  right: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.rss-feed-item:hover .rss-feed-delete,
+.rss-feed-item:hover .rss-feed-interval {
+  opacity: 0.55;
+}
+
+.rss-feed-delete:hover {
+  opacity: 1 !important;
+  color: var(--red);
+  background: rgba(200,50,50,0.15);
+}
+
+.rss-feed-interval:hover {
+  opacity: 1 !important;
+  color: var(--fg);
+  background: rgba(128,128,128,0.15);
+}
+
+.rss-feed-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--fg) 16%, transparent);
+  color: var(--fg);
+  overflow: hidden;
+}
+
+.rss-feed-icon img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.rss-feed-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rss-unread-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--red);
+  color: var(--bg);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.rss-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.72;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 4px;
+  transition: background 0.12s;
+}
+
+/* Breathing room between distinct top-level groups so the list reads as
+   sections rather than one dense, undifferentiated column. */
+.rss-group-header.rss-group-root {
+  margin-top: 8px;
+}
+.rss-group-header.rss-group-root:first-child {
+  margin-top: 0;
+}
+
+.rss-group-header:hover {
+  background: rgba(128,128,128,0.08);
+}
+
+.rss-group-header.active {
+  opacity: 1;
+  background: rgba(128,128,128,0.12);
+}
+
+.rss-group-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rss-group-toggle {
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 3px;
+  transition: background 0.12s, opacity 0.12s;
+}
+
+.rss-group-toggle:hover {
+  opacity: 1;
+  background: rgba(128,128,128,0.15);
+}
+
+.rss-group-actions {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+  margin-left: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+
+.rss-group-header:hover .rss-group-actions,
+.rss-group-header.active .rss-group-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rss-group-add-sub,
+.rss-group-rename,
+.rss-group-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 4px;
+  opacity: 0.65;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.rss-group-add-sub:hover,
+.rss-group-rename:hover {
+  opacity: 1;
+  color: var(--fg);
+  background: rgba(128,128,128,0.18);
+}
+
+.rss-group-delete:hover {
+  opacity: 1;
+  color: var(--red);
+  background: rgba(200,50,50,0.18);
+}
+
+.rss-groups-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 2px 0;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.rss-groups-header span {
+  flex: 1;
+  opacity: 0.55;
+}
+
+.rss-groups-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0.65;
+  border-radius: 5px;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.rss-groups-add:hover {
+  opacity: 1;
+  background: rgba(128,128,128,0.15);
+}
+
+.rss-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.rss-feed-checkbox {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  cursor: pointer;
+  accent-color: var(--accent-primary);
+  margin: 0;
+  transition: opacity 0.15s, width 0.15s, margin 0.15s;
+}
+
+.rss-feed-item .rss-feed-checkbox {
+  margin-right: 4px;
+}
+
+.rss-feed-checkbox.rss-checkbox-hidden {
+  width: 0;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.rss-select-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.12s, background 0.12s;
+  flex-shrink: 0;
+  margin-left: 0;
+}
+
+.rss-select-mode-btn svg { flex-shrink: 0; }
+
+.rss-select-mode-btn:hover {
+  opacity: 1;
+  background: rgba(128,128,128,0.1);
+}
+
+.rss-select-mode-btn.active {
+  opacity: 1;
+  background: var(--accent-primary);
+  color: var(--bg);
+  border-color: var(--accent-primary);
+}
+
+.rss-summarize-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: rgba(128,128,128,0.04);
+}
+
+.rss-summarize-btn {
+  font-size: 11px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.12s;
+}
+
+.rss-summarize-btn:hover {
+  background: rgba(128,128,128,0.1);
+}
+
+.rss-summary-panel {
+  margin: 8px 12px;
+  padding: 10px 12px;
+  background: rgba(128,128,128,0.06);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-left: 3px solid var(--accent-primary);
+}
+
+.rss-summary-panel h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.rss-summary-panel p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.rss-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rss-article-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.rss-empty-state {
+  padding: 56px 24px;
+  text-align: center;
+  opacity: 0.45;
+  font-size: 13px;
+}
+
+.rss-article-item {
+  display: flex;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+
+.rss-article-item:hover {
+  background: rgba(128,128,128,0.05);
+}
+
+.rss-article-item.active {
+  background: rgba(128,128,128,0.1);
+}
+
+.rss-article-read {
+  opacity: 0.6;
+}
+
+.rss-article-thumb {
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.rss-article-thumb {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: var(--border);
+}
+
+.rss-article-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.rss-article-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  line-height: 1.35;
+}
+
+.rss-article-meta {
+  font-size: 11px;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.rss-article-feed {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rss-article-feed img {
+  border-radius: 2px;
+}
+
+.rss-article-time {
+  flex-shrink: 0;
+}
+
+.rss-starred-indicator {
+  color: var(--red);
+  font-size: 11px;
+}
+
+.rss-article-snippet-empty {
+  font-style: italic;
+  opacity: 0.4 !important;
+}
+
+.rss-article-snippet {
+  font-size: 12px;
+  opacity: 0.6;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Grid view — a pure layout swap over the same .rss-article-item markup
+   _articleItemHtml already produces (see extensions/rss/static/index.js),
+   toggled via .rss-view-grid on the workspace root. Full-width rows that
+   aren't article cards (empty state, group summary bar/panel) span every
+   column so they don't get squeezed into a single grid cell. */
+.rss-workspace.rss-view-grid .rss-article-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  align-content: start;
+  gap: 12px;
+  padding: 12px;
+}
+
+.rss-workspace.rss-view-grid .rss-empty-state,
+.rss-workspace.rss-view-grid .rss-summarize-bar,
+.rss-workspace.rss-view-grid .rss-summary-panel {
+  grid-column: 1 / -1;
+}
+
+/* Each tile is a fixed-aspect photo card with the title/source overlaid on
+   a bottom gradient scrim (Netflix/Pinterest-style) — a fixed aspect-ratio
+   keeps every tile the same size regardless of how much title text there
+   is, and the scrim guarantees legibility over any photo without having to
+   reserve separate below-the-fold space for text. Articles with no
+   thumbnail (`_articleItemHtml` only emits `.rss-article-thumb` when
+   `a.image` is set) fall back to a plain solid-background card with the
+   body flowing normally instead of overlaid — the :has() below is what
+   tells the two cases apart. */
+.rss-workspace.rss-view-grid .rss-article-item {
+  position: relative;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  background: rgba(128,128,128,0.08);
+}
+
+.rss-workspace.rss-view-grid .rss-article-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
+/* .rss-article-body is `flex: 1` in the base (row) layout, which is right
+   for a horizontal list row — but in this column card that same flex:1
+   fights an auto-height container for space it can never resolve, and the
+   whole body collapses to zero height (title/meta/snippet all present in
+   the DOM, just rendered at 0px). `flex: none` makes it size to its own
+   content instead, like a normal block. */
+.rss-workspace.rss-view-grid .rss-article-body {
+  flex: none;
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rss-workspace.rss-view-grid .rss-article-item:has(.rss-article-thumb) .rss-article-body {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding-top: 26px;
+  background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.5) 65%, transparent 100%);
+  color: #fff;
+}
+
+.rss-workspace.rss-view-grid .rss-article-title {
+  font-size: 13px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 0;
+}
+
+.rss-workspace.rss-view-grid .rss-article-meta {
+  margin-bottom: 0;
+}
+
+.rss-workspace.rss-view-grid .rss-article-item:has(.rss-article-thumb) .rss-article-meta {
+  opacity: 0.8;
+}
+
+/* Snippet body copy doesn't fit the tile format — title + source is enough
+   context at this size, and keeps every card the same shape. */
+.rss-workspace.rss-view-grid .rss-article-snippet {
+  display: none;
+}
+
+.rss-reader {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rss-reader-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.rss-toolbar-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 2px;
+  background: var(--border);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* Uniform, centered icon buttons so the reader toolbar reads as an even row
+   (scoped to RSS so the shared .doc-action-icon-btn is untouched elsewhere).
+   Base opacity raised from the shared 0.3 — at that level a whole row of
+   these back-to-back reads as a disabled/inactive toolbar rather than a
+   set of clickable actions. */
+.rss-reader-toolbar .doc-action-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+.rss-reader-toolbar .doc-action-icon-btn:disabled {
+  opacity: 0.15;
+}
+
+.rss-reader-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.rss-reader-header {
+  margin-bottom: 20px;
+}
+
+.rss-reader-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  line-height: 1.3;
+}
+
+.rss-reader-meta {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.rss-reader-body {
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.rss-reader-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.rss-reader-body p {
+  margin: 0 0 12px;
+}
+
+.rss-reader-placeholder {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.rss-reader-summary {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  border-left: 3px solid var(--red);
+  background: rgba(128,128,128,0.08);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.rss-reader-summary-loading {
+  animation: rss-summary-pulse 1.4s ease-in-out infinite;
+}
+@keyframes rss-summary-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.rss-reader-summary h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.7;
+}
+
+.rss-star-active svg {
+  fill: var(--red);
+  stroke: var(--red);
+}
+
+.rss-spinning svg {
+  animation: rss-spin 1s linear infinite;
+}
+
+@keyframes rss-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ─── RSS Modal ──────────────────────────────────── */
+
+.rss-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.rss-modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 420px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.rss-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rss-modal-header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.rss-modal-close {
+  background: none;
+  border: none;
+  color: var(--fg);
+  font-size: 20px;
+  cursor: pointer;
+  opacity: 0.6;
+  padding: 0 4px;
+}
+
+.rss-modal-close:hover {
+  opacity: 1;
+}
+
+.rss-modal-body {
+  padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.rss-modal-body label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  opacity: 0.7;
+}
+
+.rss-modal-footer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.primary-btn {
+  padding: 7px 16px;
+  border: none;
+  border-radius: 6px;
+  background: var(--red);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary-btn {
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ─── RSS Video Player ────────────────────────────── */
+
+.rss-video-player {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+}
+
+.rss-video-play-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #fff;
+  transition: background 0.2s;
+  pointer-events: none;
+}
+
+.rss-video-player:hover .rss-video-play-btn {
+  background: #ff0000;
+}
+
+#rss-video-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0,0,0,0.92);
+  align-items: center;
+  justify-content: center;
+}
+
+.rss-video-modal-content {
+  position: relative;
+  width: 90%;
+  max-width: 960px;
+}
+
+.rss-video-modal-player {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.rss-video-modal-player iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.rss-video-modal-close {
+  position: absolute;
+  top: -44px;
+  right: 0;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 32px;
+  cursor: pointer;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.rss-video-modal-close:hover {
+  opacity: 1;
+}
+
+.rss-video-modal-link {
+  display: block;
+  text-align: center;
+  margin-top: 16px;
+  color: #aaa;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.rss-video-modal-link:hover {
+  color: #fff;
+}
+
+/* ── Workspace picker ───────────────────────────────────────────── */
+/* Layout (width/flex column/max-height) inherited from base .modal-content. */
+/* Editable path/address bar: reuses .styled-prompt-input for border/bg/radius/
+   focus ring (set in the element's class list). Overrides only the deltas:
+   mono font, and full-bleed via flex stretch with no horizontal margin (the
+   modal-content's 10px padding is the gutter) instead of the base width:100%,
+   which overflowed against the overflow:auto scrollbar. */
+.workspace-cur {
+  align-self: stretch;
+  width: auto;
+  min-width: 0;
+  margin: 4px 0 8px;
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+}
+/* flex/overflow inherited from base .modal-body; only the padding differs. */
+.workspace-body { padding: 6px 0; }
+.workspace-row {
+  padding: 7px 18px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.workspace-row > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workspace-row-icon { flex-shrink: 0; opacity: 0.75; }
+.workspace-row:hover {
+  background: color-mix(in srgb, var(--border) 20%, transparent);
+}
+.workspace-up { opacity: 0.7; }
+.workspace-empty { padding: 14px 18px; opacity: 0.5; font-size: 13px; }
+.workspace-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--border);
+}
+.workspace-footer > .confirm-btn { position: relative; top: 4px; }
+.workspace-footer > .confirm-btn-primary { color: var(--bg); }
+.workspace-footer > #workspace-use { top: 3px; font-size: calc(0.85rem + 2px); font-weight: 700; }
+.workspace-footer > #workspace-use:hover { color: var(--fg); }
+.workspace-footer > .confirm-btn > svg { position: relative; left: -2px; top: 2px; }
+.workspace-footer > #workspace-use > svg { top: 3px; color: inherit; }
+.workspace-note { margin: 0 0 8px; font-size: 11px; line-height: 1.4; }
+
+.settings-system-logs-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-system-logs-tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 6px 8px 7px;
+  opacity: 0.62;
+}
+.settings-system-logs-tab.active {
+  border-bottom-color: var(--accent, var(--red));
+  color: var(--accent, var(--red));
+}
+.settings-system-logs-col {
+  gap: 10px;
+}
+.settings-system-notification-logs-col {
+  gap: 10px;
+}
+#system-log-terminal-panel[hidden],
+#system-log-notifications-panel[hidden] {
+  display: none !important;
+}
+.settings-system-logs-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.settings-system-logs-search {
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 11px;
+  flex: 1;
+  min-width: 140px;
+}
+.settings-system-logs-select {
+  padding: 5px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 11px;
+  min-width: 90px;
+}
+#log-refresh-btn {
+  height: 27px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+}
+.settings-system-logs-autopoll-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  user-select: none;
+  margin-left: auto;
+}
+#log-console-container {
+  background: #13151a;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: Consolas, 'Fira Code', Monaco, 'Courier New', monospace;
+  font-size: 11px;
+  height: 280px;
+  max-height: 280px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #d1d4e0;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);
+}
+.settings-system-logs-placeholder {
+  color: var(--color-text-dim, #7f8c8d);
+  font-style: italic;
+  font-family: inherit;
+}
+.log-line {
+  margin-bottom: 3px;
+  line-height: 1.4;
+  font-size: 11px;
+  font-family: inherit;
+}
+.log-line-info {
+  color: var(--green, #50fa7b);
+}
+.log-line-warning {
+  color: var(--warn, #f0ad4e);
+}
+.log-line-error {
+  color: var(--red, #e06c75);
+}
+.log-line-debug {
+  color: var(--color-muted, #888);
+}
+.log-line-default {
+  color: var(--fg, #9cdef2);
+}
+#notification-log-container {
+  height: 280px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg) 72%, #13151a 28%);
+}
+.notification-log-entry {
+  padding: 9px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+.notification-log-entry:last-child { border-bottom: 0; }
+.notification-log-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.notification-log-task {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.notification-log-status {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 9px;
+  line-height: 1;
+  text-transform: uppercase;
+  opacity: 0.82;
+}
+.notification-log-success .notification-log-status { color: var(--green, #50fa7b); }
+.notification-log-error .notification-log-status { color: var(--red, #e06c75); }
+.notification-log-meta {
+  margin-top: 3px;
+  color: var(--color-text-dim, #7f8c8d);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.notification-log-body {
+  position: relative;
+  margin-top: 6px;
+  padding: 7px 8px;
+  border-left: 2px solid color-mix(in srgb, var(--fg) 28%, transparent);
+  color: color-mix(in srgb, var(--fg) 82%, transparent);
+  font-family: Consolas, 'Fira Code', Monaco, 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.notification-log-body-text { display: block; padding-right: 24px; }
+.notification-log-copy {
+  position: absolute; top: 5px; right: 5px; width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 4px; background: transparent; color: currentColor;
+  opacity: .45; cursor: pointer; padding: 0;
+}
+.notification-log-copy:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.notification-log-copy.copied { opacity: 1; color: var(--green, #50fa7b); }
+.notification-log-error .notification-log-body {
+  border-left-color: var(--red, #e06c75);
+  color: color-mix(in srgb, var(--red, #e06c75) 88%, var(--fg));
+}
+
+/* Compare uses one full-width response card on phones. Every pane remains
+   mounted so hidden models can keep streaming while the tab strip scales to
+   larger comparisons without stacking multiple chats down the page. */
+@media (max-width: 768px) {
+  .compare-add-flap { display: none !important; }
+  .compare-mobile-tabs {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: stretch;
+    gap: 5px;
+    min-width: 0;
+    padding: 0 8px 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .compare-mobile-tabs::-webkit-scrollbar { display: none; }
+  .compare-mobile-tab {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 clamp(108px, 38vw, 156px);
+    min-width: 0;
+    height: 34px;
+    box-sizing: border-box;
+    padding: 0 9px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--fg) 3%, var(--bg));
+    color: color-mix(in srgb, var(--fg) 62%, transparent);
+    font-size: 10px;
+    line-height: 1;
+    font-family: inherit;
+    text-align: left;
+    scroll-snap-align: start;
+    transition: border-color .15s ease, background .15s ease, color .15s ease;
+  }
+  .compare-mobile-add {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 34px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--fg) 3%, var(--bg));
+    color: color-mix(in srgb, var(--fg) 70%, transparent);
+    font-size: 10px;
+    line-height: 1;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .compare-mobile-add > span:first-child {
+    color: var(--accent, var(--red));
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1;
+  }
+  .compare-mobile-add:disabled { opacity: .35; cursor: default; }
+  .compare-mobile-add:not(:disabled):active {
+    background: color-mix(in srgb, var(--accent, var(--red)) 12%, var(--bg));
+  }
+  .compare-mobile-tab.active {
+    border-color: color-mix(in srgb, var(--accent, var(--red)) 70%, var(--border));
+    background: color-mix(in srgb, var(--accent, var(--red)) 11%, var(--bg));
+    color: var(--fg);
+  }
+  .compare-mobile-tab-slot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--fg) 7%, transparent);
+    color: color-mix(in srgb, var(--fg) 68%, transparent);
+    font-size: 9px;
+    font-weight: 700;
+  }
+  .compare-mobile-tab.active .compare-mobile-tab-slot {
+    background: var(--accent, var(--red));
+    color: var(--bg);
+  }
+  .compare-mobile-tab-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .compare-mobile-tab-state {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--fg) 22%, transparent);
+  }
+  .compare-mobile-tab.is-streaming .compare-mobile-tab-state {
+    background: var(--red, #e06c75);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--red, #e06c75) 65%, transparent);
+    animation: compare-mobile-tab-pulse 1s ease-in-out infinite !important;
+    will-change: opacity, transform, box-shadow;
+  }
+  .compare-mobile-tab.is-awaiting-input .compare-mobile-tab-state { background: var(--accent, var(--red)); }
+  .compare-mobile-tab.is-done .compare-mobile-tab-state {
+    width: auto;
+    height: auto;
+    border-radius: 0;
+    background: none;
+    color: var(--color-success, #4caf50);
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .compare-mobile-tab.is-done .compare-mobile-tab-state::before { content: '✓'; }
+  .compare-mobile-tab.is-failed .compare-mobile-tab-state { background: var(--color-error, #e55); }
+  @keyframes compare-mobile-tab-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 color-mix(in srgb, var(--red, #e06c75) 65%, transparent); }
+    50% { opacity: .45; transform: scale(.72); box-shadow: 0 0 0 5px color-mix(in srgb, var(--red, #e06c75) 0%, transparent); }
+  }
+  .compare-grid[data-cols],
+  .compare-grid.sequential-layout {
+    display: block !important;
+    grid-template-columns: none !important;
+    flex: 1 1 0;
+    min-height: 0;
+    padding: 0 8px 6px;
+    overflow: hidden;
+  }
+  .compare-grid > .compare-pane,
+  .compare-grid.sequential-layout > .compare-pane {
+    display: none;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    margin-left: 0 !important;
+    box-sizing: border-box;
+  }
+  .compare-grid > .compare-pane.compare-pane-mobile-active,
+  .compare-grid.sequential-layout > .compare-pane.compare-pane-mobile-active {
+    display: flex;
+    animation: compare-mobile-card-in .16s ease-out;
+  }
+  .compare-grid.sequential-layout .compare-pane .pane-header {
+    clip-path: none;
+    padding-left: 10px;
+  }
+  @keyframes compare-mobile-card-in {
+    from { opacity: .55; transform: translateY(2px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .compare-probe-card { width: min(460px, calc(100% - 16px)); padding: 12px; }
+  .compare-probe-list { grid-template-columns: minmax(0, 1fr); }
+  .compare-probe-row:not(.fail) .compare-probe-spinner:not(.ok):not(.fail) { transform: translateX(-2px); }
+  .compare-probe-detail { flex-wrap: wrap; }
+  .compare-probe-detail-message { flex-basis: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compare-mobile-tab.is-streaming .compare-mobile-tab-state,
+  .compare-grid > .compare-pane.compare-pane-mobile-active { animation: none; }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Mobile tool drawers: leave a visible strip of the workspace above tall
+   sheets so they read as draggable drawers rather than full-screen routes.
+   Content-sized windows remain shorter; only tall content is capped at 95dvh.
+   Keep the theme popup's intentionally shorter 65vh treatment unchanged. */
+@media (max-width: 768px) {
+  .modal:not(#theme-modal):not(#styled-confirm-overlay) > .modal-content,
+  .modal:not(#theme-modal):not(#styled-confirm-overlay) > .memory-modal-content,
+  .modal:not(#theme-modal):not(#styled-confirm-overlay) > .settings-modal-content {
+    height: auto !important;
+    max-height: 95dvh !important;
+    align-self: flex-end;
+    margin-bottom: calc(-1 * env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* Tabbed tools need a definite flex height when their active panel changes;
+     otherwise the content-sized drawer can collapse and hide the tab strip. */
+  #cookbook-modal .modal-content,
+  #tasks-modal .tasks-modal-content,
+  #memory-modal .memory-modal-content,
+  #settings-modal .settings-modal-content,
+  #email-lib-modal .modal-content,
+  .email-window-modal .modal-content,
+  #doclib-modal .doclib-modal-content,
+  #library-modal .doclib-modal-content,
+  #gallery-modal .gallery-modal-content,
+  #research-overlay .research-pane,
+  #compare-model-overlay .modal-content,
+  #custom-preset-modal .preset-modal-content {
+    height: 95dvh !important;
+    min-height: 95dvh !important;
+    max-height: 95dvh !important;
+  }
+
+  /* Explicit fullscreen states still behave as bottom drawers on phones. */
+  #email-lib-modal.email-lib-fullscreen .modal-content,
+  #doclib-modal.doclib-fullscreen:not(.modal-right-docked) .doclib-modal-content {
+    top: auto !important;
+    bottom: 0 !important;
+    height: 95dvh !important;
+    max-height: 95dvh !important;
+    border-radius: 14px 14px 0 0 !important;
+  }
+
+  .cal-modal-container {
+    height: auto !important;
+    max-height: 95dvh !important;
+  }
+
+  /* Notes and Documents must respect the same viewport and safe-area
+     top as other mobile full-height sheets. Keep these authoritative rules
+     consistent with 05-documents.css and 14-email.css. */
+  body.doc-view .doc-editor-pane,
+  body.notes-view .notes-pane {
+    inset: var(--sheet-top) 0 0 !important;
+    height: calc(var(--app-height) - var(--sheet-top)) !important;
+    max-height: calc(var(--app-height) - var(--sheet-top)) !important;
+  }
+}
+
+
+
+/* Shared bulk-selection trigger. Keep every Select/Cancel control on the same
+   circle-dot and X language even when a feature rewrites the button label. */
+:is(
+  #memory-select-btn,
+  #skills-select-btn,
+  #notes-select-btn,
+  #tasks-select-btn,
+  #doclib-chats-select-btn,
+  #doclib-arc-select-btn,
+  #doclib-research-select-btn,
+  #doclib-select-btn,
+  #gallery-select-btn,
+  #gallery-albums-select-btn,
+  #gallery-editor-drafts-select,
+  #email-lib-select-btn,
+  #archive-select-btn,
+  #lib-select-btn,
+  #hwfit-cache-select
+) {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+:is(
+  #memory-select-btn,
+  #skills-select-btn,
+  #notes-select-btn,
+  #tasks-select-btn,
+  #doclib-chats-select-btn,
+  #doclib-arc-select-btn,
+  #doclib-research-select-btn,
+  #doclib-select-btn,
+  #gallery-select-btn,
+  #gallery-albums-select-btn,
+  #gallery-editor-drafts-select,
+  #email-lib-select-btn,
+  #archive-select-btn,
+  #lib-select-btn,
+  #hwfit-cache-select
+)::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  margin-right: 3px;
+  flex: 0 0 11px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='none' stroke='black' stroke-width='2'/%3E%3Ccircle cx='12' cy='11' r='3' fill='black'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='none' stroke='black' stroke-width='2'/%3E%3Ccircle cx='12' cy='11' r='3' fill='black'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+:is(
+  #memory-select-btn,
+  #skills-select-btn,
+  #notes-select-btn,
+  #tasks-select-btn,
+  #doclib-chats-select-btn,
+  #doclib-arc-select-btn,
+  #doclib-research-select-btn,
+  #doclib-select-btn,
+  #gallery-select-btn,
+  #gallery-albums-select-btn,
+  #gallery-editor-drafts-select,
+  #email-lib-select-btn,
+  #archive-select-btn,
+  #lib-select-btn,
+  #hwfit-cache-select
+).active::before {
+  background-color: var(--accent, var(--red));
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M18 6 6 18M6 6l12 12' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M18 6 6 18M6 6l12 12' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+:is(#memory-select-btn, #skills-select-btn, #email-lib-select-btn) > .memory-select-btn-icon {
+  display: none;
+}
+
+/* The Skills toolbar sits a pixel higher than its peers. */
+#skills-select-btn::before {
+  transform: translateY(1px);
+}
+
+
+/* Deep Research History uses the same library surface as Memory, Skills, and
+   Tasks: one framed block, compact toolbar, filter chips, bulk selection, and
+   cards that expand in place. */
+#research-pane .research-history-card {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: 0;
+  padding: 12px;
+}
+#research-pane .research-history-title-row {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+}
+#research-pane .research-history-clear-btn svg {
+  position: relative;
+  top: 2px;
+}
+#research-pane .research-history-title-row h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  top: -4px;
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  border: 0;
+  letter-spacing: 0;
+}
+#research-pane .research-history-title-row h2 > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--accent, var(--red));
+  flex: 0 0 14px;
+}
+#research-pane .research-history-head-count {
+  position: relative;
+  top: 4px;
+  font-size: 0.6em;
+  opacity: 0.6;
+  font-weight: normal;
+}
+#research-pane .research-history-toolbar {
+  flex: 0 0 auto;
+  max-height: none;
+  overflow: visible;
+}
+#research-pane .research-history-toolbar-row {
+  align-items: center;
+  min-height: 24px;
+}
+#research-pane .research-history-toolbar-row .memory-sort-select {
+  top: -3px;
+  width: 92px;
+}
+#research-pane #research-history-select-btn {
+  position: relative;
+  top: -5px;
+}
+#research-pane #research-history-select-btn svg {
+  flex: 0 0 auto;
+  margin-right: 3px;
+  vertical-align: -2px;
+}
+#research-pane .research-history-search-wrap > svg {
+  position: absolute;
+  left: 9px;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  color: var(--accent, var(--red));
+  pointer-events: none;
+}
+#research-pane .research-history-search-wrap .memory-search-input {
+  height: 30px;
+  margin: 0;
+  padding-left: 28px;
+}
+#research-pane #research-history-filters {
+  flex: 0 0 auto;
+  margin: -2px 0 0;
+}
+#research-pane #research-history-bulk {
+  flex: 0 0 auto;
+  position: relative;
+  top: -4px;
+  margin: 2px 0 5px;
+}
+#research-pane #research-history-bulk-delete {
+  position: relative;
+  top: -4px;
+  right: 0;
+  margin-left: auto;
+}
+#research-pane #research-history-bulk-delete svg {
+  width: 11px;
+  height: 11px;
+  margin-right: 3px;
+  vertical-align: -1px;
+}
+#research-pane .research-history-select-cb {
+  position: relative;
+  top: -4px;
+}
+#research-pane #research-history-bulk-cancel {
+  position: relative;
+  top: -2px;
+  right: 0;
+  margin-left: 4px;
+}
+#research-pane #research-past-list {
+  position: relative;
+  top: -4px;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  padding: 2px 2px 4px 0;
+  gap: 4px;
+}
+#research-pane #research-past-list .research-job-card {
+  display: block;
+  height: 67px;
+  min-height: 67px;
+  box-sizing: border-box;
+  max-height: none;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: none;
+}
+#research-pane #research-past-list .research-job-card:hover {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 16%, transparent);
+  transform: none;
+}
+#research-pane #research-past-list .research-job-card.doclib-card-expanded {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100%;
+  max-height: none;
+  overflow: hidden;
+}
+#research-pane #research-past-list .research-job-card.research-job-failed:not(.doclib-card-expanded) {
+  height: 67px;
+  min-height: 67px;
+}
+#research-pane #research-past-list .research-job-header {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 18px;
+  gap: 6px;
+  overflow: visible;
+}
+#research-pane #research-past-list .research-job-query {
+  position: static;
+  top: auto;
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  word-break: normal;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#research-pane #research-past-list .research-job-header:has(.research-job-title-error) {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+#research-pane #research-past-list .research-job-header:has(.research-job-title-error) .research-job-query {
+  order: 1;
+}
+#research-pane #research-past-list .research-job-header:has(.research-job-title-error) .research-job-retry-badge,
+#research-pane #research-past-list .research-job-header:has(.research-job-title-error) .research-job-edit-badge,
+#research-pane #research-past-list .research-job-header:has(.research-job-title-error) .research-job-overflow {
+  order: 2;
+}
+#research-pane #research-past-list .research-job-title-error {
+  order: 3;
+  flex: 0 0 100%;
+  max-width: none;
+  margin-top: 0;
+  text-align: left;
+}
+#research-pane #research-past-list .research-job-report-badge,
+#research-pane #research-past-list .research-job-discuss-badge,
+#research-pane #research-past-list .research-job-overflow {
+  flex: 0 0 auto;
+}
+  #research-pane #research-past-list .research-job-meta {
+  position: relative;
+  top: 4px;
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.2;
+  opacity: 0.4;
+    transform: none;
+  }
+  #research-pane #research-past-list .research-job-summary-copy {
+    transform: translateY(-22px);
+  }
+#research-pane #research-past-list .research-job-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 35px;
+  margin-top: 4px;
+}
+  #research-pane #research-past-list .research-job-thumb-frame {
+    width: 48px;
+    height: 33px;
+    flex-basis: 48px;
+    border-radius: 3px;
+    transform: translateY(-14px);
+  }
+#research-pane #research-past-list .research-job-overflow {
+  margin-left: 0;
+  align-self: flex-start;
+}
+#research-pane #research-past-list .research-job-more {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  border: 0;
+  background: transparent;
+}
+#research-pane #research-past-list .research-job-more > svg {
+  transform: translateY(6px);
+}
+#research-pane #research-past-list .task-status-badge {
+  height: 20px;
+  min-height: 20px;
+  padding: 0 8px;
+  gap: 4px;
+}
+#research-pane #research-past-list .research-job-actions .task-status-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 20px;
+  min-height: 20px;
+  padding: 0 8px;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: color-mix(in srgb, var(--fg) 72%, transparent);
+  cursor: pointer;
+}
+#research-pane #research-past-list .research-job-actions .task-status-badge:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent, var(--red)) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent, var(--red)) 40%, var(--border));
+}
+#research-pane #research-past-list .research-job-actions .task-status-badge > svg {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+}
+#research-pane #research-past-list .task-status-badge > svg {
+  width: 10px;
+  height: 10px;
+}
+#research-pane #research-past-list .research-job-report-badge {
+  color: var(--cat-color, var(--accent, var(--red)));
+  background: color-mix(in srgb, var(--cat-color, var(--accent, var(--red))) 16%, transparent);
+  border-color: color-mix(in srgb, var(--cat-color, var(--accent, var(--red))) 38%, transparent);
+}
+#research-pane #research-past-list .research-job-report-badge:hover {
+  background: color-mix(in srgb, var(--cat-color, var(--accent, var(--red))) 25%, transparent);
+  border-color: color-mix(in srgb, var(--cat-color, var(--accent, var(--red))) 58%, transparent);
+}
+#research-pane #research-past-list .research-job-retry-badge,
+#research-pane #research-past-list .research-job-edit-badge {
+  color: color-mix(in srgb, var(--fg) 72%, transparent);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 18%, transparent);
+}
+#research-pane #research-past-list .research-job-retry-badge:hover,
+#research-pane #research-past-list .research-job-edit-badge:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 32%, transparent);
+}
+#research-pane #research-past-list .research-job-discuss-badge {
+  color: color-mix(in srgb, var(--fg) 72%, transparent);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 18%, transparent);
+}
+#research-pane #research-past-list .research-job-discuss-badge:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 32%, transparent);
+}
+#research-pane .research-history-card-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  flex: 0 0 auto;
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+}
+#research-pane .research-history-card-select .memory-select-cb {
+  margin: 0 1px 0 0;
+}
+#research-pane #research-past-list .research-history-selectable {
+  cursor: pointer;
+}
+#research-pane #research-past-list .research-job-result {
+  max-height: none;
+  overflow: visible;
+}
+#research-pane .research-history-card:has(.doclib-card-expanded) #research-past-list {
+  overflow: hidden !important;
+}
+#research-pane #research-past-list:has(.doclib-card-expanded) > .research-job-card:not(.doclib-card-expanded) {
+  display: none !important;
+}
+#research-pane #research-past-list .research-job-card.doclib-card-expanded .research-job-result {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 600px) {
+  #research-pane .research-history-card {
+    padding: 10px;
+  }
+  #research-pane .research-history-toolbar-row {
+    flex-wrap: nowrap;
+  }
+  #research-pane .research-history-toolbar-row .memory-sort-select {
+    width: 84px;
+  }
+  #research-pane #research-history-clear {
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+  #research-pane #research-past-list .research-job-card {
+    min-height: 77px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  #research-pane #research-past-list .research-job-card.research-job-failed:not(.doclib-card-expanded) {
+    height: 77px;
+    min-height: 77px;
+  }
+  #research-pane #research-past-list .research-job-header {
+    gap: 4px;
+  }
+  #research-pane #research-past-list .research-job-report-badge,
+  #research-pane #research-past-list .research-job-discuss-badge {
+    width: auto;
+    min-width: 0;
+    height: 28px;
+    min-height: 28px;
+    padding-left: 7px;
+    padding-right: 7px;
+    justify-content: center;
+    gap: 4px;
+  }
+  #research-pane #research-past-list .research-job-report-badge > svg,
+  #research-pane #research-past-list .research-job-discuss-badge > svg {
+    width: 13px;
+    height: 13px;
+    flex: 0 0 13px;
+  }
+  #research-pane #research-past-list .research-job-report-badge .task-state-label,
+  #research-pane #research-past-list .research-job-discuss-badge .task-state-label {
+    display: inline;
+    font-size: 9px;
+    line-height: 1;
+  }
+  #research-pane #research-past-list .research-job-more {
+    width: 24px;
+    min-width: 24px;
+  }
+}
+
+/* =====================================================
+   Ithaca hub — fullscreen dashboard screen (static/js/ithaca.js)
+   A navigable screen (participates in history), not a floating
+   modal: it fills the area beside the icon rail / sidebar using
+   the live --icon-rail-w / --sidebar-w layout vars.
+   ============================================================ */
+
+.ithaca-screen {
+  display: none;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px));
+  z-index: 90; /* above the chat surface, below floating tool modals */
+  background: var(--bg, var(--panel));
+  flex-direction: column;
+  overflow: hidden;
+}
+.ithaca-screen-open { display: flex; }
+
+.ithaca-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+.ithaca-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.ithaca-header-sub {
+  font-size: 0.72rem;
+  opacity: 0.5;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.ithaca-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.ithaca-back-btn:hover { background: var(--input-bg, rgba(128, 128, 128, 0.12)); }
+
+.ithaca-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  /* Fine-grained row tracks so populated tiles (spanned via grid-row) get
+     real room for their content while empty placeholder slots collapse to
+     a slim strip instead of claiming an equal 1/3 share of the screen. */
+  grid-auto-rows: 64px;
+  grid-auto-flow: row dense;
+  gap: 12px;
+  padding: 14px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.ithaca-tile[data-slot="A"] { grid-column: span 2; grid-row: span 6; }
+/* User-defined tiles (extensions/ithaca/tiles.py) auto-flow into the grid
+   past Weather via `grid-auto-flow: row dense` above — no fixed slot needed. */
+.ithaca-tile-dynamic { grid-row: span 4; }
+
+.ithaca-tile-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.ithaca-tile-table th, .ithaca-tile-table td {
+  text-align: left;
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ithaca-tile-table th { opacity: 0.6; font-weight: 600; }
+.ithaca-tile-table-wrap { overflow-x: auto; }
+.ithaca-tile-sortable { cursor: pointer; user-select: none; }
+.ithaca-tile-sortable:hover { opacity: 0.9; }
+.ithaca-tile-sort-active { opacity: 1; color: var(--accent-primary, #6ca0f6); }
+.ithaca-tile-filter-row td { padding: 2px 6px 4px 0; border-bottom: 1px solid var(--border); }
+.ithaca-tile-filter-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-secondary, transparent);
+  color: inherit;
+}
+.ithaca-tile-null { opacity: 0.4; }
+.ithaca-tile-col-number, .ithaca-tile-col-number td, td.ithaca-tile-col-number { text-align: right; }
+.ithaca-tile-col-date, td.ithaca-tile-col-date { white-space: nowrap; }
+/* JSON(B) columns render as readable "key: value, ..." prose (see
+   _jsonValueToText in tileRenderer.js) which can run longer than a typical
+   cell — let it wrap instead of the default single-line ellipsis truncation. */
+td.ithaca-tile-col-json { white-space: normal; }
+.ithaca-tile-pager {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  opacity: 0.75;
+  padding: 6px 2px 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.ithaca-tile-pager-info { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ithaca-tile-pager-btn {
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.ithaca-tile-pager-btn:disabled { opacity: 0.35; cursor: default; }
+.ithaca-tile-pager-size {
+  font-size: 0.72rem;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-secondary, transparent);
+  color: inherit;
+}
+.ithaca-tile-list { margin: 0; padding-left: 18px; font-size: 0.8rem; }
+.ithaca-tile-list li { padding: 2px 0; }
+.ithaca-tile-stat { font-size: 2rem; font-weight: 600; padding: 8px 2px; }
+.ithaca-tile-canvas { max-width: 100%; max-height: 100%; }
+
+.ithaca-tile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ithaca-tile-action-btn {
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent-primary, #6ca0f6) 12%, transparent);
+  color: inherit;
+  cursor: pointer;
+}
+.ithaca-tile-action-btn:hover { background: color-mix(in srgb, var(--accent-primary, #6ca0f6) 22%, transparent); }
+.ithaca-tile-action-btn:disabled { opacity: 0.6; cursor: default; }
+
+.ithaca-tilebuilder-modal { width: min(560px, 92vw); }
+.ithaca-tilebuilder-modal .ithaca-tilebuilder-body { padding: 10px 12px; overflow-y: auto; }
+.ithaca-tilebuilder-modal textarea.settings-input { resize: vertical; font-family: inherit; }
+
+.ithaca-tile {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  position: relative; /* anchors .ithaca-tile-resize-handle */
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ithaca-tile-dragging, .ithaca-tile-resizing {
+  opacity: 0.85;
+  z-index: 5;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.4);
+  transition: none; /* no lag while actively tracking the pointer */
+}
+.ithaca-tile-header.ithaca-tile-draggable { cursor: grab; }
+.ithaca-tile-header.ithaca-tile-draggable:active { cursor: grabbing; }
+.ithaca-tile-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  opacity: 0.35;
+}
+.ithaca-tile-resize-handle:hover { opacity: 0.85; }
+.ithaca-tile-resize-handle::before {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+}
+.ithaca-tile-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ithaca-tile-title { font-size: 0.82rem; font-weight: 600; }
+.ithaca-tile-sub { font-size: 0.72rem; opacity: 0.55; }
+.ithaca-tile-refresh { opacity: 0.6; }
+.ithaca-tile-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px;
+}
+.ithaca-tile-hint {
+  font-size: 0.78rem;
+  opacity: 0.55;
+  padding: 6px 2px;
+  line-height: 1.45;
+}
+
+/* Tile A — weather; --wx-tint is set inline per current condition (see
+   _renderWeather) so the whole card reads like a real weather app instead
+   of flat monochrome text. */
+.ithaca-tile[data-slot="A"] {
+  --wx-tint: var(--accent-primary, #6ca0f6);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--wx-tint) 16%, var(--panel)) 0%, var(--panel) 60%);
+}
+.ithaca-weather-now {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 2px 10px;
+}
+.ithaca-weather-now-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ithaca-weather-now-temp { font-size: 1.9rem; font-weight: 600; line-height: 1; }
+.ithaca-weather-now-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.74rem;
+  opacity: 0.7;
+  min-width: 0;
+}
+.ithaca-weather-desc { text-transform: capitalize; font-weight: 600; opacity: 0.95; }
+.ithaca-hourly {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 6px 0 2px;
+  border-top: 1px solid var(--border);
+}
+.ithaca-hour {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 46px;
+  padding: 6px 2px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.ithaca-hour:hover { background: var(--input-bg, rgba(128, 128, 128, 0.1)); }
+.ithaca-hour-time { font-size: 0.66rem; opacity: 0.55; }
+.ithaca-hour-icon { display: inline-flex; opacity: 0.8; }
+.ithaca-hour-temp { font-size: 0.78rem; font-weight: 600; }
+.ithaca-hour-pop { font-size: 0.62rem; color: var(--accent-primary, #6ca0f6); }
+
+/* Generic modal shell — used by tileBuilder.js for Add Tile / Import Tile */
+.ithaca-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 240; /* above the hub and floating tools */
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ithaca-modal {
+  width: min(640px, 92vw);
+  max-height: 76vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+.ithaca-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: var(--mono-font, monospace);
+}
+
+/* Responsive: 3×3 → 2-col → 1-col. The weather tile keeps its generous
+   row-span (real content); other tiles stay whatever size they were given. */
+@media (max-width: 1100px) {
+  .ithaca-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .ithaca-screen { left: 0; z-index: 175; }
+  .ithaca-grid { grid-template-columns: 1fr; grid-auto-rows: 56px; padding: 10px; gap: 10px; }
+  .ithaca-tile[data-slot="A"] { grid-column: span 1; grid-row: span 5; }
+}
+
+/* ─── Sudo password prompt ────────────────────────────────────────
+ *  Shown when an agent shell command needs root. The agent's bash
+ *  subprocess has no TTY, so sudo can't prompt itself — the backend
+ *  blocks and asks the browser instead (static/js/sudoPrompt.js).
+ *  Sits above other modals: it gates a command that's actively waiting.
+ *  ───────────────────────────────────────────────────────────────── */
+.sudo-prompt-modal {
+  z-index: 10050;
+  background: color-mix(in srgb, #000 45%, transparent);
+}
+.sudo-prompt-content {
+  width: min(440px, 92vw);
+  margin: 12vh auto 0;
+  border-color: color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));
+}
+.sudo-prompt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 2px 2px;
+}
+.sudo-prompt-intro {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.sudo-prompt-command {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.sudo-prompt-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+  margin-top: 2px;
+}
+.sudo-prompt-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.sudo-prompt-input:focus {
+  outline: none;
+  border-color: var(--accent, var(--red));
+}
+.sudo-prompt-remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  opacity: 0.8;
+  cursor: pointer;
+}
+.sudo-prompt-remember input {
+  cursor: pointer;
+}
+.sudo-prompt-note {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  opacity: 0.55;
+}
+.sudo-prompt-note.sudo-prompt-error {
+  opacity: 1;
+  color: var(--accent, var(--red));
+}
+.sudo-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+.sudo-prompt-submit {
+  border-color: color-mix(in srgb, var(--accent, var(--red)) 55%, var(--border));
+  color: var(--accent, var(--red));
+}
+.sudo-prompt-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ============================================================
+   Nav shell — shared workspace surface (static/js/workspaceManager.js)
+   ============================================================
+   The full-canvas geometry that .ithaca-screen and .rss-workspace each
+   hand-rolled, hoisted to the class the host itself puts on every mounted
+   feature. A feature registered with workspaceManager gets page-mode layout
+   for free now and only styles its own interior — which is what let the doc
+   editor migrate without inventing a third copy of this block.
+
+   Both older rules are left in place: they're the *inner* roots those two
+   features build inside the surface, and they're load-bearing for their
+   own open/close class toggling. */
+
+.workspace-host {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;   /* only an open surface should catch clicks */
+}
+.workspace-host.hidden { display: none; }
+
+.workspace-surface {
+  display: none;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px));
+  z-index: 90; /* above the chat surface, below floating tool modals */
+  background: var(--bg, var(--panel));
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+}
+.workspace-surface.workspace-surface-open { display: flex; }
+.workspace-surface.hidden { display: none; }
+
+/* Popped out to a floating window: modalManager owns position/size from here,
+   so the fixed full-canvas geometry above has to be given back. */
+.workspace-surface.workspace-float {
+  position: fixed;
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(1100px, 92vw);
+  height: min(760px, 86vh);
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
+}
+
+/* ─── Doc editor in page mode (static/js/documentWorkspace.js) ───
+   The same .doc-editor-pane DOM as the split-pane popup, minus the split:
+   there is no chat column beside it and no divider, so the width cap and the
+   left border/shadow that sell "docked panel" are dropped and the pane simply
+   fills the surface. Everything inside the pane is untouched — the editor's
+   container queries key off `container-name: docpane`, which still applies. */
+.workspace-surface.doc-editor-workspace {
+  padding: 0;
+}
+.doc-editor-pane.doc-editor-page {
+  max-width: none;
+  width: 100%;
+  height: 100%;
+  border-left: none;
+  box-shadow: none;
+  animation: none;   /* the surface itself handles the open transition */
+}
+
+/* An inner root built by a feature (.ithaca-screen, .rss-workspace) predates
+   the shared surface and positions itself `fixed` against the rail/sidebar
+   vars. Inside a surface that's now double work — and actively wrong in popup
+   mode, where the surface is a floating window but the inner root would still
+   paint itself full-canvas. Defer to the surface for geometry in both modes. */
+.workspace-surface .ithaca-screen,
+.workspace-surface .rss-workspace {
+  position: absolute;
+  inset: 0;
+  left: 0;
+  z-index: auto;
+}
+
+/* ── Dual-pane split view (static/js/workspaceManager.js + workspaceSplit.js) ──
+   Two `.workspace-surface[data-pane]` elements share the area right of the
+   rail/sidebar, divided at --ws-split-x (a viewport x, published by
+   workspaceSplit.js). Geometry only — which two features occupy left/right,
+   and chat-as-the-right-pane, are the JS module's job. The `.ithaca-screen`/
+   `.rss-workspace` inner-root rule above already makes both features render
+   correctly at whatever size their surface ends up — no extra rule needed
+   for them here. */
+body.workspace-split .workspace-surface[data-pane="left"] {
+  right: calc(100% - var(--ws-split-x));
+}
+body.workspace-split .workspace-surface[data-pane="right"] {
+  left: var(--ws-split-x);
+  right: 0;
+  border-left: 1px solid var(--border);
+}
+
+#workspace-split-seam {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  z-index: 95; /* above workspace surfaces (90), below docked-window pins (150+) */
+  cursor: col-resize;
+  touch-action: none;
+  background: linear-gradient(to right, transparent 0 4px,
+      color-mix(in srgb, var(--fg) 14%, transparent) 4px 6px, transparent 6px 10px);
+}
+body.workspace-split-resizing #workspace-split-seam,
+#workspace-split-seam:hover {
+  background: linear-gradient(to right, transparent 0 3px,
+      color-mix(in srgb, var(--accent, var(--red)) 40%, transparent) 3px 7px, transparent 7px 10px);
+}
+
+/* Chat as the split partner: shrink the chat column to the left pane's width
+   instead of hiding half of it behind the right-pane surface — same idea as
+   body.doc-view's chat margin, generalized to the split's live seam x. */
+body.workspace-split-chat #chat-container {
+  max-width: calc(var(--ws-split-x) - var(--icon-rail-w, 48px) - var(--sidebar-w, 0px));
+}
+
+@media (max-width: 768px) {
+  body.workspace-split .workspace-surface[data-pane] {
+    left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px));
+    right: 0;
+    border-left: none;
+  }
+  #workspace-split-seam { display: none !important; }
+}

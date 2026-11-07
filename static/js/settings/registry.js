@@ -135,6 +135,16 @@ export const SETTINGS_PANELS = Object.freeze([
     adminOnly: true,
     keywords: ['system', 'admin', 'server'],
   }),
+  // Fork: manifest-driven extensions (Settings → Extensions, see
+  // website/extensions.md). Rendered and loaded by admin.js.
+  definePanel({
+    id: 'extensions',
+    label: 'Extensions',
+    group: 'administration',
+    controller: 'admin',
+    adminOnly: true,
+    keywords: ['extensions', 'plugins', 'argos', 'rss', 'ithaca'],
+  }),
 ]);
 
 export const DEFAULT_SETTINGS_PANEL_ID = 'services';
