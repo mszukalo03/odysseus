@@ -73,7 +73,9 @@ async def test_rag_policy_preserves_context_channels(monkeypatch, mode, policy, 
     assert search.call_count == int(rag_allowed)
     assert received[0]['use_rag'] is rag_allowed
     if rag_allowed:
-        search.assert_called_once_with(message, k=5, owner='tester')
+        # Fork: global document RAG excludes chunks indexed for a persona
+        # workspace (those are searched through the workspace's own index).
+        search.assert_called_once_with(message, k=5, owner='tester', exclude_scope='workspace')
         assert ctx.rag_sources == [{
             'filename': 'fixture.txt', 'snippet': 'Synthetic retention document', 'similarity': 0.99,
         }]

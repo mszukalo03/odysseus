@@ -20,7 +20,13 @@ from src.auth_helpers import require_authenticated_request, require_user
 from src.tool_implementations import do_manage_notes
 from src.constants import COOKBOOK_STATE_FILE
 from routes._validators import validate_remote_host, validate_ssh_port
-from extensions.rss.backend import FEEDS_READ_SCOPES, FEEDS_WRITE_SCOPES
+try:
+    from extensions.rss.backend import FEEDS_READ_SCOPES, FEEDS_WRITE_SCOPES
+except ImportError:
+    # Builds without the bundled extensions (ODYSSEUS_BUNDLE_EXTENSIONS unset)
+    # have no RSS backend; the feeds capability then reports unavailable.
+    FEEDS_READ_SCOPES = {"feeds:read", "feeds:write"}
+    FEEDS_WRITE_SCOPES = {"feeds:write"}
 
 
 COOKBOOK_READ_SCOPES = {"cookbook:read", "cookbook:launch"}

@@ -21,7 +21,7 @@ described as a switch that turns something off, the read rejects `0`, `false`,
 `no` and `off` and treats everything else as on. The `Default` column is the
 value the code falls back to when the variable is unset, quoted from the source.
 
-The source tree reads **149** `ODYSSEUS_*` variables: 92 an operator may want to set, and 57 that are internal - sentinels, fixture switches, capture hooks and development tooling. The internal ones are listed too, in their own section, so this page can be checked against the source mechanically.
+The source tree reads **166** `ODYSSEUS_*` variables: 109 an operator may want to set, and 57 that are internal - sentinels, fixture switches, capture hooks and development tooling. The internal ones are listed too, in their own section, so this page can be checked against the source mechanically.
 
 > This page is generated. Edit `scripts/generate_env_reference.py` and
 > re-run it; `tests/test_env_reference.py` enforces that the committed page
@@ -85,6 +85,7 @@ The source tree reads **149** `ODYSSEUS_*` variables: 92 an operator may want to
 | `ODYSSEUS_PYTHON_TOOL_SITE_PACKAGES` | `''` | `src/agent_runtime/process_resources.py` (+1 more) | Security-relevant. Absolute package roots, separated by the platform path separator, exposed to the sandboxed Python tool. Empty exposes none. |
 | `ODYSSEUS_SCRIPT_HOST` | `'localhost'` | `src/builtin_actions.py` | Default host for the run-script action. `localhost`, `127.0.0.1`, `local` and empty run locally; any other value runs over SSH. |
 | `ODYSSEUS_TOOL_APPROVAL_GATE` | `'1'` | `src/tool_capabilities.py` | Security-relevant. On by default: after external content enters a run, tools that execute code, mutate state or cause external side effects need a separate approval. Set to 0 to opt out. |
+| `ODYSSEUS_TRUSTED_INSTRUCTION_ROOTS` | `''` | `src/workspace_instructions.py` | Colon-separated roots under which a workspace's ODYSSEUS.md/AGENTS.md/CLAUDE.md are trusted as project instructions. |
 
 ### Browser automation
 
@@ -122,6 +123,7 @@ The source tree reads **149** `ODYSSEUS_*` variables: 92 an operator may want to
 | `ODYSSEUS_ALLOW_PRIVATE_CALDAV` | `'0'` | `src/caldav_sync.py` | Security-relevant. Truthy lets CalDAV sync reach private and link-local addresses. Off by default; this is an SSRF guard. |
 | `ODYSSEUS_FALLBACK_OWNER` | `'owner@localhost'` | `routes/calendar_routes.py` | Owner address that single-user mode attributes an unauthenticated request to. Only reachable while single-user mode is on. |
 | `ODYSSEUS_SINGLE_USER` | `'1'` | `routes/calendar_routes.py` | Security-relevant. On by default. Set to 0 on a real multi-user install so unauthenticated calendar writes are rejected rather than absorbed. |
+| `ODYSSEUS_TIMEZONE` | *unset* | `src/recurring_notes.py` | IANA zone used for server-side repeating reminders and seminar dates; defaults to the host zone. |
 
 ### Upload and media limits
 
@@ -174,8 +176,20 @@ The source tree reads **149** `ODYSSEUS_*` variables: 92 an operator may want to
 |---|---|---|---|
 | `ODYSSEUS_GROUNDING_MODEL` | `'google/owlvit-base-patch32'` | `routes/gallery/gallery_routes.py` | Object-grounding model id the gallery loads for text-driven selection. |
 | `ODYSSEUS_SAM_MODEL` | `'facebook/sam-vit-base'` | `routes/gallery/gallery_routes.py` | Segmentation model id the gallery loads for subject selection. |
-| `ODYSSEUS_STT_MODEL` | *unset* | `src/agent_tools/media_tools.py` | Default speech-to-text model for media transcription when the tool call does not name one. |
+| `ODYSSEUS_SPEECH_API_KEY` | *unset* | `src/speech_bootstrap.py` | API key for ODYSSEUS_SPEECH_BASE_URL; re-applied on every start so rotating it only needs a restart. |
+| `ODYSSEUS_SPEECH_BASE_URL` | *unset* | `src/speech_bootstrap.py` | OpenAI-compatible speech gateway (STT/TTS). When set, startup registers it as an endpoint and points unconfigured STT/TTS at it. |
+| `ODYSSEUS_SPEECH_LOCAL_API_KEY` | *unset* | `src/speech_bootstrap.py` | API key for ODYSSEUS_SPEECH_LOCAL_BASE_URL. |
+| `ODYSSEUS_SPEECH_LOCAL_BASE_URL` | *unset* | `src/speech_bootstrap.py` | Optional second speech server used only when the chat's model endpoint is on the same host; falls back to the gateway. |
+| `ODYSSEUS_SPEECH_LOCAL_NAME` | `'Local speech'` | `src/speech_bootstrap.py` | Display name of the endpoint registered for the local speech server. |
+| `ODYSSEUS_SPEECH_NAME` | `'Speech gateway'` | `src/speech_bootstrap.py` | Display name of the endpoint registered for the speech gateway. |
+| `ODYSSEUS_STT_LANGUAGE` | *unset* | `src/speech_bootstrap.py` | Language hint for gateway transcription; empty means auto-detect. |
+| `ODYSSEUS_STT_LOCAL_MODEL` | *unset* | `src/speech_bootstrap.py` | STT model id seeded on the local speech server. |
+| `ODYSSEUS_STT_MODEL` | `'stt-local'` | `src/speech_bootstrap.py` (+1 more) | Default speech-to-text model for media transcription when the tool call does not name one. |
 | `ODYSSEUS_TTS_CACHE_MAX_BYTES` | `500 * 1024 * 1024` | `services/tts/tts_service.py` | Cap on the synthesized-speech cache. A non-numeric value falls back to the default. |
+| `ODYSSEUS_TTS_LOCAL_MODEL` | *unset* | `src/speech_bootstrap.py` | TTS model id seeded on the local speech server. |
+| `ODYSSEUS_TTS_LOCAL_VOICE` | *unset* | `src/speech_bootstrap.py` | TTS voice seeded on the local speech server. |
+| `ODYSSEUS_TTS_MODEL` | `'tts-local'` | `src/speech_bootstrap.py` | TTS model id seeded on the speech gateway when TTS is still unconfigured. |
+| `ODYSSEUS_TTS_VOICE` | *unset* | `src/speech_bootstrap.py` | TTS voice seeded with ODYSSEUS_TTS_MODEL. |
 
 ### Auth and internal API
 
@@ -190,6 +204,14 @@ The source tree reads **149** `ODYSSEUS_*` variables: 92 an operator may want to
 |---|---|---|---|
 | `ODYSSEUS_API_TOKEN` | `''` | `integrations/claude/skills/odysseus/scripts/odysseus_api.py` (+1 more) | API token those scripts authenticate with. Both this and the URL are required; the scripts name whichever is missing. |
 | `ODYSSEUS_URL` | `''` | `integrations/claude/skills/odysseus/scripts/odysseus_api.py` (+1 more) | Base URL of the Odysseus instance the bundled integration scripts call. |
+
+### Extensions
+
+| Variable | Default | Read in | What it does |
+|---|---|---|---|
+| `ODYSSEUS_EXTENSIONS_AUTOINSTALL` | `''` | `src/extension_host.py` | Comma-separated extension ids installed automatically at startup when they are not installed yet. |
+| `ODYSSEUS_EXTENSIONS_DISABLED` | *unset* | `src/extension_host.py` | Comma-separated extension ids forced off at startup; wins over ODYSSEUS_EXTENSIONS_ENABLED. |
+| `ODYSSEUS_EXTENSIONS_ENABLED` | *unset* | `src/extension_host.py` | Comma-separated extension ids forced on at startup, regardless of the saved Settings > Extensions state. |
 
 ## Internal and development-only variables
 
@@ -302,7 +324,7 @@ reads three ways, because no single pattern covers the codebase:
   lines, so one read lives inside a string literal.
 
 The three passes are not redundancy. A line-based grep for a direct
-`os.environ.get("ODYSSEUS_...` call finds 117 of the 149 variables on this
+`os.environ.get("ODYSSEUS_...` call finds 121 of the 166 variables on this
 page. What it misses is reads through an env-reader helper, reads whose call
 spans more than one line, reads whose variable name is held in a module
 constant, and reads through a mapping passed in as an argument - which is the

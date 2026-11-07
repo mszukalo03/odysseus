@@ -1066,6 +1066,14 @@ class BashTool:
         # refuses sudo. This fork's agent shell runs uncontained in the real
         # HOME with the browser sudo-password prompt below, so that path is
         # kept here. Upstream's ffmpeg font guard still applies.
+        # Upstream's launch authority still decides *whether* this request may
+        # start a process; only the containment of *how* differs.
+        from src.agent_runtime.process_resources import require_launch
+        from src.agent_runtime.resources import ResourceIdentityError
+        try:
+            require_launch("bash", cwd=agent_cwd(), content=content)
+        except ResourceIdentityError as error:
+            return {"error": str(error), "exit_code": 1, "blocked": True, "failure_kind": "resource_identity_denied"}
         if _ffmpeg_unicode_drawtext_needs_fontfile(content):
             resolved_font = _resolve_fontfile_for_text(content)
             resolved_hint = (

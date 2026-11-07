@@ -43,7 +43,7 @@ def test_every_document_js_import_uses_the_same_specifier_suffix():
     assert refs, "expected to find references to document.js under static/"
 
     suffixes = {specifier.split("document.js", 1)[1] for _, specifier in refs}
-    assert suffixes == {""}, (
+    assert len(suffixes) == 1, (
         "document.js is imported with inconsistent query strings, which "
         f"creates duplicate module instances: {sorted(suffixes)} — offenders: "
         + ", ".join(f"{f}:{s}" for f, s in refs if not s.endswith("document.js"))
@@ -51,9 +51,13 @@ def test_every_document_js_import_uses_the_same_specifier_suffix():
 
 
 def test_service_worker_precaches_the_same_url_document_js_is_imported_with():
+    # Upstream versions every importer with the same ?v= token; the invariant
+    # is only that sw.js precaches that exact URL.
+    suffixes = {specifier.split("document.js", 1)[1] for _, specifier in _document_js_specifiers()}
+    assert len(suffixes) == 1
+    (suffix,) = suffixes
     sw = (STATIC / "sw.js").read_text(encoding="utf-8")
-    assert "'/static/js/document.js'" in sw, (
+    assert f"'/static/js/document.js{suffix}'" in sw, (
         "sw.js must precache document.js under the exact URL every importer "
-        "uses (no query string) — see the module-identity note above"
+        "uses — see the module-identity note above"
     )
-    assert "document.js?v=" not in sw

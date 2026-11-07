@@ -268,6 +268,7 @@ function buildFixture(document) {
     'tools',
     'users',
     'system',
+    'extensions',
   ];
 
   const settingsPanels = Object.fromEntries(
@@ -390,6 +391,7 @@ function moduleSource(relativePath) {
       'tools',
       'users',
       'system',
+      'extensions',
     ].join(','),
   );
 

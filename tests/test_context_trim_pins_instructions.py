@@ -36,8 +36,12 @@ def test_user_question_is_pinned_through_long_tool_exchange():
     out = trim_for_context(msgs, 4000)
     contents = [m.get("content") for m in out]
     assert "how many papers are in my reading queue?" in contents
-    # The newest tool result (current turn) is still last.
-    assert out[-1] is msgs[-1] or out[-1].get("content") == msgs[-1].get("content")
+    # The newest tool result (current turn) is still last. Upstream's
+    # compactor may truncate that tail to fit, so compare its provenance.
+    assert out[-1] is msgs[-1] or (
+        out[-1].get("metadata") == msgs[-1].get("metadata")
+        and out[-1].get("role") == msgs[-1].get("role")
+    )
     # The question comes before every remaining tool exchange.
     q = contents.index("how many papers are in my reading queue?")
     assert all(m.get("role") != "user" or (m.get("metadata") or {}).get("trusted") is False

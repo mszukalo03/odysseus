@@ -466,6 +466,19 @@ def _trusted_local_mcp_request_tools(request_text: str, intent: SemanticIntent) 
         admitted.add(name)
     return admitted
 
+def _fork_extension_request_tools(request_text):
+    """Fork: grant the Ithaca hub and RSS reader tools when the trusted request
+    names their domain. Upstream's family classifier has no notion of these
+    extensions, so without this every call to them is denied by authority.
+    The families and their trigger words live in src.turn_contract."""
+    from src.turn_contract import FAMILY_TOOLS, _FAMILY_WORDS
+    tools = set()
+    for family in ("home_hub", "feeds"):
+        if re.search(_FAMILY_WORDS[family], request_text or "", re.I):
+            tools |= set(FAMILY_TOOLS[family])
+    return tools
+
+
 def create_request_authority(request_text, *, owner=None, session_id=None, workspace=None,
                              history=(), policy=None, active_document=False,
                              image_attachment=False, capabilities=None, client_runtime_context=None):
@@ -488,6 +501,8 @@ def create_request_authority(request_text, *, owner=None, session_id=None, works
         tools = {canonical_tool(operation.tool)}
     else:
         operation = None
+    if operation is None:
+        tools.update(_fork_extension_request_tools(request_text))
     tools.update(_trusted_local_mcp_request_tools(request_text, intent))
     grants = []
     for name in sorted(tools | {"ask_user", "update_plan"}):

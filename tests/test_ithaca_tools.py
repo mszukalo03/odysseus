@@ -190,7 +190,9 @@ async def test_execute_tool_block_dispatches_by_name(monkeypatch):
         return FAKE_WEATHER
     monkeypatch.setattr(weather, "_fetch_weather", fake_fetch)
 
-    from src.agent_tools import ToolBlock, execute_tool_block
+    from src.agent_tools import ToolBlock, execute_tool_block as _raw_execute
+    from tests.runtime_evidence_helpers import server_authorized_executor
+    execute_tool_block = server_authorized_executor(_raw_execute)
     from src.tool_execution import NO_TOOL_SECURITY_CONTEXT
     desc, result = await execute_tool_block(
         ToolBlock("get_home_weather", "{}"),

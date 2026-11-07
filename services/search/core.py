@@ -37,6 +37,12 @@ from .query import _cache_duration_for_query
 from .ranking import rank_search_results
 from .providers import (
     PROVIDER_FUNCTIONS,
+    searxng_search_api,
+    brave_search,
+    duckduckgo_search,
+    google_pse_search,
+    tavily_search,
+    serper_search,
     _get_search_settings,
     _get_provider_key,
     _get_result_count,
@@ -103,6 +109,22 @@ def update_search_config(api_key: str = None, **kwargs):
 
 def _call_provider(provider_name: str, query: str, count: int, time_filter: str = None) -> List[dict]:
     """Call a search provider by name. Returns list of results or empty list."""
+    # The built-in providers are called through this module's names so that
+    # monkeypatching services.search.core.<provider> keeps working; the
+    # fork's extra providers (bing, exa, ...) come from PROVIDER_FUNCTIONS.
+    if provider_name == "searxng":
+        return searxng_search_api(query, count, time_filter=time_filter)
+    if provider_name == "searxng_yep":
+        return searxng_search_api(query, count, time_filter=time_filter, engines="yep")
+    builtin = {
+        "brave": brave_search,
+        "duckduckgo": duckduckgo_search,
+        "google_pse": google_pse_search,
+        "tavily": tavily_search,
+        "serper": serper_search,
+    }.get(provider_name)
+    if builtin:
+        return builtin(query, count, time_filter)
     fn = PROVIDER_FUNCTIONS.get(provider_name)
     if fn:
         return fn(query, count, time_filter)

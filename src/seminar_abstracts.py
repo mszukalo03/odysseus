@@ -72,7 +72,11 @@ def load_config(prompt: str) -> dict:
 
 def extract_dois(*texts: str) -> list[str]:
     found = []
-    for text in texts:
+    # Scan raw HTML first: it holds DOIs in document order, including ones
+    # only present in hrefs. Upstream's _extract_text now renders HTML-only
+    # mail to text (link targets dropped), which would reorder them.
+    ordered = sorted(texts, key=lambda t: 0 if "<" in (t or "") else 1)
+    for text in ordered:
         for m in _DOI_RE.finditer(unquote(text or "")):
             doi = m.group(1).rstrip(".,;:)]}>'\"")
             if doi.lower() not in (d.lower() for d in found):

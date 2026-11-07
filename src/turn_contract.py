@@ -41,6 +41,10 @@ FAMILY_TOOLS = {
     "transcription": frozenset({"transcribe_media"}),
     "media_inspection": frozenset({"inspect_media"}),
     "ocr": frozenset({"extract_text"}),
+    # Fork: Ithaca hub (home weather + the user's DB-backed dashboard tiles)
+    # and the RSS reader extension. Read-mostly tools over the user's own data.
+    "home_hub": frozenset({"get_home_weather", "query_ithaca_tile"}),
+    "feeds": frozenset({"list_rss_feeds", "get_rss_articles", "summarize_rss_articles", "mark_rss_article"}),
 }
 
 # Retrieval is selection, not authorization. A normal agent turn must retain
@@ -120,6 +124,8 @@ _FAMILY_WORDS = {
     "contacts": r"\bcontacts?\b",
     "sessions": r"\b(?:sessions?|chats?|conversations?)\b",
     "ui": r"\b(?:panels?|themes?|toggles?|sidebar)\b",
+    "home_hub": r"\b(?:weather|forecast|rain(?:ing|y)?|snow(?:ing)?|umbrella|temperature|how\s+(?:hot|cold)|ithaca|dashboard|tiles?|software\s+updates?|what\s+version|outdated)\b",
+    "feeds": r"\b(?:rss|feeds?|articles?|subscriptions?|digest)\b",
     "ocr": r"\b(?:ocr|extract|read|recognize|transcribe)\b.{0,32}\b(?:text|words?|labels?|numbers?|digits?|screenshot|scan|image)\b|文字|文本|字幕|编号|数字|标签|票据",
 }
 _FUZZY_FAMILY_TERMS = {
@@ -4768,7 +4774,27 @@ def corrected_browser_target(message: str, history: Iterable = ()) -> dict | Non
     return None
 
 
+_FORK_EXTENSION_FAMILIES = ("home_hub", "feeds")
+
+
 def requested_capabilities(message: str, history: Iterable = (), *, active_document=False, workspace=False, image_attachment=False) -> frozenset[str]:
+    """Fork wrapper: add the Ithaca hub / RSS families when the request names
+    their domain. Upstream's classifier below predates those extensions and
+    has many early returns, so they are added here rather than inside it."""
+    families = _requested_capabilities_upstream(
+        message, history, active_document=active_document,
+        workspace=workspace, image_attachment=image_attachment,
+    )
+    extra = {
+        family for family in _FORK_EXTENSION_FAMILIES
+        if re.search(_FAMILY_WORDS[family], str(message or ""), re.I)
+    }
+    if not extra:
+        return families
+    return frozenset((set(families) - {"unknown"}) | extra)
+
+
+def _requested_capabilities_upstream(message: str, history: Iterable = (), *, active_document=False, workspace=False, image_attachment=False) -> frozenset[str]:
     """Classify once; inherit a prior capability only for a referential follow-up."""
     message = _routing_email_scope(editor_request_instructions(message))
     raw_text = str(message or "").strip()

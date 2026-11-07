@@ -224,7 +224,7 @@ STRUCTURE CHECK — READ THIS FIRST:
 
 ---
 
-Research question:
+Write a **long, detailed, comprehensive** research report answering this question:
 
 **Question:** {question}
 
@@ -1453,7 +1453,7 @@ class DeepResearcher:
                 response = await self._llm(
                     [
                         {"role": "user", "content": EXTRACTOR_SYSTEM.format(
-                            goal=self.research_plan or question[:200]
+                            goal=getattr(self, "research_plan", "") or question[:200]
                         )},
                         untrusted_context_message("webpage", content),
                     ],
@@ -1889,8 +1889,8 @@ class DeepResearcher:
         # Use condensed research plan as {question} instead of the full prompt
         # to keep context manageable. The user's structural template is injected
         # separately via {template} so the STRUCTURE CHECK still works.
-        template_block = self.user_template or "(No custom template — use the default format below.)"
-        condensed_question = self.research_plan or question[:300]
+        template_block = getattr(self, "user_template", "") or "(No custom template — use the default format below.)"
+        condensed_question = getattr(self, "research_plan", "") or question[:300]
         cat_extra = CATEGORY_PROMPTS.get(self.category or "", "")
         prompt = FINAL_REPORT_PROMPT.format(
             question=condensed_question,

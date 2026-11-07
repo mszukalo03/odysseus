@@ -93,6 +93,7 @@ AREA_ORDER = (
     "Speech and vision models",
     "Auth and internal API",
     "Integrations (Claude, Codex)",
+    "Extensions",
     "Testing, capture and development tooling",
     "Build and release metadata",
 )
@@ -1004,6 +1005,75 @@ VARIABLE_NOTES: dict[str, tuple[str, str, str]] = {
         "Deployment and first run", INTERNAL,
         "Seconds the server waits for in-flight requests and background loops to "
         "finish during a graceful shutdown.",
+    ),
+    # -- Fork-only variables ------------------------------------------------
+    "ODYSSEUS_EXTENSIONS_AUTOINSTALL": (
+        "Extensions", USER,
+        "Comma-separated extension ids installed automatically at startup when they are not installed yet.",
+    ),
+    "ODYSSEUS_EXTENSIONS_ENABLED": (
+        "Extensions", USER,
+        "Comma-separated extension ids forced on at startup, regardless of the saved Settings > Extensions state.",
+    ),
+    "ODYSSEUS_EXTENSIONS_DISABLED": (
+        "Extensions", USER,
+        "Comma-separated extension ids forced off at startup; wins over ODYSSEUS_EXTENSIONS_ENABLED.",
+    ),
+    "ODYSSEUS_SPEECH_BASE_URL": (
+        "Speech and vision models", USER,
+        "OpenAI-compatible speech gateway (STT/TTS). When set, startup registers it as an endpoint and points unconfigured STT/TTS at it.",
+    ),
+    "ODYSSEUS_SPEECH_API_KEY": (
+        "Speech and vision models", USER,
+        "API key for ODYSSEUS_SPEECH_BASE_URL; re-applied on every start so rotating it only needs a restart.",
+    ),
+    "ODYSSEUS_SPEECH_NAME": (
+        "Speech and vision models", USER,
+        "Display name of the endpoint registered for the speech gateway.",
+    ),
+    "ODYSSEUS_STT_LANGUAGE": (
+        "Speech and vision models", USER,
+        "Language hint for gateway transcription; empty means auto-detect.",
+    ),
+    "ODYSSEUS_TTS_MODEL": (
+        "Speech and vision models", USER,
+        "TTS model id seeded on the speech gateway when TTS is still unconfigured.",
+    ),
+    "ODYSSEUS_TTS_VOICE": (
+        "Speech and vision models", USER,
+        "TTS voice seeded with ODYSSEUS_TTS_MODEL.",
+    ),
+    "ODYSSEUS_SPEECH_LOCAL_BASE_URL": (
+        "Speech and vision models", USER,
+        "Optional second speech server used only when the chat's model endpoint is on the same host; falls back to the gateway.",
+    ),
+    "ODYSSEUS_SPEECH_LOCAL_API_KEY": (
+        "Speech and vision models", USER,
+        "API key for ODYSSEUS_SPEECH_LOCAL_BASE_URL.",
+    ),
+    "ODYSSEUS_SPEECH_LOCAL_NAME": (
+        "Speech and vision models", USER,
+        "Display name of the endpoint registered for the local speech server.",
+    ),
+    "ODYSSEUS_STT_LOCAL_MODEL": (
+        "Speech and vision models", USER,
+        "STT model id seeded on the local speech server.",
+    ),
+    "ODYSSEUS_TTS_LOCAL_MODEL": (
+        "Speech and vision models", USER,
+        "TTS model id seeded on the local speech server.",
+    ),
+    "ODYSSEUS_TTS_LOCAL_VOICE": (
+        "Speech and vision models", USER,
+        "TTS voice seeded on the local speech server.",
+    ),
+    "ODYSSEUS_TIMEZONE": (
+        "Calendar, notes and single-user mode", USER,
+        "IANA zone used for server-side repeating reminders and seminar dates; defaults to the host zone.",
+    ),
+    "ODYSSEUS_TRUSTED_INSTRUCTION_ROOTS": (
+        "Agent loop and tool execution", USER,
+        "Colon-separated roots under which a workspace's ODYSSEUS.md/AGENTS.md/CLAUDE.md are trusted as project instructions.",
     ),
 }
 
