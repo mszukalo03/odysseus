@@ -1472,11 +1472,7 @@ async def _call_mcp_tool(
     progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None,
     owner: Optional[str] = None,
 ) -> Dict:
-    """Route a legacy tool call through the MCP manager, with direct fallbacks.
-
-    `owner` is forwarded to the direct fallbacks because bash needs it to scope
-    the sudo-password prompt/cache to the right user.
-    """
+    """Route a legacy tool call through the MCP manager, with direct fallbacks."""
     bound = active_backend_operation()
     if bound is not None and isinstance(bound.resource, NativeBackendResource):
         return await _direct_fallback(tool, content, progress_cb=progress_cb, owner=owner) or {"error": f"Native tool '{tool}' unavailable", "exit_code": 1}
@@ -1583,14 +1579,7 @@ def _agent_subprocess_env() -> dict:
     }
     base.setdefault("PATH", os.environ.get("PATH") or os.defpath or "/usr/local/bin:/usr/bin:/bin")
     base.setdefault("LANG", "C.UTF-8")
-    # Fork: HOME is deliberately the real user's home, NOT the agent workdir.
-    # Overriding it bought no isolation (the fork's bash is un-sandboxed and can
-    # read $HOME regardless) while breaking every config-driven tool: npm lost
-    # ~/.npmrc and resolved its global prefix to /usr (a bogus need for sudo);
-    # git, ssh and gh read the wrong config. The env is still upstream's
-    # scrubbed allowlist (_SAFE_SUBPROCESS_VARS).
-    base.update({"TERM": "xterm-256color", "COLUMNS": "120", "LINES": "40",
-                 "HOME": os.path.expanduser("~")})
+    base.update({"TERM": "xterm-256color", "COLUMNS": "120", "LINES": "40", "HOME": _AGENT_WORKDIR})
     return base
 
 

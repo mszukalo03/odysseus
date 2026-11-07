@@ -448,9 +448,9 @@ class ToolIndex:
         # fallback silently produced a toolset with no shell in it. The model
         # then truthfully told the user it had "no shell tool available",
         # which reads as the agent being broken. Keep this list concrete
-        # (command names, "run this command", "sudo") rather than bare verbs
+        # (command names, "run this command") rather than bare verbs
         # like "run", which would fire on "run a search"/"run research".
-        frozenset({"sudo", "shell", "terminal", "command line", "bash",
+        frozenset({"shell", "terminal", "command line", "bash",
                    "run this command", "run the command", "run that command",
                    "execute this", "execute the", "run a command",
                    "install", "uninstall", "npm ", "pnpm ", "yarn ", "pip ",
@@ -458,9 +458,7 @@ class ToolIndex:
                    "git ", "docker ", "curl ", "script", "cli",
                    "what's my ip", "disk space", "df -h", "ps aux",
                    "pacman", "yay ", "paru ", "dnf ", "zypper",
-                   "garuda-update", "garuda update", "system update",
-                   "update packages", "update my packages", "check for updates",
-                   "software update", "update system"}):
+                   "update packages", "update my packages", "check for updates"}):
             {"bash", "python", "manage_bg_jobs"},
         frozenset({"lan", "local network", "local ip", "subnet", "router",
                    "tailscale", "ssh", "arp", "nmap", "mdns", "avahi"}):

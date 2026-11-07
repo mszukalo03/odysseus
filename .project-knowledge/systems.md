@@ -8,7 +8,7 @@
 | Database | ✅ Active | SQLite via SQLAlchemy ORM (30+ tables) |
 | AI / LLM | ✅ Active | OpenAI-compatible client, multiple providers, streaming, tool calling |
 | Web Search | ✅ Active | Pluggable provider registry (10 providers): SearXNG, DuckDuckGo, Brave, Google PSE, Tavily, Serper, Bing, Search1API, Firecrawl, Exa. Per-provider API key (settings.json) with env-var fallback |
-| Agent | ✅ Active | Tool-using agent with MCP, web, files, shell, memory, skills. Runs on the host as the real user (not a sandbox). `sudo` is supported: the bash tool prompts the browser for a password (`src/sudo_auth.py` + `/api/agent/sudo/*` + `static/js/sudoPrompt.js`), held in memory only. See [[history]] |
+| Agent | ✅ Active | Tool-using agent with MCP, web, files, shell, memory, skills. Since the 2026-11 upstream sync, bash and python run in upstream's bubblewrap sandbox (`src/containment.py`): no `sudo`, no `curl`/`wget` to web URLs, HOME = agent workdir. The fork's sudo prompt was removed. See [[history]] |
 | Memory / Skills | ✅ Active | Persistent memory + skills, vector + keyword retrieval, ChromaDB + fastembed |
 | RAG (Personal Docs) | ✅ Active | ChromaDB-backed semantic document search |
 | Email | ✅ Active | IMAP/SMTP multi-account, AI triage, auto-reply, urgency detection. Frontend redesigned to a 3-pane webmail layout (folder sidebar / message list / reading pane) 2026-07-24; new-mail pulse banner added 2026-07-25 (`GET /api/email/unread-state`'s `latest` field). See [[features]] and [[history]] |

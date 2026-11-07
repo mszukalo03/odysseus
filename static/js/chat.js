@@ -20,7 +20,6 @@ import fileHandlerModule from './fileHandler.js?v=20260909mobileattachmentedit1'
 import searchModule from './search.js';
 import documentModule from './document.js?v=20260916docctx2';
 import * as emailInbox from './emailInbox.js?v=20260914aireply4';
-import { showSudoPrompt, resumePendingSudoPrompt } from './sudoPrompt.js';
 import codeRunnerModule from './codeRunner.js?v=20260831richtexttools91';
 import slashCommands, { initSlashCommands, isCommand, handleSlashCommand, handleSetupInput, handleSetupWizard, typewriterInto } from './slashCommands.js?v=20260921chatgptusage1';
 import createResearchSynapse from './researchSynapse.js?v=20260910roundlabels2';
@@ -1684,9 +1683,6 @@ import { invalidateSettings } from './appConfig.js';
     initSlashCommands({ apiBase, isStreaming: () => !!_getForegroundStreamState() });
     // Initialize email inbox
     emailInbox.init(documentModule);
-    // A sudo command may still be blocked server-side from before a reload —
-    // re-show its prompt instead of leaving it to time out.
-    resumePendingSudoPrompt();
     // Wire the slash-command autocomplete popup on the chat composer. The
     // dispatcher already handles the typed command — this just surfaces the
     // registry as a discoverable menu when the user starts a message with /.
@@ -5145,14 +5141,6 @@ import { invalidateSettings } from './appConfig.js';
                 if (spinner?.element) _startTtftDisplay();
 
               } else if (json.type === 'tool_progress') {
-                // A sudo command is blocked waiting for a password. Handle
-                // this BEFORE the guards below — the prompt has to appear
-                // even for background jobs or when there's no tool bubble,
-                // otherwise the command just hangs until it times out.
-                if (json.sudo_prompt && json.request_id) {
-                  showSudoPrompt(json.request_id, json.command || '');
-                  continue;
-                }
                 // Long-running subprocess (bash, python) is still in
                 // flight — refresh the running tool card with the
                 // elapsed-time + tail of its stdout/stderr so the

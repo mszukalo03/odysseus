@@ -33,17 +33,41 @@ def _events(chunks):
 
 
 def _run(monkeypatch, *, max_rounds, setting_enabled=True):
+    # Mirrors upstream's loop fixtures (tests/test_agent_evidence_loop.py):
+    # an owner-bound request, no per-owner tool blocklist, the approval gate
+    # and tool security decisions stubbed, execution faked through the
+    # authoritative-dispatch recorder. Only the guard setting varies.
+    from src.tool_capabilities import ToolGateDecision
+    from tests.runtime_evidence_helpers import authoritative_executor
+
     monkeypatch.setattr(
         al, "get_setting",
         lambda key, default=None: setting_enabled if key == "agent_answer_on_cap" else default,
         raising=False,
     )
     monkeypatch.setattr(al, "get_mcp_manager", lambda: None, raising=False)
+    monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
     monkeypatch.setattr(al, "estimate_tokens", lambda *a, **k: 10, raising=False)
+    # Real compaction, but no context-length probe of the dummy endpoint.
+    import src.context_compactor as context_compactor
+    monkeypatch.setattr(context_compactor, "get_context_length", lambda *a, **k: 128_000)
+    monkeypatch.setattr(al, "tool_result_should_arm_gate", lambda *a, **k: False, raising=False)
+    monkeypatch.setattr(
+        al.ToolRunSecurityContext, "decision_for",
+        lambda self, *a, **k: ToolGateDecision(True), raising=False,
+    )
 
     async def _fake_exec(block, *a, **k):
-        return (block.tool_type, {"output": "ok", "exit_code": 0})
-    monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
+        # Distinct output per call, so upstream's "unchanged tool results"
+        # breaker (which catches stalls) does not end the loop first.
+        return (block.tool_type, {"output": f"paper list for {block.content}", "exit_code": 0})
+
+    # Grace synthesis has no provider in this fixture (upstream does the same).
+    async def _no_direct_provider(*args, **kwargs):
+        raise RuntimeError("No direct-provider completion configured in this fixture")
+        yield
+    monkeypatch.setattr(al, "stream_llm", _no_direct_provider, raising=False)
+    monkeypatch.setattr(al, "execute_tool_block", authoritative_executor(_fake_exec), raising=False)
 
     seen_tools = []
     calls = {"n": 0}
@@ -55,17 +79,18 @@ def _run(monkeypatch, *, max_rounds, setting_enabled=True):
         if any(m.get("content") == FINAL_NOTE for m in messages):
             yield f'data: {json.dumps({"delta": "There are 27 papers in the queue."})}\n\n'
         else:
-            # A new, distinct plan step every round: never a repeat.
-            plan = json.dumps({"plan": f"- [ ] step {calls['n']}"})
-            yield f'data: {json.dumps({"delta": "```update_plan\n" + plan + "\n```"})}\n\n'
+            # A new, distinct read-only call every round: never a repeat.
+            call = "```ls\n" + json.dumps({"path": f"queue/part{calls['n']}"}) + "\n```"
+            yield f'data: {json.dumps({"delta": call})}\n\n'
         yield "data: [DONE]\n\n"
     monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
 
     gen = al.stream_agent_loop(
         "http://x/v1", "m",
-        [{"role": "user", "content": "how many papers are in my reading queue?"}],
+        [{"role": "user", "content": "list the files in my reading queue folder and count the papers"}],
         max_rounds=max_rounds,
-        relevant_tools={"update_plan"},
+        relevant_tools={"ls"},
+        owner="pewds",
     )
     return _events(_collect(gen)), seen_tools
 

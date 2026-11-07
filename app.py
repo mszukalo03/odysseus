@@ -808,10 +808,6 @@ app.include_router(history_router)
 from routes.search.search_routes import setup_search_routes
 app.include_router(setup_search_routes(config))
 
-# Sudo prompt (agent shell commands that need root)
-from routes.sudo_routes import setup_sudo_routes
-app.include_router(setup_sudo_routes())
-
 # Presets
 from routes.preset_routes import setup_preset_routes
 app.include_router(setup_preset_routes(preset_manager))
