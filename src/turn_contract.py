@@ -4785,10 +4785,21 @@ def requested_capabilities(message: str, history: Iterable = (), *, active_docum
         message, history, active_document=active_document,
         workspace=workspace, image_attachment=image_attachment,
     )
+    # Automation/creation requests describe future work (a task or note
+    # body), not an operation to run now: leave upstream's routing alone.
+    if families & {"tasks", "notes"}:
+        return families
+    text = str(message or "")
     extra = {
         family for family in _FORK_EXTENSION_FAMILIES
-        if re.search(_FAMILY_WORDS[family], str(message or ""), re.I)
+        if re.search(_FAMILY_WORDS[family], text, re.I)
     }
+    # Weather for a named other place is upstream's get_weather/web lookup;
+    # the home hub only answers for the user's own configured location.
+    if "home_hub" in extra and re.search(
+        r"\b(?:weather|forecast|temperature)\b[^.?!]*?\b(?:in|for|at)\s+(?!my\b|home\b)\w", text, re.I,
+    ) and not re.search(r"\b(?:dashboard|tiles?|ithaca|outdated|software\s+updates?|what\s+version)\b", text, re.I):
+        extra.discard("home_hub")
     if not extra:
         return families
     return frozenset((set(families) - {"unknown"}) | extra)
