@@ -42,6 +42,9 @@ FROM brotli-base
 # basic network inspection toolkit expected by local LAN/debugging tasks.
 # gosu lets the entrypoint drop privileges cleanly so signals still reach
 # uvicorn directly (no extra shell layer like `su`/`sudo` would add).
+# bubblewrap is the agent sandbox (src/containment.py); without it the bash and
+# python tools refuse to run. Inside Docker it also needs container security
+# options that are not set by default (see website/agent-sandbox-docker.md).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -61,6 +64,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dnsutils \
     nmap \
     gosu \
+    bubblewrap \
     libgl1 \
     libglib2.0-0t64 \
     libxcb1 \
