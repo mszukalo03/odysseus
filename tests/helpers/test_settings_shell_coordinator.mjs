@@ -23,6 +23,8 @@ const REAL_MODULES = new Set([
   path.join(JS, 'modalVisibility.js'),
   path.join(JS, 'settings/api.js'),
   path.join(JS, 'settings/speech.js'),
+  path.join(JS, 'deviceSpeech.js'),
+  path.join(JS, 'storage.js'),
   path.join(JS, 'settings/writingStyle.js'),
   path.join(JS, 'settings/imageModels.js'),
   path.join(JS, 'settings/imagePreferences.js'),

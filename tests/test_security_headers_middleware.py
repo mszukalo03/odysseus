@@ -65,3 +65,11 @@ def test_permissions_policy_locks_camera_and_geolocation_but_allows_self_microph
     # would also block the app's own same-origin voice/STT button.
     assert "microphone=()" not in policy
     assert "microphone=(self)" in policy
+
+
+def test_csp_allows_localhost_device_speech_connections_and_media():
+    response = _client().get("/")
+
+    csp = response.headers["content-security-policy"]
+    assert "connect-src 'self' http://localhost:* http://127.0.0.1:*" in csp
+    assert "media-src 'self' blob: http://localhost:* http://127.0.0.1:*" in csp
