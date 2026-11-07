@@ -1,19 +1,31 @@
 // Live voice mode: a hands-free spoken conversation with the current chat.
 //
 // Loop: listen (voice activity detection on the mic) -> when you stop
-// talking, transcribe on the server (/api/stt/transcribe) -> send the text as
-// a normal chat message flagged voice=true (the server adds speech-style
-// instructions and turns thinking off unless the composer chose a level) ->
-// the reply is spoken sentence by sentence while it streams (tts-ai.js) ->
-// when it has finished speaking, listen again. Talking over the reply
-// (barge-in) stops it and starts a new turn. Esc or the End button exits.
+// talking, transcribe via (a) device Speaches server if enabled & reachable,
+// (b) Odysseus server (/api/stt/transcribe) if configured, or (c) browser
+// SpeechRecognition fallback -> send the text as a normal chat message
+// flagged voice=true (the server adds speech-style instructions and turns
+// thinking off unless the composer chose a level) -> the reply is spoken
+// sentence by sentence while it streams (tts-ai.js) -> when it has finished
+// speaking, listen again. Talking over the reply (barge-in) stops it and
+// starts a new turn. Esc or the End button exits.
 //
 // VAD is a simple adaptive energy detector on a Web Audio AnalyserNode: no
 // model download, works offline. Sensitivity, end-of-speech silence,
-// barge-in and the "one moment" filler are per-browser settings (gear in the
-// voice bar). The mic needs a secure context (HTTPS or localhost).
+// barge-in, the "one moment" filler, and "Speech on this device" settings are
+// per-browser settings (gear in the voice bar). The mic needs a secure
+// context (HTTPS or localhost).
 
 import Storage from './storage.js';
+import {
+  getDeviceSpeechSettings,
+  saveDeviceSpeechSettings,
+  probeDeviceServer,
+  transcribeOnDevice,
+  isServerSttConfigured,
+  hasBrowserSTT,
+  hasBrowserTTS,
+} from './deviceSpeech.js';
 
 const SETTINGS_KEY = 'voiceModeSettings';
 const DEFAULTS = {
@@ -61,6 +73,11 @@ let replyStreaming = false;   // our message's reply is still streaming in
 let savedTTS = null;
 let unsubTTS = [];
 let bar = null;
+let _serverSttConfigured = false;
+let _browserRec = null;
+let _browserFinalText = '';
+let _browserInterimText = '';
+let _browserUtteranceTimer = null;
 
 function _loadSettings() {
   const raw = Storage.getToggle(SETTINGS_KEY, null);
@@ -96,6 +113,74 @@ function _chatEndpointRef() {
   }
 }
 
+// ── Browser SpeechRecognition helper for voice mode ──────────────────────
+
+function _startBrowserRec() {
+  _stopBrowserRec();
+  const SR = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  if (!SR) return;
+  _browserFinalText = '';
+  _browserInterimText = '';
+  try {
+    const rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = '';
+    rec.onresult = (event) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const piece = (event.results[i][0] && event.results[i][0].transcript) || '';
+        if (event.results[i].isFinal) {
+          _browserFinalText += piece + ' ';
+        } else {
+          interim += piece;
+        }
+      }
+      _browserInterimText = interim;
+      // When there is no analyser (or on mobile where SpeechRecognition drives
+      // utterance detection), schedule end-of-turn after silenceMs.
+      if (!analyser && (state === 'listening' || state === 'hearing')) {
+        if (_browserFinalText.trim() || _browserInterimText.trim()) {
+          if (state === 'listening') _setState('hearing');
+          if (_browserUtteranceTimer) clearTimeout(_browserUtteranceTimer);
+          _browserUtteranceTimer = setTimeout(() => {
+            _browserUtteranceTimer = null;
+            if (state === 'listening' || state === 'hearing') {
+              heardSpeech = true;
+              speechMs = Math.max(speechMs, MIN_SPEECH_MS);
+              _finishUtterance();
+            }
+          }, settings.silenceMs);
+        }
+      }
+    };
+    rec.onerror = () => {};
+    rec.onend = () => {
+      // Keep recognition alive while listening if the browser auto-stopped it
+      if (_browserRec === rec && (state === 'listening' || state === 'hearing')) {
+        try { rec.start(); } catch (_) {}
+      }
+    };
+    _browserRec = rec;
+    rec.start();
+  } catch (_) {
+    _browserRec = null;
+  }
+}
+
+function _stopBrowserRec() {
+  if (_browserUtteranceTimer) {
+    clearTimeout(_browserUtteranceTimer);
+    _browserUtteranceTimer = null;
+  }
+  const rec = _browserRec;
+  _browserRec = null;
+  if (rec) {
+    try { rec.onend = null; rec.stop(); } catch (_) {}
+  }
+  return (_browserFinalText + ' ' + _browserInterimText).trim();
+}
+
 // ── UI ──────────────────────────────────────────────────────────────────
 
 const ICON_MIC = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>';
@@ -125,6 +210,25 @@ function _buildBar() {
       </label>
       <label class="voice-mode-check"><input type="checkbox" data-k="bargeIn"> Talk over the reply to interrupt it</label>
       <label class="voice-mode-check"><input type="checkbox" data-k="filler"> Say "One moment" while tools run</label>
+      <div class="voice-mode-divider"></div>
+      <div class="voice-mode-section-title">Speech on this device</div>
+      <label class="voice-mode-check"><input type="checkbox" data-dev-k="enabled"> Enable device speech server</label>
+      <label>URL
+        <input type="text" data-dev-k="url" placeholder="http://localhost:8000/v1">
+      </label>
+      <label>STT model
+        <input type="text" data-dev-k="sttModel" placeholder="Systran/faster-distil-whisper-small.en">
+      </label>
+      <label>TTS model
+        <input type="text" data-dev-k="ttsModel" placeholder="speaches-ai/Kokoro-82M-v1.0-ONNX">
+      </label>
+      <label>TTS voice
+        <input type="text" data-dev-k="ttsVoice" placeholder="af_heart">
+      </label>
+      <div class="voice-mode-test-row">
+        <button type="button" class="voice-mode-test-btn">Test</button>
+        <span class="voice-mode-hint voice-mode-test-msg"></span>
+      </div>
     </div>`;
   document.body.appendChild(bar);
   bar.querySelector('.voice-mode-end').addEventListener('click', () => stop());
@@ -135,14 +239,57 @@ function _buildBar() {
   });
   panel.addEventListener('change', (e) => {
     const k = e.target && e.target.dataset && e.target.dataset.k;
-    if (!k) return;
-    if (e.target.type === 'checkbox') settings[k] = e.target.checked;
-    else {
-      const v = parseFloat(e.target.value);
-      if (Number.isFinite(v)) settings[k] = v;
+    if (k) {
+      if (e.target.type === 'checkbox') settings[k] = e.target.checked;
+      else {
+        const v = parseFloat(e.target.value);
+        if (Number.isFinite(v)) settings[k] = v;
+      }
+      _saveSettings();
+      return;
     }
-    _saveSettings();
+    const dk = e.target && e.target.dataset && e.target.dataset.devK;
+    if (dk) {
+      const patch = {};
+      patch[dk] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+      saveDeviceSpeechSettings(patch);
+      _fillSettings(panel);
+      const tts = _tts();
+      if (tts && tts.checkAvailability) tts.checkAvailability();
+      if (window.voiceRecorderModule && window.voiceRecorderModule.refreshSttProvider) {
+        window.voiceRecorderModule.refreshSttProvider();
+      }
+    }
   });
+  const testBtn = panel.querySelector('.voice-mode-test-btn');
+  const testMsg = panel.querySelector('.voice-mode-test-msg');
+  if (testBtn) {
+    testBtn.addEventListener('click', async () => {
+      const cfg = getDeviceSpeechSettings();
+      testBtn.disabled = true;
+      testBtn.textContent = 'Testing…';
+      if (testMsg) {
+        testMsg.textContent = 'Probing /models…';
+        testMsg.style.color = '';
+      }
+      try {
+        const res = await probeDeviceServer({ url: cfg.url, force: true });
+        if (res.ok) {
+          const n = (res.models || []).length;
+          if (testMsg) {
+            testMsg.textContent = n ? `OK (${n} model${n === 1 ? '' : 's'})` : 'OK';
+            testMsg.style.color = 'var(--fg)';
+          }
+        } else if (testMsg) {
+          testMsg.textContent = res.error || 'Unreachable';
+          testMsg.style.color = 'var(--red)';
+        }
+      } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = 'Test';
+      }
+    });
+  }
   return bar;
 }
 
@@ -151,6 +298,12 @@ function _fillSettings(panel) {
     const v = settings[input.dataset.k];
     if (input.type === 'checkbox') input.checked = !!v;
     else input.value = String(v);
+  });
+  const devCfg = getDeviceSpeechSettings();
+  panel.querySelectorAll('[data-dev-k]').forEach(input => {
+    const v = devCfg[input.dataset.devK];
+    if (input.type === 'checkbox') input.checked = !!v;
+    else input.value = String(v ?? '');
   });
 }
 
@@ -188,15 +341,20 @@ function _startRecorder() {
   speechMs = 0;
   silenceMs = 0;
   utteranceMs = 0;
-  try {
-    const mime = MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-      ? 'audio/webm;codecs=opus' : 'audio/webm';
-    recorder = new MediaRecorder(stream, { mimeType: mime });
-  } catch (_) {
-    recorder = new MediaRecorder(stream);
+  if (stream && typeof MediaRecorder !== 'undefined') {
+    try {
+      const mime = MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus' : 'audio/webm';
+      recorder = new MediaRecorder(stream, { mimeType: mime });
+    } catch (_) {
+      recorder = new MediaRecorder(stream);
+    }
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.start(250);
   }
-  recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-  recorder.start(250);
+  if (hasBrowserSTT()) {
+    _startBrowserRec();
+  }
 }
 
 function _stopRecorder() {
@@ -255,27 +413,73 @@ function _tick() {
   }
 }
 
+/**
+ * Transcribe a recorded utterance following the resolution order:
+ *   (a) device server if enabled and /v1/models responds within ~1 s
+ *   (b) Odysseus server (/api/stt/transcribe) if server speech is configured
+ *   (c) browser SpeechRecognition transcript
+ */
+export async function transcribeUtterance(blob, browserTranscript = '') {
+  const devCfg = getDeviceSpeechSettings();
+  let lastErr = null;
+
+  // (a) Device server
+  if (devCfg.enabled) {
+    const probe = await probeDeviceServer();
+    if (probe.ok && blob && blob.size > 0) {
+      try {
+        return await transcribeOnDevice(blob);
+      } catch (e) {
+        lastErr = e;
+        console.warn('[voice] Device STT failed, falling back:', e.message);
+      }
+    }
+  }
+
+  // (b) Odysseus server routes if configured
+  if (_serverSttConfigured && blob && blob.size > 0) {
+    try {
+      const fd = new FormData();
+      fd.append('file', blob, 'speech.webm');
+      const ref = _chatEndpointRef();
+      if (ref) fd.append('model_endpoint_id', ref);
+      const res = await fetch('/api/stt/transcribe', { method: 'POST', credentials: 'same-origin', body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err.detail && err.detail.message) || `HTTP ${res.status}`);
+      }
+      return ((await res.json()).text || '').trim();
+    } catch (e) {
+      lastErr = e;
+      console.warn('[voice] Server STT failed, falling back:', e.message);
+    }
+  }
+
+  // (c) Browser SpeechRecognition fallback
+  if (browserTranscript) {
+    return browserTranscript.trim();
+  }
+  if (hasBrowserSTT()) {
+    return '';
+  }
+
+  if (lastErr) throw lastErr;
+  throw new Error('No speech-to-text provider available');
+}
+
 async function _finishUtterance() {
   const enough = speechMs >= MIN_SPEECH_MS;
   _setState('transcribing');
+  const browserText = _stopBrowserRec();
   const blob = await _stopRecorder();
   if (state !== 'transcribing') return;
-  if (!enough || blob.size < 1000) {
+  if ((!enough || blob.size < 1000) && !browserText) {
     _listen();
     return;
   }
   let text = '';
   try {
-    const fd = new FormData();
-    fd.append('file', blob, 'speech.webm');
-    const ref = _chatEndpointRef();
-    if (ref) fd.append('model_endpoint_id', ref);
-    const res = await fetch('/api/stt/transcribe', { method: 'POST', credentials: 'same-origin', body: fd });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error((err.detail && err.detail.message) || `HTTP ${res.status}`);
-    }
-    text = ((await res.json()).text || '').trim();
+    text = await transcribeUtterance(blob, browserText);
   } catch (e) {
     if (state === 'off') return;
     _toast('Transcription failed: ' + e.message, true);
@@ -377,20 +581,33 @@ export async function start() {
     _toast('Voice mode needs HTTPS (or localhost) for the microphone.', true);
     return;
   }
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
-    _toast('This browser cannot record audio.', true);
+  const canRecordAudio = Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  if (!canRecordAudio && !hasBrowserSTT()) {
+    _toast('This browser cannot record audio or recognize speech.', true);
     return;
   }
+
+  _serverSttConfigured = false;
   try {
     const stats = await fetch('/api/stt/stats', { credentials: 'same-origin' }).then(r => r.json());
-    if (!stats.available || stats.provider === 'browser' || stats.provider === 'disabled') {
-      _toast('Voice mode needs server speech-to-text (Settings: STT provider local or an endpoint).', true);
-      return;
-    }
-  } catch (_) { /* let the first transcription report problems */ }
+    _serverSttConfigured = isServerSttConfigured(stats);
+  } catch (_) { /* let transcription fall back to device or browser */ }
+
+  const devCfg = getDeviceSpeechSettings();
+  let deviceOk = false;
+  if (devCfg.enabled) {
+    const probe = await probeDeviceServer();
+    deviceOk = probe.ok;
+  }
+
+  if (!deviceOk && !_serverSttConfigured && !hasBrowserSTT()) {
+    _toast('Voice mode needs speech-to-text (enable "Speech on this device", configure server STT, or use a browser with Web Speech API).', true);
+    return;
+  }
+
   const tts = _tts();
   if (tts && tts.checkAvailability) await tts.checkAvailability();
-  if (!tts || !tts.available) {
+  if ((!tts || !tts.available) && !hasBrowserTTS() && !deviceOk) {
     _toast('Voice mode needs text-to-speech to be configured.', true);
     return;
   }
@@ -398,45 +615,51 @@ export async function start() {
   _buildBar();
   bar.hidden = false;
   _setState('starting');
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-  } catch (e) {
-    _setState('off');
-    bar.hidden = true;
-    _toast(e && e.name === 'NotAllowedError' ? 'Microphone access denied.' : 'Microphone error: ' + (e && e.message), true);
-    return;
+  if (canRecordAudio) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    } catch (e) {
+      _setState('off');
+      bar.hidden = true;
+      _toast(e && e.name === 'NotAllowedError' ? 'Microphone access denied.' : 'Microphone error: ' + (e && e.message), true);
+      return;
+    }
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new Ctx();
+    const source = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    sampleBuf = new Float32Array(analyser.fftSize);
+    source.connect(analyser);
+    noiseFloor = 0.01;
   }
-  const Ctx = window.AudioContext || window.webkitAudioContext;
-  audioCtx = new Ctx();
-  const source = audioCtx.createMediaStreamSource(stream);
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 1024;
-  sampleBuf = new Float32Array(analyser.fftSize);
-  source.connect(analyser);
-  noiseFloor = 0.01;
 
   // Speak replies while they stream, with voice-friendly tuning; restored on stop.
-  savedTTS = {
-    autoPlay: tts.autoPlay, minSentenceChars: tts.minSentenceChars,
-    earlyFlush: tts.earlyFlush, prefetch: tts.prefetch, modelEndpointId: tts.modelEndpointId,
-  };
-  tts.autoPlay = true;
-  tts.minSentenceChars = 2;
-  tts.earlyFlush = true;
-  tts.prefetch = true;
-  unsubTTS = [
-    tts.on('playbackstart', () => { if (state === 'waiting') _setState('speaking'); }),
-    tts.on('queuedrained', () => {
-      if (state === 'speaking' && !replyStreaming) _listen();
-    }),
-  ];
+  if (tts) {
+    savedTTS = {
+      autoPlay: tts.autoPlay, minSentenceChars: tts.minSentenceChars,
+      earlyFlush: tts.earlyFlush, prefetch: tts.prefetch, modelEndpointId: tts.modelEndpointId,
+    };
+    tts.autoPlay = true;
+    tts.minSentenceChars = 2;
+    tts.earlyFlush = true;
+    tts.prefetch = true;
+    unsubTTS = [
+      tts.on('playbackstart', () => { if (state === 'waiting') _setState('speaking'); }),
+      tts.on('queuedrained', () => {
+        if (state === 'speaking' && !replyStreaming) _listen();
+      }),
+    ];
+  }
   document.addEventListener('odysseus:chat-stream-end', _onStreamEnd);
   document.addEventListener('odysseus:agent-tool-start', _onToolStart);
   document.addEventListener('keydown', _onKey, true);
 
-  vadTimer = setInterval(_tick, 50);
+  if (analyser) {
+    vadTimer = setInterval(_tick, 50);
+  }
   _listen();
 }
 
@@ -445,6 +668,7 @@ export function stop() {
   _setState('off');
   if (vadTimer) clearInterval(vadTimer);
   vadTimer = null;
+  _stopBrowserRec();
   try { if (recorder && recorder.state !== 'inactive') recorder.stop(); } catch (_) { /* ignore */ }
   recorder = null;
   if (stream) stream.getTracks().forEach(t => t.stop());
@@ -492,6 +716,6 @@ if (document.readyState === 'loading') {
   init();
 }
 
-const voiceMode = { start, stop, toggle, isActive, init };
+const voiceMode = { start, stop, toggle, isActive, init, transcribeUtterance };
 window.voiceMode = voiceMode;
 export default voiceMode;

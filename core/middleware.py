@@ -165,8 +165,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 # own artwork, not any fixed CDN) — a narrow allowlist would
                 # break legitimate feed images for any site not on the list.
                 "img-src 'self' data: blob: https:; "
-                "media-src 'self' blob:; "
-                "connect-src 'self'; "
+                "media-src 'self' blob: http://localhost:* http://127.0.0.1:*; "
+                "connect-src 'self' http://localhost:* http://127.0.0.1:*; "
                 "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; "
                 "frame-ancestors 'none'"
             )

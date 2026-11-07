@@ -1,7 +1,14 @@
 // static/js/tts-ai.js
-// AI Text-to-Speech Module — supports server TTS and browser Web Speech API
+// AI Text-to-Speech Module — supports device server (Speaches), server TTS, and browser Web Speech API
 
 import { getSettings } from './appConfig.js';
+import {
+    getDeviceSpeechSettings,
+    probeDeviceServer,
+    synthesizeOnDevice,
+    isServerTtsConfigured,
+    hasBrowserTTS,
+} from './deviceSpeech.js';
 
 class AITTSManager {
     constructor() {
@@ -12,6 +19,8 @@ class AITTSManager {
         this.browserVoice = '';
         this.playbackSpeed = 1;
         this._provider = 'disabled';
+        this._serverStats = null;
+        this._serverConfigured = false;
         this.autoPlay = false;
         this.cache = new Map(); // Client-side audio cache
 
@@ -54,39 +63,74 @@ class AITTSManager {
 
     async checkAvailability() {
         try {
-            // Check user setting first — if TTS is disabled in settings, don't show buttons.
-            // settings.js re-calls this right after saving TTS settings; it invalidates
-            // the shared cache before doing so, so this still sees the new value.
+            const devCfg = getDeviceSpeechSettings();
+            // Check user setting first — if TTS is disabled in server settings and
+            // device speech is not enabled, don't show read-aloud buttons.
+            let serverTtsEnabled = true;
             try {
                 const settings = await getSettings();
                 if (settings.tts_enabled === false) {
-                    this.available = false;
-                    this._provider = 'disabled';
-                    return;
+                    serverTtsEnabled = false;
                 }
             } catch {}
 
-            const response = await fetch('/api/tts/stats');
-            const stats = await response.json();
-            this.available = stats.available && stats.ready;
-            this.playbackSpeed = stats.speed || 1;
-            this._provider = stats.provider || 'disabled';
-
-            if (stats.provider === 'browser') {
-                this.useBrowserTTS = true;
-                this.browserVoice = stats.voice || '';
-                this.available = 'speechSynthesis' in window;
-                if (!this.available) {
-                    console.warn('TTS: browser mode selected but speechSynthesis not supported');
+            let stats = null;
+            try {
+                const response = await fetch('/api/tts/stats');
+                if (response.ok) {
+                    stats = await response.json();
                 }
-            } else if (this.available) {
-                this.useBrowserTTS = false;
-            } else {
-                console.warn('TTS: not available');
+            } catch (e) {
+                console.warn('Failed to fetch /api/tts/stats:', e);
             }
+            this._serverStats = stats;
+            this.playbackSpeed = (stats && stats.speed) || 1;
+            this.browserVoice = (stats && stats.voice) || '';
+            this._serverConfigured = serverTtsEnabled && isServerTtsConfigured(stats);
+
+            // (a) Device server if enabled and /v1/models responds within ~1 s
+            if (devCfg.enabled) {
+                const probe = await probeDeviceServer();
+                if (probe.ok) {
+                    this.available = true;
+                    this.useBrowserTTS = false;
+                    this._provider = 'device';
+                    return;
+                }
+            }
+
+            // (b) Odysseus server routes if configured
+            if (this._serverConfigured) {
+                this.available = true;
+                this.useBrowserTTS = false;
+                this._provider = stats.provider || 'local';
+                return;
+            }
+
+            // (c) Browser fallback: speechSynthesis (if server provider is 'browser',
+            // device speech is enabled and fell through, or server has no speech configured
+            // and tts_enabled was not explicitly turned off by user).
+            if (serverTtsEnabled || devCfg.enabled) {
+                if (hasBrowserTTS()) {
+                    this.available = true;
+                    this.useBrowserTTS = true;
+                    this._provider = 'browser';
+                    return;
+                }
+            }
+
+            this.available = false;
+            this.useBrowserTTS = false;
+            this._provider = 'disabled';
         } catch (error) {
             console.error('Failed to check TTS availability:', error);
-            this.available = false;
+            if (hasBrowserTTS()) {
+                this.available = true;
+                this.useBrowserTTS = true;
+                this._provider = 'browser';
+            } else {
+                this.available = false;
+            }
         }
     }
 
@@ -124,10 +168,12 @@ class AITTSManager {
     }
 
     getCacheKey(text) {
-        // Simple hash function for cache key
+        const devCfg = getDeviceSpeechSettings();
+        const salt = devCfg.enabled ? `${devCfg.url}|${devCfg.ttsModel}|${devCfg.ttsVoice}|` : '';
+        const input = salt + text;
         let hash = 0;
-        for (let i = 0; i < text.length; i++) {
-            const char = text.charCodeAt(i);
+        for (let i = 0; i < input.length; i++) {
+            const char = input.charCodeAt(i);
             hash = ((hash << 5) - hash) + char;
             hash = hash & hash;
         }
@@ -135,7 +181,7 @@ class AITTSManager {
     }
 
     async synthesize(text, onProgress = null) {
-        if (!this.available) {
+        if (!this.available && !getDeviceSpeechSettings().enabled && !hasBrowserTTS()) {
             throw new Error('AI TTS service not available');
         }
 
@@ -145,8 +191,10 @@ class AITTSManager {
             throw new Error('No text to synthesize');
         }
 
-        // Browser TTS doesn't use synthesize — handled directly in play()
-        if (this.useBrowserTTS) {
+        const devCfg = getDeviceSpeechSettings();
+
+        // When neither device speech nor server TTS is active, use browser TTS directly
+        if (!devCfg.enabled && this.useBrowserTTS && !this._serverConfigured) {
             return '__browser_tts__';
         }
 
@@ -170,38 +218,69 @@ class AITTSManager {
     }
 
     async _synthesizeRemote(plainText, cacheKey, onProgress) {
-        try {
-            if (onProgress) onProgress('synthesizing');
+        if (onProgress) onProgress('synthesizing');
+        const devCfg = getDeviceSpeechSettings();
+        let lastError = null;
 
-            const body = { text: plainText, format: 'audio' };
-            if (this.modelEndpointId) body.model_endpoint_id = this.modelEndpointId;
-            const response = await fetch('/api/tts/synthesize', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(body)
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail?.message || 'Synthesis failed');
+        // (a) Device server if enabled and /v1/models responds within ~1 s
+        if (devCfg.enabled) {
+            const probe = await probeDeviceServer();
+            if (probe.ok) {
+                try {
+                    const audioBlob = await synthesizeOnDevice(plainText, {
+                        speed: this.playbackSpeed,
+                    });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    this.cache.set(cacheKey, audioUrl);
+                    this.useBrowserTTS = false;
+                    this._provider = 'device';
+                    if (onProgress) onProgress('complete');
+                    return audioUrl;
+                } catch (err) {
+                    lastError = err;
+                    console.warn('Device TTS failed, falling through:', err.message);
+                }
             }
-
-            const audioBlob = await response.blob();
-            const audioUrl = URL.createObjectURL(audioBlob);
-
-            // Cache the result
-            this.cache.set(cacheKey, audioUrl);
-
-            if (onProgress) onProgress('complete');
-
-            return audioUrl;
-
-        } catch (error) {
-            if (onProgress) onProgress('error');
-            throw error;
         }
+
+        // (b) Odysseus server routes if configured
+        if (this._serverConfigured || (this._provider !== 'browser' && this._provider !== 'disabled' && this._provider !== 'device')) {
+            try {
+                const body = { text: plainText, format: 'audio' };
+                if (this.modelEndpointId) body.model_endpoint_id = this.modelEndpointId;
+                const response = await fetch('/api/tts/synthesize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.detail?.message || 'Synthesis failed');
+                }
+
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                this.cache.set(cacheKey, audioUrl);
+                this.useBrowserTTS = false;
+                if (onProgress) onProgress('complete');
+                return audioUrl;
+            } catch (err) {
+                lastError = err;
+                console.warn('Server TTS failed, falling through to browser:', err.message);
+            }
+        }
+
+        // (c) Browser fallback: speechSynthesis
+        if (hasBrowserTTS()) {
+            if (onProgress) onProgress('complete');
+            return '__browser_tts__';
+        }
+
+        if (onProgress) onProgress('error');
+        throw lastError || new Error('Synthesis failed');
     }
 
     _findBrowserVoice() {
@@ -221,12 +300,11 @@ class AITTSManager {
         const plainText = this.extractPlainText(text);
         if (!plainText) return;
 
-        if (this.useBrowserTTS) {
-            return this._playBrowser(plainText);
-        }
-
         try {
             const audioUrl = await this.synthesize(text);
+            if (audioUrl === '__browser_tts__') {
+                return await this._playBrowser(plainText);
+            }
 
             this.currentAudio = new Audio(audioUrl);
             await this.currentAudio.play();
@@ -278,8 +356,8 @@ class AITTSManager {
         this._queue = [];
         this._processing = false;
 
-        if (this.useBrowserTTS) {
-            window.speechSynthesis.cancel();
+        if (hasBrowserTTS()) {
+            try { window.speechSynthesis.cancel(); } catch (_) {}
             this.isPlaying = false;
         }
         if (this.currentAudio) {
@@ -310,7 +388,7 @@ class AITTSManager {
             const item = this._queue[0];
             // Synthesize the next item while this one plays, so sentences
             // follow each other without a gap (voice mode turns this on).
-            if (this.prefetch && !this.useBrowserTTS && this._queue[1]) {
+            if (this.prefetch && (!this.useBrowserTTS || getDeviceSpeechSettings().enabled) && this._queue[1]) {
                 this.synthesize(this._queue[1].text).catch(() => {});
             }
             try {
@@ -350,7 +428,7 @@ class AITTSManager {
             button.classList.add('playing');
             button.title = 'Stop';
 
-            if (this.useBrowserTTS) {
+            if (audioUrl === '__browser_tts__') {
                 const plainText = this.extractPlainText(text);
                 await this._playBrowser(plainText);
             } else {

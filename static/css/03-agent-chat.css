@@ -2941,7 +2941,9 @@ details a:hover {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 280px;
+  width: 320px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -2964,6 +2966,44 @@ details a:hover {
   flex-direction: row;
   align-items: center;
   gap: 8px;
+}
+.voice-mode-settings input[type="text"],
+.voice-mode-settings input[type="number"] {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 12px;
+}
+.voice-mode-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 0;
+}
+.voice-mode-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+.voice-mode-test-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.voice-mode-test-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+}
+.voice-mode-test-btn:hover {
+  border-color: var(--accent);
 }
 .voice-mode-hint {
   font-size: 11px;

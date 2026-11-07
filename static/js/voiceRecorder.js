@@ -3,12 +3,19 @@
 /**
  * Voice recording with optional Speech-to-Text transcription.
  *
- * STT providers:
- *   "disabled"       — record audio as file attachment (original behavior)
- *   "browser"        — use Web Speech API for real-time transcription
- *   "local"          — send recording to server /api/stt/transcribe (Whisper)
- *   "endpoint:<id>"  — send recording to server /api/stt/transcribe (API)
+ * Resolution order for each STT call:
+ *   (a) Device server (Speaches / OpenAI-compatible on localhost) if enabled
+ *       and /v1/models responds within ~1 s (cached for 60 s).
+ *   (b) Odysseus server (/api/stt/transcribe) if server STT is configured.
+ *   (c) Browser fallback: Web Speech API (SpeechRecognition / webkitSpeechRecognition).
  */
+
+import {
+  getDeviceSpeechSettings,
+  probeDeviceServer,
+  transcribeOnDevice,
+  hasBrowserSTT,
+} from './deviceSpeech.js';
 
 let mediaRecorder = null;
 let audioChunks = [];
@@ -22,22 +29,36 @@ let _browserTranscript = '';
 
 // Cached STT provider — refreshed on settings change
 let _sttProvider = 'disabled';
+let _serverSttAvailable = false;
+let _serverSttProvider = 'disabled';
+
+function _computeEffectiveProvider() {
+  const devCfg = getDeviceSpeechSettings();
+  if (devCfg.enabled) return 'device';
+  if (_serverSttAvailable && _serverSttProvider && _serverSttProvider !== 'disabled') {
+    return _serverSttProvider;
+  }
+  if (hasBrowserSTT()) return 'browser';
+  return 'disabled';
+}
 
 /**
- * Fetch current STT provider from server settings
+ * Fetch current STT provider from server settings and combine with device/browser fallback
  */
 async function refreshSttProvider() {
   try {
     const res = await fetch('/api/stt/stats', { credentials: 'same-origin' });
     if (res.ok) {
       const stats = await res.json();
-      _sttProvider = stats.provider || 'disabled';
-      // Notify the send button to update its icon
-      if (window._updateSendBtnIcon) window._updateSendBtnIcon();
+      _serverSttAvailable = Boolean(stats.available);
+      _serverSttProvider = stats.provider || 'disabled';
     }
   } catch (e) {
     console.warn('Failed to fetch STT stats:', e);
   }
+  _sttProvider = _computeEffectiveProvider();
+  // Notify the send button to update its icon
+  if (window._updateSendBtnIcon) window._updateSendBtnIcon();
 }
 
 /**
@@ -94,7 +115,11 @@ function startBrowserSTT() {
     console.warn('Browser STT error:', e.error);
   };
 
-  _recognition.start();
+  try {
+    _recognition.start();
+  } catch (e) {
+    console.warn('Browser STT start failed:', e);
+  }
 }
 
 function stopBrowserSTT() {
@@ -146,6 +171,52 @@ function insertTranscription(text, showToast) {
 }
 
 /**
+ * Resolve and transcribe a recorded audio blob following the 3-tier order:
+ * (a) device server if enabled & probe succeeds -> (b) Odysseus server if configured -> (c) browser transcript
+ */
+export async function transcribeWithFallback(audioBlob, browserTranscript = '') {
+  const devCfg = getDeviceSpeechSettings();
+  let lastErr = null;
+
+  // (a) Device server
+  if (devCfg.enabled) {
+    const probe = await probeDeviceServer();
+    if (probe.ok) {
+      try {
+        return await transcribeOnDevice(audioBlob);
+      } catch (e) {
+        lastErr = e;
+        console.warn('Device STT failed, falling through:', e);
+      }
+    }
+  }
+
+  // (b) Odysseus server routes if configured
+  const serverConfigured =
+    (_serverSttAvailable && (_serverSttProvider === 'local' || _serverSttProvider.startsWith('endpoint:'))) ||
+    (_sttProvider === 'local' || _sttProvider.startsWith('endpoint:'));
+  if (serverConfigured) {
+    try {
+      return await transcribeOnServer(audioBlob);
+    } catch (e) {
+      lastErr = e;
+      console.warn('Server STT failed, falling through:', e);
+    }
+  }
+
+  // (c) Browser fallback
+  if (browserTranscript) {
+    return browserTranscript;
+  }
+  if (hasBrowserSTT()) {
+    return '';
+  }
+
+  if (lastErr) throw lastErr;
+  return null;
+}
+
+/**
  * Start voice recording
  */
 export function startRecording(onFileCreated, showToast, showError) {
@@ -178,36 +249,35 @@ export function startRecording(onFileCreated, showToast, showError) {
         stream.getTracks().forEach(track => track.stop());
 
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const browserText = stopBrowserSTT();
         const provider = _sttProvider;
 
-        if (provider === 'browser') {
-          const transcript = stopBrowserSTT();
+        if (provider === 'disabled' && !getDeviceSpeechSettings().enabled) {
+          // STT explicitly disabled — attach audio file
+          const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
+          if (onFileCreated) onFileCreated(audioFile);
+          _resetRecordingUI();
+          return;
+        }
+
+        if (provider !== 'browser' || getDeviceSpeechSettings().enabled) {
+          if (showToast) showToast('Transcribing...', 5000);
+        }
+
+        try {
+          const transcript = await transcribeWithFallback(audioBlob, browserText);
           if (transcript) {
             insertTranscription(transcript, showToast);
           } else {
             if (showToast) showToast('No speech detected');
-            const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
-            if (onFileCreated) onFileCreated(audioFile);
-          }
-        } else if (provider === 'local' || provider.startsWith('endpoint:')) {
-          // Show "Transcribing..." feedback
-          if (showToast) showToast('Transcribing...', 5000);
-          try {
-            const transcript = await transcribeOnServer(audioBlob);
-            if (transcript) {
-              insertTranscription(transcript, showToast);
-            } else {
-              if (showToast) showToast('No speech detected');
+            if (provider === 'browser') {
+              const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
+              if (onFileCreated) onFileCreated(audioFile);
             }
-          } catch (e) {
-            console.error('STT transcription error:', e);
-            if (showError) showError('Transcription failed: ' + e.message);
-            // Fallback: attach as file
-            const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
-            if (onFileCreated) onFileCreated(audioFile);
           }
-        } else {
-          // STT disabled — attach audio file
+        } catch (e) {
+          console.error('STT transcription error:', e);
+          if (showError) showError('Transcription failed: ' + e.message);
           const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
           if (onFileCreated) onFileCreated(audioFile);
         }
@@ -219,8 +289,9 @@ export function startRecording(onFileCreated, showToast, showError) {
       isRecording = true;
       recordingStartTime = new Date();
 
-      // Start browser STT if that's the provider
-      if (_sttProvider === 'browser') {
+      // Start browser STT alongside recording when available so it can serve
+      // as the primary or fallback transcript.
+      if (hasBrowserSTT()) {
         startBrowserSTT();
       }
 
@@ -276,8 +347,13 @@ const voiceRecorderModule = {
   getIsRecording,
   init,
   refreshSttProvider,
+  transcribeWithFallback,
   get _sttProvider() { return _sttProvider; },
   set _sttProvider(v) { _sttProvider = v; },
 };
+
+if (typeof window !== 'undefined') {
+  window.voiceRecorderModule = voiceRecorderModule;
+}
 
 export default voiceRecorderModule;

@@ -5,7 +5,7 @@ import uiModule from './ui.js?v=20260916largetoolscroll1';
 import searchModule from './search.js';
 import { byId } from './settings/dom.js';
 import { postSettings as _postSettings } from './settings/api.js';
-import { initTtsSettings, initSttSettings } from './settings/speech.js';
+import { initTtsSettings, initSttSettings, initDeviceSpeechSettings } from './settings/speech.js';
 import { initDocumentWritingStyle } from './settings/writingStyle.js';
 import { initImageSettings } from './settings/imageModels.js';
 import { initAgentSettings } from './settings/agent.js';
@@ -2037,6 +2037,7 @@ function initAll() {
   initVisionSettings();
   initTtsSettings();
   initSttSettings();
+  initDeviceSpeechSettings();
   initSearchSettings();
   initResearchSettings();
   initResearchSearchSettings();

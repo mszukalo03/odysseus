@@ -5,6 +5,11 @@
 
 import { byId as el } from './dom.js';
 import { postSettings as _postSettings } from './api.js';
+import {
+  getDeviceSpeechSettings,
+  saveDeviceSpeechSettings,
+  probeDeviceServer,
+} from '../deviceSpeech.js';
 
 export async function initTtsSettings() {
   var provSel = el('set-ttsProviderSelect');
@@ -244,4 +249,98 @@ export async function initSttSettings() {
   modelInput.addEventListener('change', saveSTT);
   langInput.addEventListener('change', saveSTT);
   if (sttEnabledToggle) sttEnabledToggle.addEventListener('change', function() { syncSttDisabled(); saveSTT(); });
+}
+
+export function initDeviceSpeechSettings() {
+  var enabledToggle = el('set-deviceSpeechEnabled');
+  var urlInput = el('set-deviceSpeechUrl');
+  var sttModelInput = el('set-deviceSpeechSttModel');
+  var ttsModelInput = el('set-deviceSpeechTtsModel');
+  var ttsVoiceInput = el('set-deviceSpeechTtsVoice');
+  var testBtn = el('set-deviceSpeechTestBtn');
+  var msgEl = el('set-deviceSpeechMsg');
+  var cardEl = el('set-deviceSpeechCard');
+  if (!urlInput) return;
+
+  function loadUI() {
+    var cfg = getDeviceSpeechSettings();
+    if (enabledToggle) enabledToggle.checked = !!cfg.enabled;
+    urlInput.value = cfg.url;
+    if (sttModelInput) sttModelInput.value = cfg.sttModel;
+    if (ttsModelInput) ttsModelInput.value = cfg.ttsModel;
+    if (ttsVoiceInput) ttsVoiceInput.value = cfg.ttsVoice;
+    if (cardEl && enabledToggle) {
+      cardEl.style.opacity = enabledToggle.checked ? '' : '0.7';
+    }
+  }
+
+  function notifySpeechChanged() {
+    if (window.voiceRecorderModule && window.voiceRecorderModule.refreshSttProvider) {
+      window.voiceRecorderModule.refreshSttProvider();
+    } else if (window._updateSendBtnIcon) {
+      window._updateSendBtnIcon();
+    }
+    if (window.aiTTSManager && window.aiTTSManager.checkAvailability) {
+      window.aiTTSManager.checkAvailability();
+    }
+  }
+
+  function saveUI() {
+    saveDeviceSpeechSettings({
+      enabled: enabledToggle ? enabledToggle.checked : false,
+      url: urlInput.value,
+      sttModel: sttModelInput ? sttModelInput.value : undefined,
+      ttsModel: ttsModelInput ? ttsModelInput.value : undefined,
+      ttsVoice: ttsVoiceInput ? ttsVoiceInput.value : undefined,
+    });
+    loadUI();
+    if (msgEl) {
+      msgEl.textContent = 'Saved in browser';
+      msgEl.style.color = 'var(--fg)';
+      setTimeout(function() { if (msgEl.textContent === 'Saved in browser') msgEl.textContent = ''; }, 2000);
+    }
+    notifySpeechChanged();
+  }
+
+  loadUI();
+
+  if (enabledToggle) enabledToggle.addEventListener('change', saveUI);
+  urlInput.addEventListener('change', saveUI);
+  if (sttModelInput) sttModelInput.addEventListener('change', saveUI);
+  if (ttsModelInput) ttsModelInput.addEventListener('change', saveUI);
+  if (ttsVoiceInput) ttsVoiceInput.addEventListener('change', saveUI);
+
+  if (testBtn) {
+    testBtn.addEventListener('click', async function() {
+      saveUI();
+      var cfg = getDeviceSpeechSettings();
+      testBtn.disabled = true;
+      testBtn.textContent = 'Testing...';
+      if (msgEl) {
+        msgEl.textContent = 'Checking ' + cfg.url + '/models ...';
+        msgEl.style.color = 'var(--fg)';
+      }
+      try {
+        var res = await probeDeviceServer({ url: cfg.url, force: true });
+        if (res.ok) {
+          var count = (res.models || []).length;
+          if (msgEl) {
+            msgEl.textContent = count > 0
+              ? 'Connected (' + count + ' model' + (count === 1 ? '' : 's') + ': ' + res.models.slice(0, 3).join(', ') + ')'
+              : 'Connected (/v1/models reachable)';
+            msgEl.style.color = 'var(--fg)';
+          }
+        } else {
+          if (msgEl) {
+            msgEl.textContent = 'Failed: ' + (res.error || 'Unreachable');
+            msgEl.style.color = 'var(--red)';
+          }
+        }
+      } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = 'Test';
+        notifySpeechChanged();
+      }
+    });
+  }
 }

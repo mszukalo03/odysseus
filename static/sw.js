@@ -74,6 +74,7 @@ const PRECACHE = [
   '/static/js/skillsMetrics.js?v=20260908autonomousskills1',
   '/static/js/tourHints.js',
   '/static/js/fileHandler.js?v=20260909mobileattachmentedit1',
+  '/static/js/deviceSpeech.js',
   '/static/js/voiceRecorder.js',
   '/static/js/actionMenuOrder.js',
   '/static/js/platform.js',
