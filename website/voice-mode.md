@@ -16,11 +16,18 @@ persona in Agent mode works by voice too.
 
 ## Requirements
 
-- **Server speech-to-text**: Settings STT provider `local` (faster-whisper)
-  or an OpenAI-compatible endpoint (e.g. a Speaches or LiteLLM gateway, see
-  `ODYSSEUS_SPEECH_BASE_URL` in `.env.example`). The browser Web Speech
-  provider isn't supported in voice mode.
-- **Text-to-speech**: `local` (Kokoro), an endpoint, or the browser voice.
+- **Speech-to-text** (tried in order):
+  1. **Speech on this device**: a local [Speaches](https://speaches.ai) server on
+     `http://localhost:8000/v1` configured per browser in Settings or the voice
+     bar gear — see [Speech on this device](speech-on-this-device.md).
+  2. **Server speech-to-text**: Settings STT provider `local` (faster-whisper)
+     or an OpenAI-compatible endpoint (see `ODYSSEUS_SPEECH_BASE_URL` in
+     `.env.example`).
+  3. **Browser fallback**: Web Speech API (`SpeechRecognition` /
+     `webkitSpeechRecognition`), e.g. on a phone when no device or server STT is
+     configured.
+- **Text-to-speech**: device Speaches server, server `local` (Kokoro) / endpoint,
+  or the browser's built-in `speechSynthesis`.
 - **A secure context** for the microphone: HTTPS (e.g. Tailscale Serve) or
   `localhost`.
 - Headphones help. Echo cancellation is on, but barge-in on loud speakers can
