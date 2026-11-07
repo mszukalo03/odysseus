@@ -43,7 +43,7 @@
 
 ### Vault personas, thinking, voice (2026-10)
 - **Workspace personas**: a persona binds a folder (e.g. `/vaults/omegaV2/thesis`) and loads its `ODYSSEUS.md`/`AGENTS.md`/`CLAUDE.md` chain as project instructions (trusted roots only). Persona fields: workspace, MCP allowlist, thinking default, max agent steps. File tools and allowlisted MCP tools are always offered; vault-root paths resolve inside the workspace; the step-budget guard ends every turn with an answer. Docs: `website/workspace-instructions.md`.
-- **Thinking control**: composer bulb menu (Auto/Off/Low/Medium/High) → `thinking` form field → provider-specific fields via `src/reasoning_control.py`.
+- **Thinking control**: upstream's per-persona/per-chat `thinking_mode` (on/off) + `reasoning_effort` is the only control since the 2026-11 upstream sync; the fork's composer bulb and `src/reasoning_control.py` were removed. Voice mode sends turns with `thinking_mode=off` unless the request sets it (`routes/chat_routes._voice_thinking_mode`).
 - **Live voice mode**: headset button / `/voice` / Alt+Shift+V; VAD → STT → chat with `voice=true` → streamed TTS → listen again, barge-in. Local speech server used only for local-model chats (`src/speech_routing.py`). Docs: `website/voice-mode.md`.
 - **Workspace search**: persona "Index for search" tags chunks with the workspace; retrieval in that persona's chats is limited to its folder and hidden elsewhere.
 - **Eval**: `scripts/vault_eval.py` + a YAML question file.
