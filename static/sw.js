@@ -90,7 +90,6 @@ const PRECACHE = [
   '/static/js/codeRunner.js?v=20260831richtexttools91',
   '/static/js/chatStream.js?v=20261026devsync1',
   '/static/js/chat.js?v=20260917toolttft1',
-  '/static/js/thinkingControl.js',
   '/static/js/voiceMode.js',
   '/static/js/cookbook.js',
   '/static/js/search-chat.js',

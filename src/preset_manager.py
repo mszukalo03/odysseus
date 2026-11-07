@@ -147,7 +147,6 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
         show_persona_name: bool = True,
         workspace: str = "",
         mcp_servers: Optional[List[str]] = None,
-        thinking: Optional[str] = None,
         max_rounds: Optional[int] = None,
     ) -> bool:
         """Update the custom preset"""
@@ -184,8 +183,6 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
         }
         # Agent options are only written when set, so a persona saved without
         # them keeps exactly the old shape (and the global defaults).
-        if thinking:
-            self.presets["custom"]["thinking"] = thinking
         if max_rounds:
             self.presets["custom"]["max_rounds"] = int(max_rounds)
         return self.save(self.presets)

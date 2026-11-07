@@ -130,23 +130,20 @@ class ChatHandler:
         return workspace, servers
 
     def preset_agent_options(self, preset_id: Optional[str]) -> dict:
-        """Persona-level agent options: {"thinking": str|None, "max_rounds": int|None}.
+        """Persona-level agent options: {"max_rounds": int|None}.
 
         Missing, disabled or unknown presets give no overrides (global defaults).
         """
         preset = self.preset_manager.presets.get(preset_id) if preset_id else None
         if not isinstance(preset, dict) or preset.get("enabled") is False:
-            return {"thinking": None, "max_rounds": None}
-        thinking = str(preset.get("thinking") or "").strip().lower() or None
-        if thinking not in {None, "auto", "off", "low", "medium", "high"}:
-            thinking = None
+            return {"max_rounds": None}
         try:
             max_rounds = int(preset.get("max_rounds") or 0) or None
         except (TypeError, ValueError):
             max_rounds = None
         if max_rounds is not None:
             max_rounds = max(1, min(max_rounds, 200))
-        return {"thinking": thinking, "max_rounds": max_rounds}
+        return {"max_rounds": max_rounds}
 
     def enhance_message_if_needed(self, message: str) -> str:
         """CoT enhancement disabled — modern models reason natively."""

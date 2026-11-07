@@ -69,7 +69,6 @@ The largest and most central subsystem. Chat submission → backend SSE → prog
 | **`tts-ai.js`** | AI text-to-speech manager, enqueueing, streaming TTS, and playback button injection. |
 | **`voiceRecorder.js`** | Voice recording from the composer microphone. |
 | **`voiceMode.js`** | Live voice mode: energy VAD on the mic, server transcription, auto-send with `voice=true`, streamed TTS reply, re-listen on `odysseus:chat-stream-end` / TTS `queuedrained`, barge-in. Composer headset button, `/voice`, Alt+Shift+V. See `website/voice-mode.md`. |
-| **`thinkingControl.js`** | Composer Thinking menu (Auto/Off/Low/Medium/High), persisted in toggle state; `chat.js` sends it as the `thinking` form field (omitted for Auto). |
 | **`fileHandler.js`** | Attachment picker, paste/drop handling, upload, attachment strip rendering, pending-file management. |
 | **`codeRunner.js`** | Client-side execution affordances for code blocks returned by the model. |
 

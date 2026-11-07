@@ -187,19 +187,18 @@ def test_persona_agent_options(tmp_path):
 
     # Saved without options: no new keys, no overrides (old shape preserved).
     pm.update_custom(0.4, 0, "persona", name="Thesis", workspace="/v/thesis")
-    assert "thinking" not in pm.presets["custom"] and "max_rounds" not in pm.presets["custom"]
-    assert handler.preset_agent_options("custom") == {"thinking": None, "max_rounds": None}
+    assert "max_rounds" not in pm.presets["custom"]
+    assert handler.preset_agent_options("custom") == {"max_rounds": None}
 
-    pm.update_custom(0.4, 0, "persona", name="Thesis", thinking="off", max_rounds=12)
-    assert handler.preset_agent_options("custom") == {"thinking": "off", "max_rounds": 12}
+    pm.update_custom(0.4, 0, "persona", name="Thesis", max_rounds=12)
+    assert handler.preset_agent_options("custom") == {"max_rounds": 12}
 
     pm.presets["custom"]["max_rounds"] = 999
-    pm.presets["custom"]["thinking"] = "bogus"
-    assert handler.preset_agent_options("custom") == {"thinking": None, "max_rounds": 200}
+    assert handler.preset_agent_options("custom") == {"max_rounds": 200}
 
-    pm.update_custom(0.4, 0, "persona", name="Thesis", enabled=False, thinking="high")
-    assert handler.preset_agent_options("custom") == {"thinking": None, "max_rounds": None}
-    assert handler.preset_agent_options(None) == {"thinking": None, "max_rounds": None}
+    pm.update_custom(0.4, 0, "persona", name="Thesis", enabled=False, max_rounds=5)
+    assert handler.preset_agent_options("custom") == {"max_rounds": None}
+    assert handler.preset_agent_options(None) == {"max_rounds": None}
 
 
 def test_mcp_prompt_description_skips_excluded_tools():

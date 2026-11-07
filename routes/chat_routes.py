@@ -2230,6 +2230,19 @@ def _format_selected_notes_context(notes) -> str:
 
     return "\n\n".join(sections)
 
+def _voice_thinking_mode(voice_mode, thinking_mode):
+    """Voice mode turns thinking off for the turn (fork, live voice mode).
+
+    A spoken turn wants a fast reply. The result feeds upstream's
+    request-scoped ``thinking_mode``, which already wins over the chat's
+    saved default, so voice beats that default; a request that sends
+    ``thinking_mode`` itself keeps its own choice.
+    """
+    if voice_mode and thinking_mode is None:
+        return "off"
+    return thinking_mode
+
+
 def _resolve_prompt_thinking_mode(explicit_mode, preset_id, preset_manager):
     """Use an explicit request override, then fall back to the active preset."""
     mode = str(explicit_mode or "").strip().lower()
@@ -2533,11 +2546,9 @@ def setup_chat_routes(
         incognito = str(form_data.get("incognito", "")).lower() == "true"
         plan_mode = str(form_data.get("plan_mode") or (body or {}).get("plan_mode") or "").lower() == "true"
         chat_mode = str(form_data.get("mode", "")).lower()  # 'chat' or 'agent'
-        # Thinking level from the composer (auto/off/low/medium/high). Resolved
-        # against the persona default further down; auto changes nothing.
-        _thinking_request = form_data.get("thinking") or (body or {}).get("thinking")
         # Live voice mode (static/js/voiceMode.js): spoken replies.
         _voice_mode = str(form_data.get("voice") or (body or {}).get("voice") or "").lower() == "true"
+        thinking_mode = _voice_thinking_mode(_voice_mode, thinking_mode)
         # Untrusted-context callers (browser extension): pin plain chat.
         no_tools = str(form_data.get("no_tools") or "").lower() == "true"
         client_runtime_context = None
@@ -2581,17 +2592,6 @@ def setup_chat_routes(
         _persona_options = _persona_opts_fn(preset_id) if callable(_persona_opts_fn) else {}
         if not isinstance(_persona_options, dict):
             _persona_options = {}
-        from src.reasoning_control import normalize_level as _normalize_thinking
-        _thinking_level = (
-            _normalize_thinking(_thinking_request)
-            # A spoken turn wants a fast reply: thinking off unless the
-            # composer picked a level explicitly.
-            or ("off" if _voice_mode else None)
-            or _normalize_thinking(_persona_options.get("thinking"))
-        )
-        # Only passed when set, so callers/fakes that predate thinking control
-        # see exactly the old keyword arguments.
-        _thinking_kwargs = {"reasoning": _thinking_level} if _thinking_level else {}
         if not workspace and not workspace_rejected and _preset_workspace:
             workspace, workspace_rejected = _resolve_request_workspace(request, _preset_workspace)
         # CLAUDE.md / AGENTS.md of the workspace -- only under a trusted root.
@@ -4346,7 +4346,6 @@ def setup_chat_routes(
                         fallback_on_empty=_foreground_policy.fallback_on_empty,
                         candidate_request_factory=_chat_request_factory,
                         candidate_route_descriptors=_foreground_route_descriptors,
-                        **_thinking_kwargs,
                         thinking_mode=thinking_mode,
                         reasoning_effort=reasoning_effort,
                     ):
@@ -4802,7 +4801,6 @@ def setup_chat_routes(
                         ),
                         cwd=_agent_turn_cwd(sess, client_runtime_context),
                         forced_tools=_forced_tools,
-                        **_thinking_kwargs,
                         turn_contract=_turn_contract,
                         request_authority=_request_authority,
                         uploaded_files=ctx.uploaded_files,

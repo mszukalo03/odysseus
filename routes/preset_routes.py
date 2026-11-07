@@ -25,7 +25,6 @@ class UserTemplateRequest(BaseModel):
     persona_memory_schema: str = Field("general", pattern="^(general|health)$")
     workspace: str = Field("", max_length=1024)
     mcp_servers: List[str] = Field(default_factory=list, max_length=50)
-    thinking: Optional[str] = Field(None, pattern="^(auto|off|low|medium|high)$")
     max_rounds: Optional[int] = Field(None, ge=1, le=200)
 
 
@@ -57,7 +56,6 @@ def setup_preset_routes(preset_manager) -> APIRouter:
                 preset_update.show_persona_name,
                 workspace=preset_update.workspace,
                 mcp_servers=preset_update.mcp_servers,
-                thinking=preset_update.thinking,
                 max_rounds=preset_update.max_rounds,
             )
             if success:

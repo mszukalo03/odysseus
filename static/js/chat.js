@@ -14,7 +14,6 @@ import { addAITTSButton } from './tts-ai.js';
 import markdownModule from './markdown.js';
 import spinnerModule from './spinner.js';
 import presetsModule from './presets.js?v=20260908personaname1';
-import thinkingControl from './thinkingControl.js';
 import voiceMode from './voiceMode.js';
 import fileHandlerModule from './fileHandler.js?v=20260909mobileattachmentedit1';
 import searchModule from './search.js';
@@ -2956,14 +2955,9 @@ import { invalidateSettings } from './appConfig.js';
       if (presetsModule.getSelectedPreset()) {
         fd.append('preset_id', presetsModule.getSelectedPreset());
       }
-      // Thinking level (composer menu); omitted for Auto so the persona or
-      // model default applies.
-      const _thinking = thinkingControl.requestValue();
-      if (_thinking) {
-        fd.append('thinking', _thinking);
-      }
-      // Live voice mode: the reply will be spoken (speech-style prompt,
-      // thinking off unless chosen explicitly).
+      // Live voice mode: the reply will be spoken. The server adds the
+      // speech-style prompt and turns thinking off for this turn
+      // (thinking_mode=off) unless the request sets thinking_mode itself.
       if (voiceMode.isActive()) {
         fd.append('voice', 'true');
       }

@@ -3020,7 +3020,6 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                      tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
                      tool_choice_none: bool = False, workload: str = "foreground",
-                     reasoning: Optional[str] = None,
                      thinking_mode: Optional[str] = None, reasoning_effort: Optional[str] = None):
     target_url = _stream_target_url(url)
     async with _local_model_slot(target_url, model, workload):
@@ -3036,7 +3035,6 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
             tools=tools,
             session_id=session_id,
             tool_choice_none=tool_choice_none,
-            reasoning=reasoning,
             thinking_mode=thinking_mode,
             reasoning_effort=reasoning_effort,
         ):
@@ -3047,14 +3045,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                             max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                             timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                             tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
-                            tool_choice_none: bool = False, reasoning: Optional[str] = None,
-                            thinking_mode: Optional[str] = None,
+                            tool_choice_none: bool = False, thinking_mode: Optional[str] = None,
                             reasoning_effort: Optional[str] = None,
                             _retry_silent_local: bool = True):
     """Stream LLM responses with improved error handling.
-
-    ``reasoning`` is an optional thinking level (off/low/medium/high; None or
-    "auto" leaves the request unchanged), see src/reasoning_control.py.
 
     Yields SSE chunks:
       - data: {"delta": "text"}           — text content
@@ -3092,9 +3086,6 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             model, messages_copy, temperature, max_tokens,
             stream=True, tools=tools, num_ctx=get_context_length(url, model),
         )
-        if reasoning:
-            from src.reasoning_control import apply_reasoning_level
-            apply_reasoning_level(payload, provider=provider, url=url, model=model, level=reasoning)
     elif provider == "chatgpt-subscription":
         target_url = _normalize_chatgpt_subscription_url(url)
         h = _provider_headers(provider, headers)
@@ -3143,11 +3134,6 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         _apply_deepseek_v4_reasoning_defaults(
             payload, target_url, model, thinking_mode
         )
-        # An explicit per-request thinking level (composer / persona) wins
-        # over the defaults above (including upstream's thinking_mode); "auto" (None) leaves them as they are.
-        if reasoning:
-            from src.reasoning_control import apply_reasoning_level
-            apply_reasoning_level(payload, provider=provider, url=url, model=model, level=reasoning)
         _scrub_openai_chat_tool_reasoning(payload, target_url, model)
         h = _provider_headers(provider, headers)
         if provider == "copilot":
@@ -3987,9 +3973,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 tools=tools,
                 session_id=None,
                 tool_choice_none=tool_choice_none,
-                reasoning=reasoning,
                 thinking_mode=thinking_mode,
-                reasoning_effort=reasoning_effort,
                 _retry_silent_local=False,
             ):
                 yield retry_chunk
