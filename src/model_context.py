@@ -53,8 +53,8 @@ def _normalize_base_for_compare(url: str) -> str:
     return url
 
 
-def _configured_endpoint_kind(url: str) -> Optional[str]:
-    """Return configured endpoint kind for a chat/base URL when available."""
+def _match_configured_endpoint(url: str) -> Optional[Tuple[str, str, Optional[str]]]:
+    """(endpoint_kind, normalized base, api_key) of the enabled endpoint serving ``url``, or None."""
     target = _normalize_base_for_compare(url)
     if not target:
         return None
@@ -72,19 +72,50 @@ def _configured_endpoint_kind(url: str) -> Optional[str]:
                 if target != base and not target.startswith(base + "/"):
                     continue
                 kind = (getattr(ep, "endpoint_kind", None) or "auto").strip().lower()
-                if kind in ("local", "api", "proxy"):
-                    return kind
-                if getattr(ep, "api_key", None):
-                    parsed = urlparse(base)
-                    host = (parsed.hostname or "").lower()
-                    path = (parsed.path or "").rstrip("/")
-                    if parsed.port != 11434 and "ollama" not in host and (path.endswith("/v1") or "/openai" in path):
-                        return "proxy"
-                return "auto"
+                return kind, base, getattr(ep, "api_key", None)
         finally:
             db.close()
     except Exception:
         return None
+    return None
+
+
+def _configured_endpoint_kind(url: str) -> Optional[str]:
+    """Return configured endpoint kind for a chat/base URL when available."""
+    match = _match_configured_endpoint(url)
+    if match is None:
+        return None
+    kind, base, api_key = match
+    if kind in ("local", "api", "proxy"):
+        return kind
+    if api_key:
+        parsed = urlparse(base)
+        host = (parsed.hostname or "").lower()
+        path = (parsed.path or "").rstrip("/")
+        if parsed.port != 11434 and "ollama" not in host and (path.endswith("/v1") or "/openai" in path):
+            return "proxy"
+    return "auto"
+
+
+def _probe_headers(url: str) -> Dict[str, str]:
+    """Bearer auth for the context probes (/slots, /props, /models) when the
+    endpoint serving ``url`` has a static API key. A key-gated local server
+    (llama-server --api-key, Strata) answers these probes with 401 otherwise,
+    and the window silently falls back to the known-model table."""
+    match = _match_configured_endpoint(url)
+    api_key = match[2] if match else None
+    if isinstance(api_key, str) and api_key.strip():
+        return {"Authorization": f"Bearer {api_key.strip()}"}
+    return {}
+
+
+def _probe_get(url: str, endpoint_url: str):
+    """GET a context probe, adding the endpoint's key only when it has one
+    (keyless endpoints keep the exact call they always made)."""
+    headers = _probe_headers(endpoint_url)
+    if headers:
+        return httpx.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+    return httpx.get(url, timeout=REQUEST_TIMEOUT)
 
 
 def is_local_endpoint(url: str) -> bool:
@@ -369,7 +400,7 @@ def _proxy_catalog_context(endpoint_url: str, model: str) -> Optional[int]:
     if cat is None:
         from src.endpoint_resolver import build_models_url
         try:
-            r = httpx.get(build_models_url(endpoint_url), timeout=REQUEST_TIMEOUT)
+            r = _probe_get(build_models_url(endpoint_url), endpoint_url)
         except Exception as e:
             logger.debug(f"Failed to fetch proxy catalog for context length: {e}")
             return None
@@ -426,7 +457,7 @@ def _query_context_length(endpoint_url: str, model: str) -> Tuple[int, bool]:
     if is_local_endpoint(endpoint_url):
         base = endpoint_url.split("/v1")[0] if "/v1" in endpoint_url else endpoint_url.rsplit("/", 1)[0]
         try:
-            r = httpx.get(f"{base}/slots", timeout=REQUEST_TIMEOUT)
+            r = _probe_get(f"{base}/slots", endpoint_url)
             if r.is_success:
                 slots = r.json()
                 if isinstance(slots, list) and slots:
@@ -440,7 +471,7 @@ def _query_context_length(endpoint_url: str, model: str) -> Tuple[int, bool]:
         # /props endpoint still reports the active serving context, and is the
         # authoritative value for single-slot servers.
         try:
-            r = httpx.get(f"{base}/props", timeout=REQUEST_TIMEOUT)
+            r = _probe_get(f"{base}/props", endpoint_url)
             if r.is_success:
                 props = r.json()
                 generation = props.get("default_generation_settings") if isinstance(props, dict) else None
@@ -466,7 +497,7 @@ def _query_context_length(endpoint_url: str, model: str) -> Tuple[int, bool]:
 
     models_url = build_models_url(endpoint_url)
     try:
-        r = httpx.get(models_url, timeout=REQUEST_TIMEOUT)
+        r = _probe_get(models_url, endpoint_url)
         if r.is_success:
             data = r.json()
             models_list = data.get("data") or []
