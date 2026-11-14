@@ -329,3 +329,59 @@ class TestGetContextLength:
 
         endpoint = "http://100.117.136.97:34521/v1/chat/completions"
         assert model_context.get_context_length(endpoint, "unknown-proxy-model") == model_context.DEFAULT_CONTEXT
+
+
+class TestKeyGatedLocalProbes:
+    """A key-gated local server (Strata, llama-server --api-key) must get the
+    endpoint's key on the context probes, or every probe 401s and the window
+    falls back to the known-model table (qwen3 -> 131072 instead of 65536)."""
+
+    ENDPOINT = "http://100.102.75.24:8080/v1/chat/completions"
+
+    def setup_method(self):
+        model_context._context_cache.clear()
+        model_context._catalog_ctx_cache.clear()
+
+    def _db(self, monkeypatch, api_key):
+        _install_endpoint_db(monkeypatch, [
+            types.SimpleNamespace(
+                base_url="http://100.102.75.24:8080/v1",
+                endpoint_kind="local",
+                api_key=api_key,
+                is_enabled=True,
+            )
+        ])
+
+    def _server(self, monkeypatch, key):
+        seen = []
+
+        def fake_get(url, *args, headers=None, **kwargs):
+            seen.append((url, dict(headers or {})))
+            if key and (headers or {}).get("Authorization") != f"Bearer {key}":
+                return _FakeResp({"error": "unauthorized"}, ok=False)
+            if url.endswith("/slots"):
+                return _FakeResp([{"id": 0, "n_ctx": 65536}])
+            return _FakeResp({}, ok=False)
+
+        monkeypatch.setattr(model_context.httpx, "get", fake_get)
+        return seen
+
+    def test_slots_probe_sends_the_endpoint_key(self, monkeypatch):
+        self._db(monkeypatch, "strata-key")
+        seen = self._server(monkeypatch, "strata-key")
+
+        assert model_context.get_context_length(self.ENDPOINT, "qwen3.6-35b-a3b-ud-q4_k_xl") == 65536
+        assert seen[0] == ("http://100.102.75.24:8080/slots", {"Authorization": "Bearer strata-key"})
+
+    def test_keyless_endpoint_sends_no_auth_header(self, monkeypatch):
+        self._db(monkeypatch, None)
+        seen = self._server(monkeypatch, None)
+
+        assert model_context.get_context_length(self.ENDPOINT, "qwen3.6-35b-a3b-ud-q4_k_xl") == 65536
+        assert seen[0][1] == {}
+
+    def test_probe_headers_only_for_the_matching_endpoint(self, monkeypatch):
+        self._db(monkeypatch, "strata-key")
+
+        assert model_context._probe_headers(self.ENDPOINT) == {"Authorization": "Bearer strata-key"}
+        assert model_context._probe_headers("http://100.102.75.25:8080/v1/chat/completions") == {}
