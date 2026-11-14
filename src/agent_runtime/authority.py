@@ -479,6 +479,13 @@ def _fork_extension_request_tools(request_text):
     return tools
 
 
+# A vague turn with an active workspace may read that workspace: the same
+# read-only file tools the agent loop's tool router surfaces for it ("an active
+# workspace IS the file-work signal", src/agent_loop.py). Without this grant the
+# router offers read_file and admission refuses every call.
+WORKSPACE_READ_TOOLS = frozenset({"read_file", "grep", "glob", "ls", "get_workspace"})
+
+
 def create_request_authority(request_text, *, owner=None, session_id=None, workspace=None,
                              history=(), policy=None, active_document=False,
                              image_attachment=False, capabilities=None, client_runtime_context=None):
@@ -492,6 +499,8 @@ def create_request_authority(request_text, *, owner=None, session_id=None, works
         families |= frozenset(capabilities)
     tools = set().union(*(FAMILY_TOOLS.get(f, ()) for f in families))
     selected = intent.selected_tools
+    if workspace and families <= {"unknown"} and selected is None and intent.required_read is None:
+        tools |= WORKSPACE_READ_TOOLS
     if selected is not None:
         tools = tools & set(selected) if families else set(selected)
         if tools & {"web_search", "web_fetch"}:

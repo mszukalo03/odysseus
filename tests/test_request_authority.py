@@ -594,3 +594,33 @@ async def test_authority_denial_cannot_create_completion_receipt(monkeypatch):
     assert journal.actions[0].execution_id is None
     assert journal.actions[0].outcome["authoritative"] is False
     assert journal.actions[0].outcome["blocked"] is True
+
+
+def _read(path):
+    return ExactOperation.normalize("read_file", json.dumps({"path": path}))
+
+
+def test_vague_turn_with_workspace_may_read_the_workspace():
+    """The router surfaces read-only file tools for a low-signal turn when a
+    workspace is active; admission must grant the same read-only set."""
+    granted = create_request_authority(
+        "How many items are on my Marketplace list this week?",
+        owner="alice", session_id="s", workspace="/vaults/omegaV2")
+    assert granted.permits(_read("personal/40-planning/current-focus.md"))
+    names = {g.tool for g in granted.grants}
+    assert {"read_file", "grep", "glob", "ls"} <= names
+    assert not names & {"write_file", "edit_file", "apply_patch", "bash", "python"}
+
+
+def test_vague_turn_without_workspace_gets_no_file_tools():
+    granted = create_request_authority(
+        "How many items are on my Marketplace list this week?", owner="alice", session_id="s")
+    assert not granted.permits(_read("personal/40-planning/current-focus.md"))
+
+
+def test_specific_request_class_is_not_widened_by_workspace():
+    """A turn with a real intent keeps its narrow class; the workspace read
+    grant is only for turns that carry no other signal."""
+    granted = create_request_authority(
+        "Add a calendar event tomorrow at 3pm", owner="alice", session_id="s", workspace="/vaults/omegaV2")
+    assert not granted.permits(_read("notes.md"))
