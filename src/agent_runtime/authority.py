@@ -488,7 +488,8 @@ WORKSPACE_READ_TOOLS = frozenset({"read_file", "grep", "glob", "ls", "get_worksp
 
 def create_request_authority(request_text, *, owner=None, session_id=None, workspace=None,
                              history=(), policy=None, active_document=False,
-                             image_attachment=False, capabilities=None, client_runtime_context=None):
+                             image_attachment=False, capabilities=None, client_runtime_context=None,
+                             workspace_instructions=False):
     """Deterministic server policy over semantic facts, never schema inventory."""
     if not isinstance(request_text, str):
         raise TypeError("Authority requires trusted request text")
@@ -510,6 +511,11 @@ def create_request_authority(request_text, *, owner=None, session_id=None, works
         tools = {canonical_tool(operation.tool)}
     else:
         operation = None
+    if workspace and workspace_instructions:
+        # A workspace with its own project instructions (a vault persona) is
+        # always readable, whatever family the request matched. Read-only: write
+        # tools still need their own edit intent.
+        tools |= WORKSPACE_READ_TOOLS
     if operation is None:
         tools.update(_fork_extension_request_tools(request_text))
     tools.update(_trusted_local_mcp_request_tools(request_text, intent))
