@@ -624,3 +624,57 @@ def test_specific_request_class_is_not_widened_by_workspace():
     granted = create_request_authority(
         "Add a calendar event tomorrow at 3pm", owner="alice", session_id="s", workspace="/vaults/omegaV2")
     assert not granted.permits(_read("notes.md"))
+
+
+_PERSONA_TURNS = [
+    "whats my todo today",
+    "what's on my calendar this week",
+    "add a task to review the thesis draft",
+]
+
+
+@pytest.mark.parametrize("text", _PERSONA_TURNS)
+def test_workspace_with_instructions_keeps_read_tools_for_specific_family(text):
+    """Vault persona turns classified as tasks/calendar were offered only
+    ask_user + manage_tasks, so the model's read_file call was dropped."""
+    granted = create_request_authority(
+        text, owner="alice", session_id="s", workspace="/vaults/omegaV2/personal",
+        workspace_instructions=True)
+    names = {g.tool for g in granted.grants}
+    assert {"read_file", "grep", "glob", "ls", "get_workspace"} <= names
+    assert granted.permits(_read("60-daily/2026-11-18-digest.md"))
+    assert not names & {"write_file", "edit_file", "apply_patch", "bash", "python"}
+
+
+def test_workspace_without_instructions_is_unchanged_for_specific_family():
+    granted = create_request_authority(
+        "whats my todo today", owner="alice", session_id="s", workspace="/vaults/omegaV2/personal")
+    assert not granted.permits(_read("60-daily/2026-11-18-digest.md"))
+
+
+def test_instructions_flag_without_workspace_grants_nothing():
+    granted = create_request_authority(
+        "whats my todo today", owner="alice", session_id="s", workspace_instructions=True)
+    assert not {g.tool for g in granted.grants} & {"read_file", "grep", "glob", "ls"}
+
+
+def test_workspace_instructions_do_not_grant_write_without_edit_intent():
+    granted = create_request_authority(
+        "whats my todo today", owner="alice", session_id="s", workspace="/vaults/omegaV2/personal",
+        workspace_instructions=True)
+    write = ExactOperation.normalize("write_file", json.dumps({"path": "a.md", "content": "x"}))
+    assert not granted.permits(write)
+
+
+def test_turn_contract_offers_workspace_read_tools_alongside_family():
+    from src.agent_runtime.authority import WORKSPACE_READ_TOOLS
+    from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
+    from src.turn_contract import requested_capabilities, resolve_turn_contract
+    text = "whats my todo today"
+    caps = requested_capabilities(text)
+    base = dict(capabilities=caps, schemas=FUNCTION_TOOL_SCHEMAS, policy=ToolPolicy(), message=text)
+    without = resolve_turn_contract(**base)
+    with_ws = resolve_turn_contract(**base, always_available_tools=tuple(sorted(WORKSPACE_READ_TOOLS)))
+    assert not without.offered & {"read_file", "grep"}
+    assert WORKSPACE_READ_TOOLS <= with_ws.offered
+    assert not with_ws.offered & {"write_file", "edit_file", "apply_patch"}

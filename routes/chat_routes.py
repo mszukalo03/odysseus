@@ -96,7 +96,9 @@ from src.model_profiles import (
     tool_schema_profile,
 )
 from src.tool_execution import AgentExecutionBridge, bind_execution_bridge
-from src.agent_runtime.authority import is_internal_tool_request, request_authority_for_http
+from src.agent_runtime.authority import (
+    WORKSPACE_READ_TOOLS, is_internal_tool_request, request_authority_for_http,
+)
 from src.agent_runtime.runtime_selection import uses_compact_preview_runtime
 from src.turn_contract import (
     FAMILY_TOOLS, bind_turn_contract, preserve_bound_editor_selected_tools,
@@ -3691,6 +3693,7 @@ def setup_chat_routes(
             history=_turn_history, policy=tool_policy,
             client_runtime_context=client_runtime_context,
             active_document=bool(active_doc),
+            workspace_instructions=bool(workspace and _workspace_instructions),
             image_attachment=any(str(a.get('mime') or '').startswith('image/')
                                  for a in (ctx.preprocessed.attachment_meta or [])),
             capabilities=(({"photo_editor"} if _photo_editor_active else set()) | ({'search_browser'} if (
@@ -3829,7 +3832,13 @@ def setup_chat_routes(
                 policy=_contract_policy, required_tools=_required_tools,
                 required_capabilities=_active_turn_capabilities,
                 selected_tools=_selected_tools,
-                always_available_tools=(FAMILY_TOOLS["documents"] if active_doc else ()),
+                always_available_tools=(
+                    tuple(FAMILY_TOOLS["documents"] if active_doc else ())
+                    # A workspace with project instructions (vault persona)
+                    # keeps its read-only file tools whatever family matched.
+                    + (tuple(sorted(WORKSPACE_READ_TOOLS))
+                       if workspace and _workspace_instructions else ())
+                ),
                 warm_tools=_warm_tools,
                 message=message, history=getattr(sess, "history", []) or [],
             )
