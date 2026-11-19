@@ -6495,11 +6495,15 @@ def resolve_turn_contract(*, capabilities: Iterable[str], schemas: Iterable[dict
     if operation is not None:
         required_names.add(canonical_tool(operation.tool))
     offered_canonical = {canonical_tool(n) for n in offered}
+    # "unknown" means no family matched; it asks for no tool. A surface that
+    # supplies always-available tools (a vault persona's file tools) must keep
+    # them instead of treating the unmatched family as a missing capability.
+    unmatched_ok = {"unknown"} if always_available_tools else set()
     unavailable = frozenset((required_names - offered_canonical)
                             | {f"capability:{f}" for f in required_families
-                               if f not in FAMILY_TOOLS or (
+                               if f not in unmatched_ok and (f not in FAMILY_TOOLS or (
                                    f not in _REQUIRED_TOOLS
-                                   and not FAMILY_TOOLS[f] & offered_canonical)})
+                                   and not FAMILY_TOOLS[f] & offered_canonical))})
     if unavailable:
         offered = frozenset()
         if operation is not None:

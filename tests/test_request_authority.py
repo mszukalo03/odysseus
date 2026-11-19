@@ -629,7 +629,7 @@ def test_specific_request_class_is_not_widened_by_workspace():
 _PERSONA_TURNS = [
     "whats my todo today",
     "what's on my calendar this week",
-    "add a task to review the thesis draft",
+    "show my open tasks",
 ]
 
 
@@ -678,3 +678,121 @@ def test_turn_contract_offers_workspace_read_tools_alongside_family():
     assert not without.offered & {"read_file", "grep"}
     assert WORKSPACE_READ_TOOLS <= with_ws.offered
     assert not with_ws.offered & {"write_file", "edit_file", "apply_patch"}
+
+
+# --- vault persona: negation, plain edit wording, bash/python floor -----------
+
+_NEGATED_EDIT_TURNS = [
+    "What's the next step I should do for my computational project? Just answer; don't edit any files.",
+    "Just answer, no edits.",
+    "Do not change anything, just tell me what is left.",
+]
+_EDIT_TURNS = [
+    "Tick the HP laptop line.",
+    "Okay, tick the HP laptop line.",
+    'Mark "Health: decide on concrete habits/targets" as done.',
+    "Mark FLP-013 (XPS RAM) as sold at $90 on 2026-11-18",
+    "Add a task to this week: book solid-state DRS for the parent, due Friday.",
+    "Fix the typo in the roadmap.",
+    "Please append a line to the log about today's run.",
+    "Can you rename the draft note to final?",
+    "Write down that the sample arrived.",
+    "Update the status line to blocked.",
+    "Remove the old reagent entry.",
+    "Change the due date to Friday.",
+    "Set the priority to high.",
+    "Log that I finished the reduction.",
+]
+_READ_QUESTIONS = [
+    "What's the update on the HP laptop?",
+    "Update me on the HP laptop.",
+    "When is the next run scheduled?",
+    "Which line did I change yesterday?",
+    "How many folders are in 30-experiments?",
+]
+_PERSONA_WS = "/vaults/omegaV2/personal"
+
+
+def _persona_tools(text):
+    granted = create_request_authority(
+        text, owner="alice", session_id="s", workspace=_PERSONA_WS, workspace_instructions=True)
+    return {g.tool for g in granted.grants}
+
+
+@pytest.mark.parametrize("text", _NEGATED_EDIT_TURNS)
+def test_negated_edit_keeps_read_tools_and_offers_no_write(text):
+    from src.agent_runtime.authority import WORKSPACE_READ_TOOLS
+    names = _persona_tools(text)
+    assert WORKSPACE_READ_TOOLS <= names
+    assert not names & {"write_file", "edit_file", "apply_patch", "bash", "python"}
+
+
+@pytest.mark.parametrize("text", _EDIT_TURNS)
+def test_edit_wording_offers_edit_and_write_but_not_apply_patch(text):
+    from src.agent_runtime.authority import WORKSPACE_READ_TOOLS
+    names = _persona_tools(text)
+    assert WORKSPACE_READ_TOOLS <= names
+    assert {"edit_file", "write_file"} <= names
+    assert "apply_patch" not in names and not names & {"bash", "python"}
+
+
+@pytest.mark.parametrize("text", _READ_QUESTIONS)
+def test_read_style_questions_get_no_write_tools(text):
+    names = _persona_tools(text)
+    assert not names & {"write_file", "edit_file", "apply_patch"}
+
+
+def test_edit_wording_without_instructions_or_workspace_grants_no_write():
+    plain = create_request_authority("Tick the HP laptop line.", owner="a", session_id="s",
+                                     workspace=_PERSONA_WS)
+    assert not {g.tool for g in plain.grants} & {"edit_file", "write_file"}
+    nows = create_request_authority("Tick the HP laptop line.", owner="a", session_id="s",
+                                    workspace_instructions=True)
+    assert not {g.tool for g in nows.grants} & {"edit_file", "write_file"}
+
+
+def test_edit_in_one_sentence_survives_negation_in_another():
+    names = _persona_tools("Tick the HP laptop line. Don't edit anything else.")
+    assert {"edit_file", "write_file"} <= names
+
+
+def test_scheduled_automation_gets_no_write_tools():
+    assert not _persona_tools("Every morning at 8am, summarize my inbox. Log the result.") & {"edit_file", "write_file"}
+
+
+def _persona_contract(text):
+    from src.agent_runtime.authority import WORKSPACE_READ_TOOLS, workspace_edit_tools
+    from src.tool_policy import build_effective_tool_policy
+    from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
+    from src.turn_contract import requested_capabilities, resolve_turn_contract, selected_tools_for_request
+    caps = requested_capabilities(text, [], workspace=True)
+    always = tuple(sorted(WORKSPACE_READ_TOOLS)) + tuple(sorted(workspace_edit_tools(text)))
+    # bash/python are dropped for a persona unless allow_bash is on.
+    policy = build_effective_tool_policy(disabled_tools={"bash", "python"}, last_user_message=text)
+    return resolve_turn_contract(capabilities=caps, schemas=FUNCTION_TOOL_SCHEMAS, policy=policy,
+                                 selected_tools=selected_tools_for_request(text),
+                                 always_available_tools=always, message=text)
+
+
+@pytest.mark.parametrize("text", _NEGATED_EDIT_TURNS[:1] + ["Tick the HP laptop line."])
+def test_unknown_family_does_not_empty_the_persona_contract(text):
+    """capability:unknown used to mark the contract unavailable and offer nothing."""
+    from src.agent_runtime.authority import WORKSPACE_READ_TOOLS
+    offered = _persona_contract(text).offered
+    assert WORKSPACE_READ_TOOLS <= offered
+
+
+def test_persona_contract_offers_write_only_for_edit_wording():
+    assert {"edit_file", "write_file"} <= _persona_contract("Tick the HP laptop line.").offered
+    assert not _persona_contract("Mark \"Health: decide on concrete habits/targets\" as done.").offered & {"bash", "python", "apply_patch"}
+    assert {"edit_file", "write_file"} <= _persona_contract("Mark \"Health: decide on concrete habits/targets\" as done.").offered
+    neg = _persona_contract(_NEGATED_EDIT_TURNS[0]).offered
+    assert not neg & {"edit_file", "write_file", "apply_patch", "bash", "python"}
+
+
+def test_unknown_family_without_always_available_tools_still_offers_nothing():
+    from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
+    from src.turn_contract import resolve_turn_contract
+    contract = resolve_turn_contract(capabilities={"unknown"}, schemas=FUNCTION_TOOL_SCHEMAS,
+                                     policy=ToolPolicy(), message="Tick the HP laptop line.")
+    assert not contract.offered

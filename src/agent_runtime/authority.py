@@ -486,6 +486,45 @@ def _fork_extension_request_tools(request_text):
 WORKSPACE_READ_TOOLS = frozenset({"read_file", "grep", "glob", "ls", "get_workspace"})
 
 
+WORKSPACE_EDIT_TOOLS = frozenset({"edit_file", "write_file"})
+
+# A sentence that opens with an edit verb (after an optional polite lead) is an
+# edit request; "mark ... as <status>/done" and "write down" are the multi-word forms.
+_EDIT_LEAD = (r"(?:(?:please|kindly|now|then|and|also|ok(?:ay)?|go\s+ahead\s+and|"
+              r"(?:can|could|would|will)\s+you(?:\s+please)?|i\s+(?:want|need)\s+you\s+to|"
+              r"i'?d\s+like\s+you\s+to),?\s+)*")
+_EDIT_REQUEST_RE = re.compile(
+    r"^\s*" + _EDIT_LEAD + r"(?:"
+    r"(?:tick|untick|uncheck|add|append|insert|change|edit|fix|correct|modify|replace|"
+    r"schedule|reschedule|set|rename|remove|delete|strike|record|log)\b"
+    r"|update\b(?!\s+me\b)"
+    r"|write\s+down\b|check\s+off\b|cross\s+off\b"
+    r"|mark\b[^.!?;\n]{0,160}?\b(?:as\s+(?!a\b|an\b|the\b)[a-z][\w-]*|done|complete|completed|finished|not\s+done|undone)\b"
+    r")", re.I)
+_EDIT_NEGATION_RE = re.compile(
+    r"\b(?:do\s+not|don'?t|never|without|no)\b(?:\s+\w+){0,3}?\s+"
+    r"(?:edit|edits|editing|chang\w*|writ\w*|modif\w*|updat\w*|touch|alter\w*)\b", re.I)
+
+
+def workspace_edit_tools(request_text):
+    """Write tools for a vault-persona turn whose wording is an edit request.
+
+    Never for scheduled automations, negated edits ("don't edit any files"), or
+    read-style questions. apply_patch is deliberately absent: the vault manual
+    forbids it on notes.
+    """
+    from src.turn_contract import scheduled_automation_request
+    text = str(request_text or "")
+    if scheduled_automation_request(text):
+        return frozenset()
+    # A negated sentence ("don't edit any files") never grants; an edit request
+    # in another sentence of the same message still does.
+    for sentence in re.split(r"(?<=[.!?;])\s+|\n+", text):
+        if _EDIT_REQUEST_RE.match(sentence) and not _EDIT_NEGATION_RE.search(sentence):
+            return WORKSPACE_EDIT_TOOLS
+    return frozenset()
+
+
 def create_request_authority(request_text, *, owner=None, session_id=None, workspace=None,
                              history=(), policy=None, active_document=False,
                              image_attachment=False, capabilities=None, client_runtime_context=None,
@@ -516,6 +555,7 @@ def create_request_authority(request_text, *, owner=None, session_id=None, works
         # always readable, whatever family the request matched. Read-only: write
         # tools still need their own edit intent.
         tools |= WORKSPACE_READ_TOOLS
+        tools |= workspace_edit_tools(request_text)
     if operation is None:
         tools.update(_fork_extension_request_tools(request_text))
     tools.update(_trusted_local_mcp_request_tools(request_text, intent))
