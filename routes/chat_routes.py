@@ -97,7 +97,7 @@ from src.model_profiles import (
 )
 from src.tool_execution import AgentExecutionBridge, bind_execution_bridge
 from src.agent_runtime.authority import (
-    WORKSPACE_READ_TOOLS, is_internal_tool_request, request_authority_for_http,
+    WORKSPACE_READ_TOOLS, workspace_edit_tools, is_internal_tool_request, request_authority_for_http,
 )
 from src.agent_runtime.runtime_selection import uses_compact_preview_runtime
 from src.turn_contract import (
@@ -2530,6 +2530,8 @@ def setup_chat_routes(
         # JSON body as fallback so callers who send {"allow_bash": true}
         # actually get bash enabled.
         allow_bash = form_data.get("allow_bash") or (body or {}).get("allow_bash")
+        # What the user set, before any auto-escalation below flips it on.
+        _user_allow_bash = str(allow_bash or "").lower() == "true"
         allow_web_search = form_data.get("allow_web_search") or (body or {}).get("allow_web_search")
         use_rag = form_data.get("use_rag")
         search_context = form_data.get("search_context")  # pre-fetched web search results (compare mode)
@@ -3448,6 +3450,14 @@ def setup_chat_routes(
         # explicitly enable it.
         if allow_bash is not None and str(allow_bash).lower() != "true":
             disabled_tools.add("bash")
+        if (workspace and _workspace_instructions and not _user_allow_bash
+                and not (exact_tool_approval is not None
+                         and getattr(exact_tool_approval.pending, "tool_name", "") in {"bash", "python"})):
+            # A vault persona answers from its notes. The general agent floor
+            # (bash, python) led the local model to shell out for counts and
+            # quotes and stall on an approval prompt, so only a chat where the
+            # user turned allow_bash on keeps them.
+            disabled_tools.update({"bash", "python"})
         _model_lower = str(getattr(sess, "model", "") or "").lower()
         _qwen_tool_router_selected = (
             "qwen38-tool-router" in _model_lower
@@ -3837,6 +3847,11 @@ def setup_chat_routes(
                     # A workspace with project instructions (vault persona)
                     # keeps its read-only file tools whatever family matched.
                     + (tuple(sorted(WORKSPACE_READ_TOOLS))
+                       if workspace and _workspace_instructions else ())
+                    # Plain edit wording ("tick the X line", "mark Y as done")
+                    # also needs edit_file/write_file; the exact-approval
+                    # prompt still gates the write. apply_patch stays out.
+                    + (tuple(sorted(workspace_edit_tools(message, _turn_capabilities)))
                        if workspace and _workspace_instructions else ())
                 ),
                 warm_tools=_warm_tools,
