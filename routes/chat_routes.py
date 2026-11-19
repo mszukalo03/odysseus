@@ -3851,7 +3851,7 @@ def setup_chat_routes(
                     # Plain edit wording ("tick the X line", "mark Y as done")
                     # also needs edit_file/write_file; the exact-approval
                     # prompt still gates the write. apply_patch stays out.
-                    + (tuple(sorted(workspace_edit_tools(message, _turn_capabilities)))
+                    + (tuple(sorted(workspace_edit_tools(message)))
                        if workspace and _workspace_instructions else ())
                 ),
                 warm_tools=_warm_tools,

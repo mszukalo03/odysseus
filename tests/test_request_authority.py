@@ -629,7 +629,7 @@ def test_specific_request_class_is_not_widened_by_workspace():
 _PERSONA_TURNS = [
     "whats my todo today",
     "what's on my calendar this week",
-    "add a task to review the thesis draft",
+    "show my open tasks",
 ]
 
 
@@ -689,7 +689,11 @@ _NEGATED_EDIT_TURNS = [
 ]
 _EDIT_TURNS = [
     "Tick the HP laptop line.",
+    "Okay, tick the HP laptop line.",
     'Mark "Health: decide on concrete habits/targets" as done.',
+    "Mark FLP-013 (XPS RAM) as sold at $90 on 2026-11-18",
+    "Add a task to this week: book solid-state DRS for the parent, due Friday.",
+    "Fix the typo in the roadmap.",
     "Please append a line to the log about today's run.",
     "Can you rename the draft note to final?",
     "Write down that the sample arrived.",
@@ -701,6 +705,7 @@ _EDIT_TURNS = [
 ]
 _READ_QUESTIONS = [
     "What's the update on the HP laptop?",
+    "Update me on the HP laptop.",
     "When is the next run scheduled?",
     "Which line did I change yesterday?",
     "How many folders are in 30-experiments?",
@@ -751,9 +756,8 @@ def test_edit_in_one_sentence_survives_negation_in_another():
     assert {"edit_file", "write_file"} <= names
 
 
-def test_typed_family_keeps_no_write_tools_for_add_a_task():
-    # "add a task ..." is manage_tasks, not a note edit (existing persona rule).
-    assert not _persona_tools("add a task to review the thesis draft") & {"edit_file", "write_file"}
+def test_scheduled_automation_gets_no_write_tools():
+    assert not _persona_tools("Every morning at 8am, summarize my inbox. Log the result.") & {"edit_file", "write_file"}
 
 
 def _persona_contract(text):
@@ -762,7 +766,7 @@ def _persona_contract(text):
     from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
     from src.turn_contract import requested_capabilities, resolve_turn_contract, selected_tools_for_request
     caps = requested_capabilities(text, [], workspace=True)
-    always = tuple(sorted(WORKSPACE_READ_TOOLS)) + tuple(sorted(workspace_edit_tools(text, caps)))
+    always = tuple(sorted(WORKSPACE_READ_TOOLS)) + tuple(sorted(workspace_edit_tools(text)))
     # bash/python are dropped for a persona unless allow_bash is on.
     policy = build_effective_tool_policy(disabled_tools={"bash", "python"}, last_user_message=text)
     return resolve_turn_contract(capabilities=caps, schemas=FUNCTION_TOOL_SCHEMAS, policy=policy,
