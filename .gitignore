@@ -130,3 +130,6 @@ ROADMAP_PRIVATE*
 
 # Machine-specific compose additions (local mounts, trusted instruction roots)
 docker-compose.override.yml
+
+# Real-application browser validation reports (scripts/run_real_playwright_validation.py)
+/artifacts/

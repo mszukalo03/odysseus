@@ -29,16 +29,21 @@ export function getCurrentProvider() {
   return _provider;
 }
 
-let _labels = {};
+let _labels = {
+  searxng: 'SearXNG', brave: 'Brave', duckduckgo: 'DuckDuckGo',
+  google_pse: 'Google', tavily: 'Tavily', serper: 'Serper',
+  you_com: 'You.com', disabled: 'search (disabled)',
+};
 
 async function _fetchLabels() {
   try {
-    const res = await fetch((API_BASE || '') + '/api/search/providers', { credentials: 'same-origin' });
+    const res = await fetch('/api/search/providers', { credentials: 'same-origin' });
     const list = await res.json();
-    _labels = {};
-    list.forEach(function(p) { _labels[p.id] = p.label; });
-    _labels.disabled = 'search (disabled)';
-  } catch (e) { /* keep default */ }
+    const updated = { ..._labels };
+    list.forEach(function(p) { updated[p.id] = p.label; });
+    updated.disabled = 'search (disabled)';
+    _labels = updated;
+  } catch (e) { /* keep defaults */ }
 }
 
 export function getProviderLabel() {

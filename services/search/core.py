@@ -43,6 +43,7 @@ from .providers import (
     google_pse_search,
     tavily_search,
     serper_search,
+    you_com_search,
     _get_search_settings,
     _get_provider_key,
     _get_result_count,
@@ -122,6 +123,7 @@ def _call_provider(provider_name: str, query: str, count: int, time_filter: str 
         "google_pse": google_pse_search,
         "tavily": tavily_search,
         "serper": serper_search,
+        "you_com": you_com_search,
     }.get(provider_name)
     if builtin:
         return builtin(query, count, time_filter)
