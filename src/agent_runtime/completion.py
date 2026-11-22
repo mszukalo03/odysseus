@@ -22,6 +22,7 @@ from src.agent_evidence import (
 )
 from .effect_log import EffectLog
 from src.agent_write_claims import NOT_DONE_REASON, mutation_claim, tool_name_is_read_only
+from src.tool_approval_scopes import is_approval_placeholder
 from .journal import ActionJournal, bind_journal, current_journal
 
 
@@ -189,7 +190,23 @@ def _disclosure(answer: str, ledger: EvidenceLedger) -> str:
     return ('\n\n' + summary) if answer.strip() else summary
 
 
+APPROVAL_ECHO_REASON = 'the answer was only an approval question, but no approval is pending'
+
+
+def _approval_echo_answer(ledger: EvidenceLedger) -> str:
+    """Server text for a turn whose whole reply copied the approval card."""
+    if _ledger_wrote(ledger):
+        return ('No approval is pending. A tool ran in this turn, but the reply was only '
+                'an approval question, so check the result before relying on it.')
+    return 'Not done: no approval is pending and nothing was written in this turn.'
+
+
 def _completion_answer(text: str, ledger: EvidenceLedger, decision: CompletionDecision) -> tuple[str, str]:
+    # A model that saw approval pauses in its history can answer a later
+    # request with the card's question alone (chat 522edf36, 2026-11-22). A
+    # real pause arrives as an ask_user event and is decided AWAITING_USER.
+    if decision.status != CompletionStatus.AWAITING_USER and is_approval_placeholder('assistant', text):
+        return _approval_echo_answer(ledger), APPROVAL_ECHO_REASON
     incomplete = decision.reason if not decision.can_complete and decision.status != CompletionStatus.AWAITING_USER else ''
     execution_required = _execution_obligation(ledger.requirements)
     prose, removed = _supported_prose(text, ledger, decision)

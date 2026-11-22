@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
 from src.tool_approval_scopes import (
+    TOOL_APPROVAL_QUESTION,
     CHAT_SESSION_APPROVAL_DECISION,
     DENY_APPROVAL_DECISION,
     TASK_APPROVAL_DECISION,
@@ -201,7 +202,7 @@ class PendingToolApproval:
             # resolved card lets history-derived session grants remain bound to
             # this exact chat and prevents inheritance by a forked session.
             "session_id": self.session_id,
-            "question": "Allow this task to continue?",
+            "question": TOOL_APPROVAL_QUESTION,
             "description": reason or (
                 "Untrusted context influenced this run, so continuing with "
                 "otherwise-gated actions needs your explicit approval."

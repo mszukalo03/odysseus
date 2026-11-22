@@ -21,6 +21,30 @@ DENY_APPROVAL_DECISION = "deny"
 # session history contains a matching, resolved chat-session approval.
 CHAT_SESSION_APPROVAL_CONTEXT_MARKER = "_tool_approval_chat_session_granted"
 
+# The question on every tool-approval card. A paused turn is saved with this
+# text as its assistant message so the transcript shows the card; that
+# message is UI, not something the model said (see is_approval_placeholder).
+TOOL_APPROVAL_QUESTION = "Allow this task to continue?"
+
+
+def _normalized(text: object) -> str:
+    return " ".join(str(text or "").split()).strip().lower()
+
+
+def is_approval_placeholder(role: object, content: object) -> bool:
+    """Whether a saved message only stands in for a tool-approval card.
+
+    Two shapes share the same text: the paused turn itself (saved with the
+    card's question as its assistant message), and a later answer in which the model copied
+    that question as its whole reply (2026-11-22, chat ``522edf36``: after two
+    approvals in history, W3, W6 and W7 each answered only "Allow this task
+    to continue?" and wrote nothing). Neither belongs in the model's history.
+    """
+    if role != "assistant":
+        return False
+    return _normalized(content) == _normalized(TOOL_APPROVAL_QUESTION)
+
+
 # The server's proof that IT resolved this approval. More than one route
 # writes caller-supplied metadata into session history, so a client can write
 # the shape of a resolved card directly; only the server can produce this.
