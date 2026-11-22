@@ -12,6 +12,7 @@ from src.tool_approval_scopes import (
     CHAT_SESSION_APPROVAL_CONTEXT_MARKER,
     CHAT_SESSION_APPROVAL_DECISION,
     CHAT_SESSION_APPROVAL_SIGNATURE_FIELD,
+    is_approval_placeholder,
     verify_chat_session_grant,
 )
 
@@ -175,6 +176,10 @@ class Session:
             msg.to_dict()
             for msg in self.history
             if (msg.metadata or {}).get("source") != "slash"
+            # An approval pause is saved as the card's question so the
+            # transcript can render it; as model history it taught the model
+            # to answer later requests with that question and do nothing.
+            and not is_approval_placeholder(msg.role, msg.content)
         ]
         from src.background_tool_jobs import background_result_context
         messages = [part for message in messages for part in (
