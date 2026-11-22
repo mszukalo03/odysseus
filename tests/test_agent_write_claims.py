@@ -168,7 +168,7 @@ def _fence(tool, args):
 
 
 def _run_loop(monkeypatch, replies, *, relevant_tools, thinking_mode=None, max_rounds=12, executed=None,
-              workspace=None):
+              workspace=None, user_prompt="I ordered the boost converter; tick that task in NOW.md."):
     """Drive stream_agent_loop with scripted model replies.
 
     ``replies`` is a callable (round_index, messages, kwargs) -> reply text.
@@ -233,7 +233,7 @@ def _run_loop(monkeypatch, replies, *, relevant_tools, thinking_mode=None, max_r
 
     gen = al.stream_agent_loop(
         "http://x/v1", "m",
-        [{"role": "user", "content": "I ordered the boost converter; tick that task in NOW.md."}],
+        [{"role": "user", "content": user_prompt}],
         max_rounds=max_rounds,
         relevant_tools=set(relevant_tools),
         owner="pewds",
@@ -295,6 +295,23 @@ def test_read_only_answer_is_not_nudged(monkeypatch):
     assert len(calls) == 2
     assert not any(_nudged(c["messages"]) for c in calls)
     assert _final_text(events) == "Your week has three open tasks."
+
+
+def test_explicit_state_manager_request_is_not_shadowed_by_no_write_nudge(monkeypatch):
+    executed = []
+
+    def replies(i, messages, kwargs):
+        return "I saved the memory about your coffee preference."
+
+    events, calls, _ = _run_loop(
+        monkeypatch,
+        replies,
+        relevant_tools={"manage_memory"},
+        executed=executed,
+        user_prompt="Remember in my memory that I prefer oat milk.",
+    )
+    assert "manage_memory" in executed
+    assert not any(_nudged(c["messages"]) for c in calls)
 
 
 def _write_only(messages):

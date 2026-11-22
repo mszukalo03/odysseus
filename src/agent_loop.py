@@ -30978,42 +30978,6 @@ async def stream_agent_loop(
                 _claimed_done_text
             )
             _claimed_done = bool(_claimed_done_text) and not _unfinished_action_promise
-            # A finished-sounding answer that reports a change ("Ticked ...",
-            # "Added ... to inventory.md", "Logged 2 h ...") while only read
-            # tools ran this turn. Give the model one round to make the write
-            # or say it was not made; the completion gate replaces whatever
-            # unsupported claim is left after that.
-            _no_write_claim = (
-                unbacked_mutation_claim(_claimed_done_text, tool_events)
-                if _claimed_done and not _force_answer and not _no_write_claim_nudged
-                else ""
-            )
-            if _no_write_claim and any(
-                name and not tool_name_is_read_only(name)
-                for name in set(_tool_names_sent or []) | set(_relevant_tools or [])
-            ):
-                _no_write_claim_nudged = True
-                logger.warning(
-                    "[agent] round %s reports a change but no write tool ran; "
-                    "asking once for the write claim=%r",
-                    round_num,
-                    _no_write_claim[:160],
-                )
-                if round_texts:
-                    round_texts.pop()
-                if round_models:
-                    round_models.pop()
-                if round_endpoint_ids:
-                    round_endpoint_ids.pop()
-                if round_endpoint_labels:
-                    round_endpoint_labels.pop()
-                full_response = _drop_rejected_round_response(full_response, cleaned_round)
-                # Retract the streamed claim; the next round's text replaces it.
-                yield f'data: {json.dumps({"type": "final_response", "content": full_response})}\n\n'
-                messages.append({"role": "assistant", "content": _claimed_done_text})
-                messages.append({"role": "system", "content": NO_WRITE_NUDGE})
-                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
-                continue
             if _terminal_completion_contract and _claimed_done and not _force_answer:
                 _round_evidence = EvidenceLedger.from_tool_events(
                     tool_events,
@@ -31497,6 +31461,45 @@ async def stream_agent_loop(
                         "as `list_calendars` is not enough for add, move, or delete."
                     ),
                 })
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
+            # A finished-sounding answer that reports a change ("Ticked ...",
+            # "Added ... to inventory.md", "Logged 2 h ...") while only read
+            # tools ran this turn. Checked after the explicit state-manager,
+            # active-document, notes, and calendar recovery handlers so those
+            # domain-specific normalizers and nudges are not shadowed. Give the
+            # model one round to make the write or say it was not made; the
+            # completion gate replaces whatever unsupported claim is left after
+            # that.
+            _no_write_claim = (
+                unbacked_mutation_claim(_claimed_done_text, tool_events)
+                if not tool_blocks and _claimed_done and not _force_answer and not _no_write_claim_nudged
+                else ""
+            )
+            if _no_write_claim and any(
+                name and not tool_name_is_read_only(name)
+                for name in set(_tool_names_sent or []) | set(_relevant_tools or [])
+            ):
+                _no_write_claim_nudged = True
+                logger.warning(
+                    "[agent] round %s reports a change but no write tool ran; "
+                    "asking once for the write claim=%r",
+                    round_num,
+                    _no_write_claim[:160],
+                )
+                if round_texts:
+                    round_texts.pop()
+                if round_models:
+                    round_models.pop()
+                if round_endpoint_ids:
+                    round_endpoint_ids.pop()
+                if round_endpoint_labels:
+                    round_endpoint_labels.pop()
+                full_response = _drop_rejected_round_response(full_response, cleaned_round)
+                # Retract the streamed claim; the next round's text replaces it.
+                yield f'data: {json.dumps({"type": "final_response", "content": full_response})}\n\n'
+                messages.append({"role": "assistant", "content": _claimed_done_text})
+                messages.append({"role": "system", "content": NO_WRITE_NUDGE})
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
             if (
