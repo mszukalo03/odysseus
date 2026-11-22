@@ -624,6 +624,47 @@ def bind_request_authority(authority):
         _ACTIVE.reset(token)
 
 
+def is_policy_restriction_of(authority, parent):
+    """Whether ``authority`` is ``parent`` with only more tools denied.
+
+    ``RequestAuthority.restrict`` produces exactly this: same request, owner,
+    session, workspace, grants, resources and inheritance, with ``denied``,
+    ``block_all`` and ``disable_mcp`` only ever growing.
+    """
+    if not isinstance(authority, RequestAuthority) or not isinstance(parent, RequestAuthority):
+        return False
+    widened = replace(authority, denied=parent.denied, block_all=parent.block_all,
+                      disable_mcp=parent.disable_mcp)
+    return (widened == parent and authority.denied >= parent.denied
+            and authority.block_all >= parent.block_all
+            and authority.disable_mcp >= parent.disable_mcp)
+
+
+@contextmanager
+def bind_active_restriction(authority):
+    """Bind the active request authority narrowed by tool policy, as itself.
+
+    ``bind_request_authority`` intersects with the active authority, and an
+    intersection is a child (``inherited``). The executor narrows the active
+    authority by tool policy, decides exact admission on that non-inherited
+    narrowing, and must hand the producer the same authority: otherwise an
+    exact-approved launch is admitted and then refused at the producer with
+    "Producer operation has no request admission or exact claim" (2026-11-22,
+    W6). Anything that is not a pure narrowing of the active authority still
+    goes through the intersecting bind.
+    """
+    parent = _ACTIVE.get()
+    if parent is None or not is_policy_restriction_of(authority, parent):
+        with bind_request_authority(authority) as effective:
+            yield effective
+        return
+    token = _ACTIVE.set(authority)
+    try:
+        yield authority
+    finally:
+        _ACTIVE.reset(token)
+
+
 def _request_text(messages):
     for message in reversed(messages or ()):
         metadata = message.get("metadata") or {}
