@@ -97,6 +97,12 @@ from src.text_scanning import (
 from src.turn_contract import selected_tools_for_request, with_turn_contract
 from src.agent_runtime.journal import propose_action, execute_action
 from src.agent_runtime.completion import with_completion_gate
+from src.agent_write_claims import (
+    NO_WRITE_NUDGE,
+    successful_write_ran,
+    tool_name_is_read_only,
+    unbacked_mutation_claim,
+)
 from src.agent_runtime.runtime_selection import is_compact_preview_contract
 from src.teacher_escalation import with_teacher_takeover, request_teacher_takeover
 from src.tool_utils import _truncate, get_mcp_manager
@@ -21339,6 +21345,41 @@ async def _spec_router_contract_async(turn_contract, messages, disabled_tools, e
         return turn_contract
 
 
+_LOOP_BREAKER_WRITE_TOOLS = frozenset({"edit_file", "write_file", "apply_patch"})
+
+
+def _loop_breaker_write_only_prompt(write_tools) -> str:
+    names = ", ".join(write_tools) or "edit_file"
+    return (
+        "You have read the same material repeatedly without changing anything. "
+        f"Only the write tools are available for this round ({names}). If the user "
+        "asked for a change, make it now with one of them, using what you have "
+        "already read. If you cannot make it, do not call a tool: say plainly "
+        "which change you did NOT make and why."
+    )
+
+
+def _loop_breaker_force_answer_prompt(*, wrote: bool) -> str:
+    """Tool-free final round after the loop-breaker trips.
+
+    The model must report what is unfinished. Without that, a forced round
+    after read-only stalls answered "Added the row" with nothing written.
+    """
+    state = (
+        "Some write tools succeeded earlier in this turn; report only those changes."
+        if wrote
+        else "No write tool has succeeded in this turn: nothing has been changed."
+    )
+    return (
+        "You're repeating tool calls without converging, so tools are now off. "
+        "Write the final answer from what you have already gathered. "
+        + state
+        + " Do not say you added, ticked, logged, updated or wrote anything that a "
+        "successful tool call above did not do. Say plainly which parts of the "
+        "request you did NOT finish and what blocked you."
+    )
+
+
 @with_request_authority
 @with_turn_contract
 @with_teacher_takeover
@@ -25101,6 +25142,8 @@ async def stream_agent_loop(
     _html_artifact_browser_queued = False
     _html_artifact_browser_verified = False
     _evidence_repair_rounds = 0
+    # One corrective round when the answer reports a change no write made.
+    _no_write_claim_nudged = False
     _artifact_completion_nudges = 0
     _artifact_finish_nudge_sent = False
     _artifact_finish_correction_seen = False
@@ -25247,6 +25290,11 @@ async def stream_agent_loop(
     # that instruction, do not re-emit the same stall nudge for every
     # remaining round; route through the bounded exhaustion synthesizer.
     _loop_breaker_force_answer_used = False
+    # Loop-breaker on read-only stalls: one round offering only the write
+    # tools before the tool-free forced answer. Holds the round number it
+    # applies to, so candidate rebuilds inside that round see the same surface.
+    _write_only_round = 0
+    _loop_breaker_write_round_used = False
     _calendar_completion_nudge_sent = False
     _host_bridge_failed_turn = False
     # A detached host-shell result is an unfinished action, not a successful
@@ -25642,6 +25690,18 @@ async def stream_agent_loop(
         schemas = _drop_legacy_email_alias_schemas_when_mcp_available(schemas)
         schemas = _apply_tool_surface_to_schemas(schemas, tool_surface)
         return _filter_route_tool_schemas(schemas)
+
+    def _write_only_round_schemas(schemas):
+        """Narrow a round's schemas to the write tools on a write-only round."""
+        if _write_only_round and _write_only_round == round_num and not _force_answer:
+            write_schemas = [
+                schema for schema in schemas or []
+                if (schema.get("function", {}).get("name") or schema.get("name"))
+                in _LOOP_BREAKER_WRITE_TOOLS
+            ]
+            if write_schemas:
+                return write_schemas
+        return schemas
 
     _approved_result_injected = False
     _approved_effectful_completed = False
@@ -26456,6 +26516,9 @@ async def stream_agent_loop(
             "ody_doc_finetune_mode": _ody_doc_finetune_mode,
             "ody_notes_finetune_mode": _ody_notes_finetune_mode,
             "ody_doc_stream_create_mode": _ody_doc_stream_create_mode,
+            # The candidate request reads thinking_mode from this state; a
+            # missing key sent None and dropped the caller's thinking=off.
+            "thinking_mode": _route_state.get("thinking_mode"),
             "compaction_state": (
                 _route_state.get("compaction_state", {})
                 if round_num == 1
@@ -26472,6 +26535,7 @@ async def stream_agent_loop(
                 if _guard_note.force_answer:
                     _force_answer = True
         all_tool_schemas = _tool_schemas_for_route(_active_route_state)
+        all_tool_schemas = _write_only_round_schemas(all_tool_schemas)
         if turn_contract is not None:
             _relevant_tools = (
                 set(_route_state.get("spec_offered"))
@@ -26637,6 +26701,7 @@ async def stream_agent_loop(
             _last_route_context_length = state["context_length"]
             run_security.observe_messages(request_messages)
             candidate_tools = _tool_schemas_for_route(state)
+            candidate_tools = _write_only_round_schemas(candidate_tools)
             if deepseek_visual_messages is not None:
                 candidate_tools = [
                     schema
@@ -30315,7 +30380,9 @@ async def stream_agent_loop(
                                 "the final answer for the user now. Do NOT call any tools, "
                                 "do NOT explain your reasoning — output the finished response "
                                 "directly. If some data couldn't be fetched, just work with "
-                                "what you have and note what's missing in one short line."
+                                "what you have and note what's missing in one short line. "
+                                "Report only changes a write tool actually made above; if the "
+                                "user asked for a change that was not made, say it was not done."
                             ),
                         }]
                         _raw = await llm_call_async(
@@ -31396,6 +31463,45 @@ async def stream_agent_loop(
                 })
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
+            # A finished-sounding answer that reports a change ("Ticked ...",
+            # "Added ... to inventory.md", "Logged 2 h ...") while only read
+            # tools ran this turn. Checked after the explicit state-manager,
+            # active-document, notes, and calendar recovery handlers so those
+            # domain-specific normalizers and nudges are not shadowed. Give the
+            # model one round to make the write or say it was not made; the
+            # completion gate replaces whatever unsupported claim is left after
+            # that.
+            _no_write_claim = (
+                unbacked_mutation_claim(_claimed_done_text, tool_events)
+                if not tool_blocks and _claimed_done and not _force_answer and not _no_write_claim_nudged
+                else ""
+            )
+            if _no_write_claim and any(
+                name and not tool_name_is_read_only(name)
+                for name in set(_tool_names_sent or []) | set(_relevant_tools or [])
+            ):
+                _no_write_claim_nudged = True
+                logger.warning(
+                    "[agent] round %s reports a change but no write tool ran; "
+                    "asking once for the write claim=%r",
+                    round_num,
+                    _no_write_claim[:160],
+                )
+                if round_texts:
+                    round_texts.pop()
+                if round_models:
+                    round_models.pop()
+                if round_endpoint_ids:
+                    round_endpoint_ids.pop()
+                if round_endpoint_labels:
+                    round_endpoint_labels.pop()
+                full_response = _drop_rejected_round_response(full_response, cleaned_round)
+                # Retract the streamed claim; the next round's text replaces it.
+                yield f'data: {json.dumps({"type": "final_response", "content": full_response})}\n\n'
+                messages.append({"role": "assistant", "content": _claimed_done_text})
+                messages.append({"role": "system", "content": NO_WRITE_NUDGE})
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
             if (
                 _artifact_recovery_enabled
                 and _completion_requirements.required_artifacts
@@ -32070,6 +32176,38 @@ async def stream_agent_loop(
                 })
                 + "\n\n"
             )
+            _write_tools_offered = sorted(
+                (set(_tool_names_sent or []) | set(_relevant_tools or []))
+                & _LOOP_BREAKER_WRITE_TOOLS
+                - set(disabled_tools or ())
+            )
+            if (
+                _read_only_inspection_rounds >= 6
+                and not _loop_breaker_write_round_used
+                and not _post_effectful_mutation_done
+                and not successful_write_ran(tool_events)
+                and _write_tools_offered
+            ):
+                # The model keeps reading instead of writing. Removing every
+                # tool here made round 7 answer "Added the row" with nothing
+                # written (2026-11-22). Offer only the write tools once.
+                _loop_breaker_write_round_used = True
+                _write_only_round = round_num + 1
+                # Counters stay as they are: a write resets them, and a
+                # write-only round that only reads again trips straight into
+                # the tool-free forced answer below on the next check.
+                logger.warning(
+                    "[agent] loop-breaker: one write-only round %s tools=%s",
+                    round_num + 1,
+                    _write_tools_offered,
+                )
+                messages.append({
+                    "role": "system",
+                    "content": _loop_breaker_write_only_prompt(_write_tools_offered),
+                })
+                full_response += "\n\n"
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
             if _loop_breaker_force_answer_used:
                 _exhausted_rounds = True
                 logger.warning(
@@ -32090,13 +32228,9 @@ async def stream_agent_loop(
             _force_answer = True
             messages.append({
                 "role": "system",
-                "content": (
-                    "You're repeating tool calls without converging. STOP calling "
-                    "tools and end the turn one of two ways: (a) write your best "
-                    "final answer NOW from the information already gathered, or "
-                    "(b) if you're genuinely blocked, say plainly what's blocking "
-                    "you in a sentence or two." + _off_note
-                ),
+                "content": _loop_breaker_force_answer_prompt(
+                    wrote=successful_write_ran(tool_events),
+                ) + _off_note,
             })
             full_response += "\n\n"
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'

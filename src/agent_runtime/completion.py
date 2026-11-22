@@ -21,6 +21,7 @@ from src.agent_evidence import (
     _ARTIFACT_PATH,
 )
 from .effect_log import EffectLog
+from src.agent_write_claims import NOT_DONE_REASON, mutation_claim, tool_name_is_read_only
 from .journal import ActionJournal, bind_journal, current_journal
 
 
@@ -103,16 +104,37 @@ def _current_run_claims(statement: str, *, execution_required: bool) -> list[tup
     return claims
 
 
+def _ledger_wrote(ledger: EvidenceLedger) -> bool:
+    """Whether any tool in this run could have made a change."""
+    for event in ledger.events:
+        if not (event.authoritative and event.success):
+            continue
+        if event.kind == EvidenceKind.ARTIFACT_MUTATION:
+            return True
+        # The ledger keeps only a hash of the command, so a shell call or a
+        # manage_* call counts as a possible write. Leniency here only lets a
+        # claim through, as before this check existed.
+        if event.kind == EvidenceKind.TOOL_RESULT and event.tool and not tool_name_is_read_only(event.tool):
+            return True
+    return False
+
+
 def _supported_prose(text: str, ledger: EvidenceLedger, decision: CompletionDecision) -> tuple[str, str]:
     """Remove unsupported assertions at statement boundaries; add no notice."""
     incomplete = decision.reason if not decision.can_complete and decision.status != CompletionStatus.AWAITING_USER else ''
     execution_required = _execution_obligation(ledger.requirements)
     # Bare "Done." cannot stand for an external effect nobody verified.
     terminal_claims = execution_required or bool(ledger.unverified_external_effects())
+    # "Ticked ...", "Added ... to X", "Logged 2 h ..." when only read tools
+    # ran: a reported change with nothing behind it (2026-11-22 sandbox run).
+    wrote = _ledger_wrote(ledger)
     kept = []
     removed = ''
     for statement, scoped in _unquoted_statements(text):
         why = ''
+        if not wrote and mutation_claim(scoped):
+            removed = removed or NOT_DONE_REASON
+            continue
         for claim, scope in _current_run_claims(scoped, execution_required=terminal_claims):
             paths = tuple(match.group().rstrip('.') for match in _CLAIM_PATH.finditer(scope))
             if claim == 'metric':
@@ -183,6 +205,8 @@ def _completion_answer(text: str, ledger: EvidenceLedger, decision: CompletionDe
         return notice + ('\n\n' + prose if prose.strip() else ''), reason
     if removed and not execution_required and decision.status != CompletionStatus.VERIFIED:
         notice = 'Unsupported execution claims were omitted: ' + removed.rstrip('.') + '.'
+        if removed == NOT_DONE_REASON:
+            notice = 'Not done: ' + NOT_DONE_REASON + '.'
         return (prose.rstrip() + '\n\n' + notice) if prose.strip() else notice, removed
     if decision.can_complete and (ledger.requirements.required_artifacts or ledger.requirements.verifier_required or removed):
         facts = []
