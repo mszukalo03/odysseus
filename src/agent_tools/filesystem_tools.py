@@ -283,7 +283,8 @@ class EditFileTool:
             return {"error": f"edit_file: {path}: {e}", "exit_code": 1, **partial()}
 
         if status == "not_found":
-            return {"error": f"edit_file: old_string not found in {path}. Read the file and match it exactly.", "exit_code": 1}
+            return {"error": f"edit_file: old_string not found in {path}. Read the file and match it exactly."
+                             + _old_string_miss_hint(original, old), "exit_code": 1}
         if status.startswith("not_unique"):
             n = status.split(":", 1)[1]
             return {"error": f"edit_file: old_string is not unique in {path} ({n} matches). Add surrounding context or set replace_all=true.", "exit_code": 1}
@@ -294,6 +295,43 @@ class EditFileTool:
         if diff:
             result["diff"] = diff
         return result
+
+def _old_string_miss_hint(original: str, old: str) -> str:
+    """Say how far a missed old_string did match, and where it first differs.
+
+    A model appending to a long list tends to anchor on the last row it read
+    plus text it assumed comes next (2026-11-22, W3: the last inventory row
+    followed by an invented "---" and heading). Naming the first differing
+    line lets it retry with the row alone instead of rereading the file.
+    """
+    file_lines = original.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    old_lines = old.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    if not old_lines or not old_lines[0].strip():
+        old_lines = old_lines[1:] if len(old_lines) > 1 else old_lines
+    best_start, best_len = -1, 0
+    for start, line in enumerate(file_lines):
+        if line != old_lines[0]:
+            continue
+        length = 1
+        while (length < len(old_lines) and start + length < len(file_lines)
+               and file_lines[start + length] == old_lines[length]):
+            length += 1
+        if length > best_len:
+            best_start, best_len = start, length
+    def clip(text: str) -> str:
+        return text if len(text) <= 100 else text[:97] + "..."
+    if best_len == 0:
+        return (" Its first line does not appear in the file; copy it from read_file output "
+                "exactly (same indentation and punctuation).")
+    if best_len >= len(old_lines):
+        return ""
+    file_next = file_lines[best_start + best_len] if best_start + best_len < len(file_lines) else "<end of file>"
+    return (
+        f" The first {best_len} line(s) of old_string match the file from line {best_start + 1}, "
+        f"then old_string has {clip(old_lines[best_len])!r} where the file has {clip(file_next)!r}. "
+        "To add after a line, use only that line as old_string and repeat it at the start of new_string."
+    )
+
 
 class ReadFileTool:
     async def execute(self, content: str, ctx: dict) -> dict:

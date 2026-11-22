@@ -21345,6 +21345,17 @@ async def _spec_router_contract_async(turn_contract, messages, disabled_tools, e
         return turn_contract
 
 
+def _approved_action_failure_text(tool_name: str, result: dict, detail: str) -> str:
+    """Plain-words reply when an approved action is refused or fails."""
+    if result.get("failure_kind") == "resource_identity_denied":
+        return (
+            f"You approved the {tool_name} action, but the server refused to start it, "
+            "so nothing was changed. Its safety check could not tie the run to your "
+            f"approval (detail: {detail}). Ask again to get a fresh approval card."
+        )
+    return f"The approved {tool_name} action could not run: {detail}"
+
+
 _LOOP_BREAKER_WRITE_TOOLS = frozenset({"edit_file", "write_file", "apply_patch"})
 
 
@@ -24282,6 +24293,24 @@ async def stream_agent_loop(
         if _base_relevant_tools is not None:
             _base_relevant_tools.difference_update(_DOMAIN_TOOL_MAP["files"])
 
+    # An approval resume is the same task as the paused round. Offer exactly
+    # the tools sealed with the approval (the paused round's set), so the tool
+    # schemas and the tool guidance at the top of the prompt match the paused
+    # request and the server can reuse its cached prefix. Rebuilding the set
+    # from the request text widened it (29 -> 43 tools for W1, 2026-11-22) and
+    # every resume reread 15-21k tokens. Disabled and blocked tools stay out,
+    # and no tool is offered that the paused round did not offer.
+    _sealed_approval_tools = set(
+        getattr(getattr(exact_approval, "pending", None), "selected_tools", None) or ()
+    ) - set(disabled_tools) - set(_hard_blocked_tools)
+    if _relevant_tools is not None and _sealed_approval_tools:
+        _relevant_tools = set(_sealed_approval_tools)
+        _base_relevant_tools = set(_sealed_approval_tools)
+        logger.info(
+            "[agent-intent] approval resume: tools pinned to the paused round's %d",
+            len(_sealed_approval_tools),
+        )
+
     if _relevant_tools is not None:
         logger.info("[agent-intent] selected_tools=%s", sorted(_relevant_tools)[:50])
 
@@ -26070,9 +26099,8 @@ async def stream_agent_loop(
                 or approved_result.get("output")
                 or f"exit code {approved_result.get('exit_code')}"
             ).strip()
-            _approval_response = (
-                f"The approved {approved.tool_name} action could not run: "
-                f"{_approval_error}"
+            _approval_response = _approved_action_failure_text(
+                approved.tool_name, approved_result, _approval_error,
             )
             full_response = _approval_response
             yield (
