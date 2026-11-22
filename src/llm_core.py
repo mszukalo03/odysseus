@@ -1258,6 +1258,38 @@ def _is_odysseus_qwen_tool_router_model(model: str) -> bool:
     )
 
 
+def _consolidate_system_messages(messages: List[Dict], url: str) -> List[Dict]:
+    """Return messages with exactly one leading system message.
+
+    The leading run of system messages is merged into one. A system note added
+    later in the conversation (an agent-loop nudge, a loop-breaker or budget
+    note) used to be merged into that first message too, which rewrote the
+    start of the prompt every time a note was added. Local servers reuse the KV
+    cache only for an unchanged prefix, so every such round was read again from
+    token 0 (Strata engine log, 2026-11-22: "0 reused" on most agent rounds).
+    For local endpoints a later system note now stays where it was added, as a
+    user-role message; hosted APIs keep the merged form they always received.
+    """
+    leading: List[str] = []
+    index = 0
+    while index < len(messages) and messages[index].get("role") == "system":
+        leading.append(messages[index].get("content") or "")
+        index += 1
+    rest = messages[index:]
+    if not is_local_endpoint(url):
+        leading += [m.get("content") or "" for m in rest if m.get("role") == "system"]
+        rest = [m for m in rest if m.get("role") != "system"]
+    else:
+        rest = [
+            {"role": "user", "content": m.get("content") or ""}
+            if m.get("role") == "system" else m
+            for m in rest
+        ]
+    if leading:
+        return [{"role": "system", "content": "\n\n".join(leading)}] + rest
+    return rest
+
+
 def _normalize_thinking_mode(value: Optional[str]) -> str:
     mode = str(value or "").strip().lower()
     return mode if mode in {"on", "off"} else ""
@@ -2386,18 +2418,9 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: Optional[f
 
     messages_copy = _sanitize_llm_messages(messages)
 
-    # Consolidate multiple system messages into one at the start.
-    sys_parts = []
-    non_sys = []
-    for m in messages_copy:
-        if m.get("role") == "system":
-            sys_parts.append(m.get('content') or '')
-        else:
-            non_sys.append(m)
-    if sys_parts:
-        messages_copy = [{"role": "system", "content": "\n\n".join(sys_parts)}] + non_sys
-    else:
-        messages_copy = non_sys
+    # One system message at the start (some templates, e.g. Qwen3.5+, reject
+    # a system message anywhere else). See _consolidate_system_messages.
+    messages_copy = _consolidate_system_messages(messages_copy, url)
 
     provider = _detect_provider(url)
     cache_key = _get_cache_key(
@@ -2723,18 +2746,9 @@ async def llm_call_async(
     provider = _detect_provider(url)
     messages_copy = _sanitize_llm_messages(messages)
 
-    # Consolidate multiple system messages into one at the start.
-    sys_parts = []
-    non_sys = []
-    for m in messages_copy:
-        if m.get("role") == "system":
-            sys_parts.append(m.get('content') or '')
-        else:
-            non_sys.append(m)
-    if sys_parts:
-        messages_copy = [{"role": "system", "content": "\n\n".join(sys_parts)}] + non_sys
-    else:
-        messages_copy = non_sys
+    # One system message at the start (some templates, e.g. Qwen3.5+, reject
+    # a system message anywhere else). See _consolidate_system_messages.
+    messages_copy = _consolidate_system_messages(messages_copy, url)
 
     # Non-streaming background callers historically inherited the 32k global
     # default even when the selected local endpoint exposed a smaller context
@@ -3080,19 +3094,9 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
     provider = _detect_provider(url)
     messages_copy = _sanitize_llm_messages(messages)
 
-    # Consolidate multiple system messages into one at the start.
-    # Some models (e.g. Qwen3.5) reject system messages that aren't first.
-    sys_parts = []
-    non_sys = []
-    for m in messages_copy:
-        if m.get("role") == "system":
-            sys_parts.append(m.get('content') or '')
-        else:
-            non_sys.append(m)
-    if sys_parts:
-        messages_copy = [{"role": "system", "content": "\n\n".join(sys_parts)}] + non_sys
-    else:
-        messages_copy = non_sys
+    # One system message at the start (some templates, e.g. Qwen3.5+, reject
+    # a system message anywhere else). See _consolidate_system_messages.
+    messages_copy = _consolidate_system_messages(messages_copy, url)
 
     if provider == "anthropic":
         target_url = _normalize_anthropic_url(url)
