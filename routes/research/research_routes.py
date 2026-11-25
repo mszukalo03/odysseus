@@ -14,10 +14,13 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from core.middleware import INTERNAL_TOOL_USER
 from src.endpoint_resolver import resolve_endpoint
-from src.auth_helpers import _auth_disabled, get_current_user
+from src.auth_helpers import _auth_disabled, get_current_user, require_api_token_scope
 from src.owner_identity import REQUEST_SENTINEL_OWNERS
 from src.constants import DEEP_RESEARCH_DIR
 from src import shutdown as _shutdown
+
+RESEARCH_READ_SCOPE = "research:read"
+RESEARCH_LAUNCH_SCOPE = "research:launch"
 
 _SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9-]{1,128}$")
 
@@ -211,11 +214,17 @@ def _resolve_endpoint_runtime(ep, owner=None, model: Optional[str] = None):
 def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
     router = APIRouter(tags=["research"])
 
-    def _require_user(request: Request) -> str:
+    def _require_user(request: Request, scope: str = RESEARCH_READ_SCOPE) -> str:
         """All research endpoints require an authenticated user. Research
         data isn't owner-scoped in the on-disk JSON yet, so we at least
         block anonymous access. Multi-tenant deploys should additionally
-        verify the session belongs to this user."""
+        verify the session belongs to this user.
+
+        Bearer ``ody_`` tokens must carry ``scope`` and then act as the
+        token's owner, so research a script starts lands in the owner's own
+        library (not a separate "api" silo)."""
+        if getattr(request.state, "api_token", False):
+            return require_api_token_scope(request, scope) or ""
         user = get_current_user(request)
         if not user:
             if _auth_disabled():
@@ -320,7 +329,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
 
     @router.post("/api/research/cancel/{session_id}")
     async def research_cancel(session_id: str, request: Request):
-        user = _require_user(request)
+        user = _require_user(request, RESEARCH_LAUNCH_SCOPE)
         _validate_session_id(session_id)
         if not _owns_in_memory(session_id, user):
             raise HTTPException(404, "No research found for this session")
@@ -329,7 +338,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
 
     @router.post("/api/research/result/{session_id}")
     async def research_result(session_id: str, request: Request):
-        user = _require_user(request)
+        user = _require_user(request, RESEARCH_LAUNCH_SCOPE)
         _validate_session_id(session_id)
         if not _owns_in_memory(session_id, user):
             raise HTTPException(404, "No research result available")
@@ -394,7 +403,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
     async def research_hide_image(session_id: str, body: HideImageRequest, request: Request):
         """Mark an image URL as hidden for this research's visual report.
         Persisted to the research JSON so subsequent /report renders skip it."""
-        user = _require_user(request)
+        user = _require_user(request, RESEARCH_LAUNCH_SCOPE)
         _validate_session_id(session_id)
         _assert_owns_research(session_id, user)
         ok = research_handler.hide_image(session_id, body.url)
@@ -405,7 +414,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
     @router.post("/api/research/{session_id}/unhide-images")
     async def research_unhide_images(session_id: str, request: Request):
         """Clear the hidden-images list for a research session."""
-        user = _require_user(request)
+        user = _require_user(request, RESEARCH_LAUNCH_SCOPE)
         _validate_session_id(session_id)
         _assert_owns_research(session_id, user)
         ok = research_handler.unhide_all_images(session_id)
@@ -489,7 +498,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
     @router.post("/api/research/{session_id}/archive")
     async def research_archive(session_id: str, request: Request, archived: bool = Query(True)):
         """Soft-archive / restore a research report (sets `archived` in its JSON)."""
-        user = _require_user(request)
+        user = _require_user(request, RESEARCH_LAUNCH_SCOPE)
         _validate_session_id(session_id)
         path = _require_research_path(session_id)
         try:
@@ -507,7 +516,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
     @router.delete("/api/research/{session_id}")
     async def research_delete(session_id: str, request: Request):
         """Delete a research result from disk."""
-        user = _require_user(request)
+        user = _require_user(request, RESEARCH_LAUNCH_SCOPE)
         _validate_session_id(session_id)
         json_path = _find_research_path(session_id)
         deleted = False
@@ -546,7 +555,20 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
     async def research_start(body: ResearchStartRequest, request: Request):
         """Launch a research job from the dedicated panel."""
         from src.auth_helpers import require_privilege
-        user = require_privilege(request, "can_use_research")
+        if getattr(request.state, "api_token", False):
+            user = _require_user(request, RESEARCH_LAUNCH_SCOPE)
+            if body.origin_chat_id:
+                raise HTTPException(400, "API tokens cannot attach research to a chat")
+            auth_mgr = getattr(request.app.state, "auth_manager", None)
+            if auth_mgr is not None and getattr(auth_mgr, "is_configured", False):
+                try:
+                    privs = auth_mgr.get_privileges(user) or {}
+                except Exception:
+                    privs = {}
+                if isinstance(privs, dict) and not privs.get("can_use_research", True):
+                    raise HTTPException(403, "Your account is not allowed to use research.")
+        else:
+            user = require_privilege(request, "can_use_research")
         if user == INTERNAL_TOOL_USER:
             tool_owner = (request.headers.get("X-Odysseus-Owner") or "").strip()
             if tool_owner and tool_owner not in REQUEST_SENTINEL_OWNERS:
