@@ -31,6 +31,8 @@ CORE_SCOPES = {
     "cookbook:launch",
     "feeds:read",
     "feeds:write",
+    "research:read",
+    "research:launch",
 }
 
 
@@ -86,6 +88,7 @@ def _normalize_scopes(scopes: str | list[str] | None = None, profile: str | None
     ensure_before("email:draft", "email:read")
     ensure_before("cookbook:launch", "cookbook:read")
     ensure_before("feeds:write", "feeds:read")
+    ensure_before("research:launch", "research:read")
 
     return normalized or [DEFAULT_SCOPES]
 

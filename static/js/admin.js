@@ -3486,6 +3486,8 @@ const _TOKEN_SCOPES = [
   { key: 'cookbook:launch',   label: 'Cookbook launch',   detail: 'Launch and stop cookbook serve tasks' },
   { key: 'feeds:read',        label: 'Feeds read',        detail: 'List feeds/groups and read articles (e.g. unread counts, search)' },
   { key: 'feeds:write',       label: 'Feeds write',       detail: 'Add/edit/delete feeds, mark read/starred, refresh, import OPML' },
+  { key: 'research:read',     label: 'Research read',     detail: 'List deep-research jobs and read their status and reports' },
+  { key: 'research:launch',   label: 'Research launch',   detail: 'Start, cancel, archive and delete deep-research jobs' },
 ];
 
 function _renderTokenScopeRows(t) {
