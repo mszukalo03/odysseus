@@ -9,6 +9,7 @@ import {
     isServerTtsConfigured,
     hasBrowserTTS,
 } from './deviceSpeech.js';
+import { extractThinkingBlocks } from './markdown.js';
 
 class AITTSManager {
     constructor() {
@@ -135,14 +136,9 @@ class AITTSManager {
     }
 
     extractPlainText(content) {
-        // Strip <think>/<thinking> blocks (model reasoning). The opening tag may
-        // carry attributes (chat.js stamps <think time="12">), and mid-stream
-        // the block is still open, so also drop an unclosed block to the end
-        // and anything before a stray closing tag whose opener was never sent.
-        let cleaned = content
-            .replace(/<think(?:ing)?(?:\s[^>]*)?>[\s\S]*?<\/think(?:ing)?>/gi, '')
-            .replace(/<think(?:ing)?(?:\s[^>]*)?>[\s\S]*$/i, '')
-            .replace(/^[\s\S]*<\/think(?:ing)?>/i, '');
+        // Keep only the reply — same split as the chat bubble, so reasoning in
+        // <think time="…">, <thought>, "Thinking:" prefixes etc. isn't spoken.
+        let cleaned = extractThinkingBlocks(content).content;
 
         // Create a temporary div to parse HTML/markdown
         const temp = document.createElement('div');
